@@ -2,15 +2,49 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:cvp="clr-namespace:CrypVol.Core.Views"
+        xmlns:cvpv="clr-namespace:CrypVol.Core.ViewModels"
         mc:Ignorable="d" WindowStartupLocation="CenterScreen"
         d:DesignWidth="800" d:DesignHeight="450"
         Width="800" Height="450"
+        MinWidth="450" MinHeight="300"
         Icon="avares://CrypVol.Core/Assets/avalonia.ico"
         x:Class="CrypVol.Core.Views.CrypVolWindow"
         DataContext="{Binding CrypVolViewModel,Source={StaticResource ServiceLocator}}"
         Title="CrypVolWindow">
     <Panel>
         <DockPanel LastChildFill="True">
+            <Panel DockPanel.Dock="Top">
+                <Menu>
+                    <MenuItem Header="文件">
+                        <MenuItem Header="打开文件夹" HotKey="Enter" Command="{Binding OpenFolderCommand}" />
+                        <MenuItem Header="打开加密卷" Command="{Binding OpenCrypVolCommand}" />
+                        <Separator />
+                        <MenuItem Header="退出" HotKey="Alt+F4"
+                                  Command="{Binding CloseAppCommand,Source={StaticResource AppCommand}}" />
+                    </MenuItem>
+                    <MenuItem Header="帮助">
+                        <MenuItem Header="关于" />
+                    </MenuItem>
+                </Menu>
+            </Panel>
+            <Border BorderBrush="{DynamicResource TabControlSeparatorBorderBrush}" BorderThickness="0,1,0,0">
+                <TabControl ItemsSource="{Binding TabList}">
+                    <TabControl.ItemTemplate>
+                        <DataTemplate>
+                            <AccessText Text="{Binding Header}" />
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+                    <TabControl.DataTemplates>
+                        <DataTemplate DataType="cvpv:FileTreeViewModel">
+                            <cvp:FileTreeViewer />
+                        </DataTemplate>
+                        <DataTemplate DataType="cvpv:CrypVolTreeViewModel">
+                            <cvp:CrypVolTreeViewer />
+                        </DataTemplate>
+                    </TabControl.DataTemplates>
+                </TabControl>
+            </Border>
         </DockPanel>
         <WindowNotificationManager Name="Manager" Position="TopRight" MaxItems="3" />
     </Panel>

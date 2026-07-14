@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
-using Avalonia.Threading;
 using CrypVol.Core.Abstract.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,10 +23,10 @@ public class CrypVolApp(ILogger<CrypVolApp> logger, IServiceProvider serviceProv
         logger.LogInformation("OnFrameworkInitializationCompleted");
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.ShutdownRequested += (sender, args) =>
+            desktop.ShutdownRequested += (_, _) =>
             {
+                TrayIcon.GetIcons(this)?.Clear();
                 TrayIcon.SetIcons(this, null);
-                Dispatcher.UIThread.RunJobs();
             };
 
         // Avoid duplicate validations from both Avalonia and the CommunityToolkit.

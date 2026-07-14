@@ -1,11 +1,11 @@
 using System.Reactive.Linq;
 using Avalonia;
+using CrypVol.Core.Abstract;
 using CrypVol.Core.Abstract.Services;
 using CrypVol.Core.Abstract.ViewModels;
 using CrypVol.Core.Abstract.Views;
 using CrypVol.Core.ViewModels;
 using CrypVol.Core.Views;
-using CrypVol.Lib;
 using DynamicData;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;

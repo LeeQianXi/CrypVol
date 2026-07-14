@@ -13,7 +13,7 @@ public interface ICoroutinator
 }
 
 [SuppressMessage("Performance", "CA1822:将成员标记为 static")]
-public static class Extensions
+public static partial class Extensions
 {
     extension(ICoroutinator cor)
     {

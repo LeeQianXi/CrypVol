@@ -21,6 +21,11 @@
             <TrayIcon ToolTipText="CrypVol" Icon="avares://CrypVol.Core/Assets/avalonia.ico">
                 <TrayIcon.Menu>
                     <NativeMenu>
+                        <NativeMenuItem Header="打开文件夹"
+                                        Command="{Binding OpenFolderCommand,Source={StaticResource AppCommand}}" />
+                        <NativeMenuItem Header="打开加密卷"
+                                        Command="{Binding OpenCrypVolCommand,Source={StaticResource AppCommand}}" />
+                        <NativeMenuItemSeparator />
                         <NativeMenuItem Header="退出"
                                         Command="{Binding CloseAppCommand,Source={StaticResource AppCommand}}" />
                     </NativeMenu>

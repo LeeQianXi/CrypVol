@@ -2,9 +2,9 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Core.Abstract;
 
-public static class Extensions
+public static partial class Extensions
 {
     extension(IServiceCollection services)
     {
