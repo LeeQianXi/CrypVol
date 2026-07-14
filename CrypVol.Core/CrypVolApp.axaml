@@ -1,0 +1,31 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:semi="https://irihi.tech/semi"
+             xmlns:locator="clr-namespace:CrypVol.Core"
+             x:Class="CrypVol.Core.CrypVolApp"
+             RequestedThemeVariant="Default">
+    <Application.Resources>
+        <ResourceDictionary>
+            <locator:ServiceLocator x:Key="ServiceLocator" />
+            <locator:AppCommand x:Key="AppCommand" />
+        </ResourceDictionary>
+    </Application.Resources>
+    <Application.Styles>
+        <!--<FluentTheme />-->
+        <semi:SemiTheme Locale="zh-CN" />
+        <semi:SemiPopupAnimations />
+        <StyleInclude Source="avares://CrypVol.Core.Abstract/Controls/CustomControls.axaml" />
+    </Application.Styles>
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon ToolTipText="CrypVol" Icon="avares://CrypVol.Core/Assets/avalonia.ico">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="退出"
+                                        Command="{Binding CloseAppCommand,Source={StaticResource AppCommand}}" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+</Application>

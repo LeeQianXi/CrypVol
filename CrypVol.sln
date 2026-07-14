@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrypVol", "CrypVol\CrypVol.csproj", "{572C3337-3137-4D2C-8CB2-EAA003A928EB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrypVol.Core", "CrypVol.Core\CrypVol.Core.csproj", "{69DF0D8A-F894-4ADE-95B7-880FBB8BD566}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrypVol.Core.Abstract", "CrypVol.Core.Abstract\CrypVol.Core.Abstract.csproj", "{951440AE-2A7B-4911-A2FE-60E5016620E9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrypVol.Lib", "CrypVol.Lib\CrypVol.Lib.csproj", "{EEE1DEEB-5EAB-46A7-87EA-86F5C79F19B3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{572C3337-3137-4D2C-8CB2-EAA003A928EB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{572C3337-3137-4D2C-8CB2-EAA003A928EB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{572C3337-3137-4D2C-8CB2-EAA003A928EB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{572C3337-3137-4D2C-8CB2-EAA003A928EB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{69DF0D8A-F894-4ADE-95B7-880FBB8BD566}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{69DF0D8A-F894-4ADE-95B7-880FBB8BD566}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{69DF0D8A-F894-4ADE-95B7-880FBB8BD566}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{69DF0D8A-F894-4ADE-95B7-880FBB8BD566}.Release|Any CPU.Build.0 = Release|Any CPU
+		{951440AE-2A7B-4911-A2FE-60E5016620E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{951440AE-2A7B-4911-A2FE-60E5016620E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{951440AE-2A7B-4911-A2FE-60E5016620E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{951440AE-2A7B-4911-A2FE-60E5016620E9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EEE1DEEB-5EAB-46A7-87EA-86F5C79F19B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EEE1DEEB-5EAB-46A7-87EA-86F5C79F19B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EEE1DEEB-5EAB-46A7-87EA-86F5C79F19B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EEE1DEEB-5EAB-46A7-87EA-86F5C79F19B3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
