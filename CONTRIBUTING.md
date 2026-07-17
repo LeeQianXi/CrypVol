@@ -18,7 +18,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/LeeQianXi/CephVol.git
+git clone https://github.com/LeeQianXi/CrypVol.git
 cd CrypVol
 
 # 还原依赖
@@ -75,7 +75,7 @@ dotnet test
 
 ## 🐛 报告 Bug
 
-使用 [Bug 报告模板](https://github.com/LeeQianXi/CephVol/issues/new?template=bug_report.yml) 提交 Issue，请尽量提供：
+使用 [Bug 报告模板](https://github.com/LeeQianXi/CrypVol/issues/new?template=bug_report.yml) 提交 Issue，请尽量提供：
 
 - 复现步骤
 - 期望行为 vs 实际行为
@@ -83,4 +83,4 @@ dotnet test
 
 ## 💡 功能请求
 
-使用 [功能请求模板](https://github.com/LeeQianXi/CephVol/issues/new?template=feature_request.yml) 提交，说明使用场景和建议方案。
+使用 [功能请求模板](https://github.com/LeeQianXi/CrypVol/issues/new?template=feature_request.yml) 提交，说明使用场景和建议方案。

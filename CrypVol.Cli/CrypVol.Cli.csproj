@@ -11,7 +11,7 @@
         <RootNamespace>CrypVol.Cli</RootNamespace>
         <Authors>QianXiLee</Authors>
         <Title>Cryptographic Volume Package</Title>
-        <RepositoryUrl>https://github.com/LeeQianXi/CephVol</RepositoryUrl>
+        <RepositoryUrl>https://github.com/LeeQianXi/CrypVol</RepositoryUrl>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
         <NeutralLanguage>zh-Hans</NeutralLanguage>
     </PropertyGroup>

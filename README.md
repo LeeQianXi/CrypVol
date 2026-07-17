@@ -21,12 +21,12 @@
 
 ### 下载预编译版本
 
-前往 [Releases](https://github.com/LeeQianXi/CephVol/releases) 页面下载对应平台的二进制包。
+前往 [Releases](https://github.com/LeeQianXi/CrypVol/releases) 页面下载对应平台的二进制包。
 
 ### 从源码构建
 
 ```bash
-git clone https://github.com/LeeQianXi/CephVol.git
+git clone https://github.com/LeeQianXi/CrypVol.git
 cd CrypVol
 dotnet build -c Release
 ```
