@@ -7,10 +7,6 @@ using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 
 namespace CrypVol.Cli.Pack;
 
-/// <summary>
-///     三层缓冲（L1读 -> L2算 -> L3写）并行打包器
-///     架构核心：固定槽位环形流转 + 有界信号量背压控制
-/// </summary>
 public static partial class PackHelper
 {
     private static CancellationTokenSource GlobalCancellationTokenSource { get; } = new();
@@ -121,11 +117,13 @@ public static partial class PackHelper
         return 0;
     }
 
+    /// <summary>
+    /// Cvk文件生成
+    /// </summary>
     private static partial Task CreateCvkAsync(CancellationToken token);
 
-    private static async Task PreTreatmentAsync(CancellationToken token)
-    {
-        foreach (var fileInfo in GlobalConfig.Files)
-            VerboseLog("PreTreatment:{0}", fileInfo.FullName);
-    }
+    /// <summary>
+    /// 预处理文件列表
+    /// </summary>
+    private static partial Task PreTreatmentAsync(CancellationToken token);
 }
