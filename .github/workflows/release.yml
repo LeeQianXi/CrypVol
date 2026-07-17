@@ -16,11 +16,6 @@ permissions:
   contents: write
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Hello
-        run: echo "Workflow dispatch works!"
   version:
     name: Determine Version
     runs-on: ubuntu-latest
