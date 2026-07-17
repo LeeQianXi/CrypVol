@@ -20,21 +20,6 @@ public unsafe struct FileEntryHeader
     public const uint MAGIC = 0x48505643;
     public const int HEADER_SIZE = 256;
 
-    public enum FlagsEnum : byte
-    {
-        /// 完整段
-        Full = 0,
-
-        /// 跨卷首段（填满卷尾）
-        CrossHead = 1,
-
-        /// 跨卷中间段（占满整卷）
-        CrossMid = 2,
-
-        /// 跨卷尾段（收尾）
-        CrossTail = 3
-    }
-
     // ------------------------- 哈希计算 (FNV-1a 64位) -------------------------
     private static ulong ComputeHash(byte[] bytes)
     {
@@ -105,7 +90,7 @@ public unsafe struct FileEntryHeader
 
     // ------------------------- 业务辅助 -------------------------
     public bool IsFirstSegment => SegmentIndex == 0;
-    public bool IsCrossHead => Flags == (byte)FlagsEnum.CrossHead;
+    public bool IsCrossHead => Flags == (byte)FileEntryHeaderFlagsEnum.CrossHead;
 
     /// 获取本段有效数据量（调用者需注意 CrossHead 特殊处理）
     public ulong GetSegmentDataSize()
@@ -119,4 +104,19 @@ public unsafe struct FileEntryHeader
     {
         return IsFirstSegment ? SizeOrTotal : 0;
     }
+}
+
+public enum FileEntryHeaderFlagsEnum : byte
+{
+    /// 完整段
+    Full = 0,
+
+    /// 跨卷首段（填满卷尾）
+    CrossHead = 1,
+
+    /// 跨卷中间段（占满整卷）
+    CrossMid = 2,
+
+    /// 跨卷尾段（收尾）
+    CrossTail = 3
 }

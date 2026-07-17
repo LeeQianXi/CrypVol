@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.CommandLine;
 using System.Security.Cryptography;
+using System.Threading.Channels;
 using CrypVol.Lib;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
@@ -9,13 +10,32 @@ namespace CrypVol.Cli.Pack;
 
 public static partial class PackHelper
 {
-    private static CancellationTokenSource GlobalCancellationTokenSource { get; } = new();
+    private static CancellationTokenSource GlobalCancellationTokenSource { get; set; } = null!;
     private static PackConfig GlobalConfig { get; set; } = null!;
 
+    /// <summary>
+    ///     读取任务分配
+    /// </summary>
+    private static Channel<TaskItem> TaskChannel { get; } = Channel.CreateUnbounded<TaskItem>();
+
+    /// <summary>
+    ///     原始数据队列
+    /// </summary>
+    private static Channel<RawBlock> RawBlockChannel { get; } = Channel.CreateBounded<RawBlock>(200);
+
+    /// <summary>
+    ///     处理后数据队列
+    /// </summary>
+    private static Channel<EncryptedBlock> EncryptedBlockChannel { get; } = Channel.CreateBounded<EncryptedBlock>(200);
+
+    /// <summary>
+    ///     卷上下文映射
+    /// </summary>
     private static ConcurrentDictionary<int, VolumeContext> VolumeContexts { get; } = new();
 
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
+        GlobalCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token);
         // 初始化参数
         Verbose = args.GetValue(CommandDefinition.Verbose);
         var inputPath = args.GetRequiredValue(CommandDefinition.Pack.InputPath);
@@ -49,7 +69,7 @@ public static partial class PackHelper
             }
 
             config.SourceDir = directoryInfo.FullName;
-            config.Files = result.Files.Select(i => new FileInfo(i.Path));
+            config.Files = result.Files.Select(i => new FileInfo(Path.Combine(directoryInfo.FullName, i.Path)));
         }
         else
         {
@@ -118,12 +138,12 @@ public static partial class PackHelper
     }
 
     /// <summary>
-    /// Cvk文件生成
+    ///     Cvk文件生成
     /// </summary>
     private static partial Task CreateCvkAsync(CancellationToken token);
 
     /// <summary>
-    /// 预处理文件列表
+    ///     预处理文件列表
     /// </summary>
     private static partial Task PreTreatmentAsync(CancellationToken token);
 }

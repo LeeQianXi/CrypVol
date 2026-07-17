@@ -10,7 +10,9 @@ public sealed class VolumeContext
     /// <summary>
     ///     卷序号
     /// </summary>
-    public int VolumeIndex { get; init; }
+    public required int VolumeIndex { get; init; }
+
+    public List<FileEntry> Entries { get; } = [];
 
     /// <summary>
     ///     写入线程当前渴望的序号
