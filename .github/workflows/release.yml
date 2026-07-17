@@ -16,6 +16,11 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello
+        run: echo "Workflow dispatch works!"
   version:
     name: Determine Version
     runs-on: ubuntu-latest
@@ -97,7 +102,6 @@ jobs:
             CrypVol-CLI-*.tar.gz
             CrypVol-GUI-*.tar.gz
           if-no-files-found: error
-
   release:
     name: Create Release
     needs: [version, publish]
