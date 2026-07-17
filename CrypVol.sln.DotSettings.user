@@ -38,9 +38,9 @@
 	<s:String x:Key="/Default/Environment/AssemblyExplorer/XmlDocument/@EntryValue">&lt;AssemblyExplorer&gt;
   &lt;Assembly Path="/home/qianxi/.nuget/packages/system.commandline/2.0.9/lib/net8.0/System.CommandLine.dll" /&gt;
 &lt;/AssemblyExplorer&gt;</s:String>
-	<s:Boolean x:Key="/Default/UnloadedProject/UnloadedProjects/=572c3337_002D3137_002D4d2c_002D8cb2_002Deaa003a928eb_0023CrypVol/@EntryIndexedValue">True</s:Boolean>
-	<s:Boolean x:Key="/Default/UnloadedProject/UnloadedProjects/=69df0d8a_002Df894_002D4ade_002D95b7_002D880fbb8bd566_0023CrypVol_002ECore/@EntryIndexedValue">True</s:Boolean>
-	<s:Boolean x:Key="/Default/UnloadedProject/UnloadedProjects/=951440ae_002D2a7b_002D4911_002Da2fe_002D60e5016620e9_0023CrypVol_002ECore_002EAbstract/@EntryIndexedValue">True</s:Boolean>
+	
+	
+	
 	
 	
 	</wpf:ResourceDictionary>

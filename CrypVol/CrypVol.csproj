@@ -7,7 +7,13 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
         <LangVersion>preview</LangVersion>
+        <AssemblyName>CrypVol</AssemblyName>
         <RootNamespace>CrypVol</RootNamespace>
+        <Authors>QianXiLee</Authors>
+        <Title>Cryptographic Volume Package</Title>
+        <RepositoryUrl>https://github.com/LeeQianXi/CephVol</RepositoryUrl>
+        <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+        <NeutralLanguage>zh-Hans</NeutralLanguage>
     </PropertyGroup>
 
     <ItemGroup>

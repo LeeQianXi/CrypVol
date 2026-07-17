@@ -1,7 +1,38 @@
+# Build results
 **/bin/
 **/obj/
 /packages/
+
+# IDE - Rider
 riderModule.iml
 /_ReSharper.Caches/
 **/.idea
+
+# IDE - VS Code
+.vscode/
+
+# IDE - Visual Studio
+*.user
+*.suo
+*.vs/
+
+# Test data
 Test*/*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Avalonia UI
+*.axaml.cs.deps.json
+
+# NuGet
+*.nupkg
+
+# dotnet tools
+.dotnet/
+
+# Encryption keys / test artifacts
+*.cvk
+*.cvp
+!TestData/**
