@@ -26,7 +26,6 @@ public static class CommandDefinition
             Info.SubCommand(),
             new DiagramDirective()
         };
-
         return root;
     }
 
@@ -38,7 +37,7 @@ public static class CommandDefinition
         public static readonly Option<uint> VolumeSize;
         public static readonly Option<EncryptionMode> Mode;
         public static readonly Option<string> Password;
-        public static readonly Option<FileInfo> PublicKey;
+        public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<int> Threads;
         public static readonly Option<bool> Compress;
         public static readonly Option<DirectoryInfo> KeyOutputPath;
@@ -49,7 +48,7 @@ public static class CommandDefinition
         {
             InputPath = new Argument<FileSystemInfo>("path")
             {
-                Description = "要打包的源路径",
+                Description = "要打包的源路径"
             }.AcceptExistingOnly();
             OutputPath = new Option<DirectoryInfo>("--output", "-o")
             {
@@ -62,9 +61,9 @@ public static class CommandDefinition
                     {
                         FileInfo fi => fi.Directory!,
                         DirectoryInfo di => di,
-                        _ => null!,
+                        _ => null!
                     };
-                },
+                }
             }.AcceptLegalFilePathsOnly();
             OutputPrefix = new Option<string>("--output-prefix")
             {
@@ -79,7 +78,7 @@ public static class CommandDefinition
                             ? name
                             : fi.Directory?.Name!,
                         DirectoryInfo di => di.Name,
-                        _ => null!,
+                        _ => null!
                     };
                 }
             };
@@ -106,7 +105,7 @@ public static class CommandDefinition
                 Description = "用于加密CEK的密码,仅在 Password 模式生效",
                 HelpName = "pass"
             };
-            PublicKey = new Option<FileInfo>("--public-key")
+            PublicKey = new Option<IEnumerable<FileInfo>>("--public-key")
             {
                 Description = "用于加密CEK的公钥,仅在 Pubkey 模式生效",
                 HelpName = "file"
@@ -130,7 +129,7 @@ public static class CommandDefinition
             Include = new Option<string>("--include")
             {
                 Description = "仅包含匹配的文件（Glob语法）",
-                HelpName = "pattern",
+                HelpName = "pattern"
             };
             Exclude = new Option<string>("--exclude")
             {
@@ -154,7 +153,7 @@ public static class CommandDefinition
                 Compress,
                 KeyOutputPath,
                 Include,
-                Exclude,
+                Exclude
             };
             cmd.SetAction(PackHelper.Invoker);
             return cmd;
@@ -194,9 +193,9 @@ public static class CommandDefinition
                     {
                         FileInfo fi => fi.Directory!,
                         DirectoryInfo di => di,
-                        _ => null!,
+                        _ => null!
                     };
-                },
+                }
             }.AcceptLegalFilePathsOnly();
             KeyFile = new Option<FileInfo>("--key-file", "-k")
             {
@@ -239,7 +238,7 @@ public static class CommandDefinition
             Include = new Option<string>("--include")
             {
                 Description = "仅包含匹配的文件（Glob语法）",
-                HelpName = "pattern",
+                HelpName = "pattern"
             };
             Exclude = new Option<string>("--exclude")
             {
@@ -263,7 +262,7 @@ public static class CommandDefinition
                 Overwrite,
                 KeepPermissions,
                 Include,
-                Exclude,
+                Exclude
             };
             cmd.SetAction(ExtractHelper.Invoker);
             return cmd;
@@ -302,9 +301,9 @@ public static class CommandDefinition
                     {
                         FileInfo fi => fi.Directory,
                         DirectoryInfo di => di,
-                        _ => null,
+                        _ => null
                     };
-                },
+                }
             }.AcceptLegalFilePathsOnly();
             OutputFormat = new Option<BrowseOutputMode>("--output-format", "-f")
             {
@@ -342,7 +341,7 @@ public static class CommandDefinition
             Include = new Option<string>("--include")
             {
                 Description = "仅包含匹配的文件（Glob语法）",
-                HelpName = "pattern",
+                HelpName = "pattern"
             };
             Exclude = new Option<string>("--exclude")
             {
@@ -365,7 +364,7 @@ public static class CommandDefinition
                 PrivkeyKeyPass,
                 Rescue,
                 Include,
-                Exclude,
+                Exclude
             };
             cmd.SetAction(BrowseHelper.Invoker);
             return cmd;
