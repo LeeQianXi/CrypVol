@@ -10,6 +10,7 @@ namespace CrypVol.Cli.Pack;
 
 public static partial class PackHelper
 {
+    private static readonly SemaphoreSlim WriterScheduleSlim = new(2, 2);
     private static CancellationTokenSource GlobalCancellationTokenSource { get; set; } = null!;
     private static PackConfig GlobalConfig { get; set; } = null!;
 
@@ -148,11 +149,29 @@ public static partial class PackHelper
     /// </summary>
     private static partial Task PreTreatmentAsync(CancellationToken token);
 
+    /// <summary>
+    ///     读循环执行者
+    /// </summary>
     private static partial Task ReadLoopAsync(CancellationToken token);
+
+    /// <summary>
+    ///     压缩/加密循环执行者
+    /// </summary>
     private static partial Task ComputeLoopAsync(CancellationToken token);
+
+    /// <summary>
+    ///     重路由循环执行者
+    /// </summary>
     private static partial Task RerouteLoopAsync(CancellationToken token);
+
+    /// <summary>
+    ///     写循环执行者
+    /// </summary>
     private static partial Task WriteLoopAsync(VolumeContext ctx, CancellationToken token);
 
+    /// <summary>
+    ///     统一调度器
+    /// </summary>
     private static async Task ScheduleAsync(CancellationToken token)
     {
         VerboseLog("启动调度器");
@@ -162,16 +181,16 @@ public static partial class PackHelper
         var reader = ScheduleReaderAsync(token);
         var publisher = TaskChannel.Writer;
         foreach (var ctx in VolumeContexts.Values)
-        {
-            foreach (var fileEntry in ctx.Entries)
-            {
-                await publisher.WriteAsync(fileEntry, token);
-            }
-        }
+        foreach (var fileEntry in ctx.Entries)
+            await publisher.WriteAsync(fileEntry, token);
+
         publisher.Complete();
         await Task.WhenAll(reroute, reader, compute, writer);
     }
 
+    /// <summary>
+    ///     读执行者调度器
+    /// </summary>
     private static async Task ScheduleReaderAsync(CancellationToken token)
     {
         VerboseLog("启动 读并发 调度器");
@@ -183,6 +202,9 @@ public static partial class PackHelper
         VerboseLog("读并发 成功完成");
     }
 
+    /// <summary>
+    ///     压缩/加密循环调度器
+    /// </summary>
     private static async Task ScheduleComputeAsync(CancellationToken token)
     {
         VerboseLog("启动 压缩/加密并发 调度器");
@@ -194,8 +216,9 @@ public static partial class PackHelper
         VerboseLog("压缩/加密并发 成功完成");
     }
 
-    private static readonly SemaphoreSlim WriterScheduleSlim = new(2, 2);
-
+    /// <summary>
+    ///     写循环调度器
+    /// </summary>
     private static async Task ScheduleWriterAsync(CancellationToken token)
     {
         VerboseLog("启动 写并发 调度器");
@@ -208,9 +231,7 @@ public static partial class PackHelper
             var task = WriteLoopAsync(ctx, token).ContinueWith(t =>
             {
                 if (t.IsFaulted)
-                {
                     GlobalCancellationTokenSource.Cancel();
-                }
 
                 WriterScheduleSlim.Release();
             }, token);

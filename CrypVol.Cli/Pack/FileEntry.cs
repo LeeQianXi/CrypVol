@@ -23,7 +23,9 @@ public sealed class FileEntry
     public long PhysicalDataLength { get; init; }
 
     public FileEntryHeaderFlagsEnum Flags { get; init; }
-    public bool HasExtendedPath { get; init; }
+
+    public bool HasExtendedPath =>
+        (Flags & FileEntryHeaderFlagsEnum.HasExtendedHeader) is FileEntryHeaderFlagsEnum.HasExtendedHeader;
 
     public static ulong Fnv1AHash64(string input)
     {

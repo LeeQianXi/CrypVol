@@ -113,7 +113,8 @@ public static partial class PackHelper
                 usedInVolume = 0;
             }
         }
-        foreach (var (key,ctx) in VolumeContexts)
+
+        foreach (var (key, ctx) in VolumeContexts)
         {
             if (ctx.Entries.Count is 0)
             {
@@ -123,6 +124,7 @@ public static partial class PackHelper
 
             ctx.TotalBlocks = ctx.Entries.Select(item => item.PhysicalDataLength / alignment).Sum();
         }
+
         var emptyVolumes = VolumeContexts.Where(kv => kv.Value.Entries.Count == 0).Select(kv => kv.Key).ToList();
         foreach (var key in emptyVolumes)
             VolumeContexts.TryRemove(key, out _);
@@ -160,7 +162,7 @@ public static partial class PackHelper
             {
                 var array = ArrayPool<byte>.Shared.Rent(1024 * 4);
                 var length = await fs.ReadAsync(array, token);
-                var meta = new TaskItem
+                var meta = new BlockHeader
                 {
                     RelativePath = entry.RelativePath,
                     FragmentIndex = entry.FragmentIndex,
@@ -172,10 +174,10 @@ public static partial class PackHelper
                 };
                 index++;
                 offset += length;
-                await consumer.WriteAsync(new RawBlock()
+                await consumer.WriteAsync(new RawBlock
                 {
                     Metadata = meta,
-                    Data = array,
+                    Data = array
                 }, token);
             }
         }
@@ -194,7 +196,7 @@ public static partial class PackHelper
             await stream.WriteAsync(block.Data, token);
             var array = ArrayPool<byte>.Shared.Rent(1024 * 4);
             var length = await stream.ReadAsync(array, token);
-            await consumer.WriteAsync(new EncryptedBlock()
+            await consumer.WriteAsync(new EncryptedBlock
             {
                 Metadata = block.Metadata,
                 Data = array,
@@ -238,15 +240,11 @@ public static partial class PackHelper
             }
 
             if (order + 1 >= context.TotalBlocks)
-            {
                 context.OutputChannel.Writer.TryComplete();
-            }
         }
 
         foreach (var context in VolumeContexts.Values)
-        {
             context.OutputChannel.Writer.TryComplete();
-        }
 
         VerboseLog("推出 重路由 流程");
     }

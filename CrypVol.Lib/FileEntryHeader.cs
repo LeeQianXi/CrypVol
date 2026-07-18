@@ -19,6 +19,7 @@ public unsafe struct FileEntryHeader()
     public const uint MagicHeader = 0x48505643;
     public const int HeaderSize = 256;
 }
+
 [Flags]
 public enum FileEntryHeaderFlagsEnum : byte
 {
@@ -33,5 +34,5 @@ public enum FileEntryHeaderFlagsEnum : byte
 
     /// 跨卷尾段（收尾）
     CrossTail = 0b_0000_0011,
-    HasExtendedHeader = 0b_0000_0100,
+    HasExtendedHeader = 0b_0000_0100
 }

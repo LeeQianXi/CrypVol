@@ -3,13 +3,10 @@ using CrypVol.Lib;
 namespace CrypVol.Cli.Pack;
 
 /// 描述一次“读取动作”的全部坐标
-public readonly record struct TaskItem
+public readonly record struct BlockHeader
 {
     /// 相对路径或绝对路径
     public required string RelativePath { get; init; }
-
-    /// 路径哈希（FNV-1a 64bit）
-    public ulong FileId => FileEntry.Fnv1AHash64(RelativePath);
 
     /// 卷标志位
     public required FileEntryHeaderFlagsEnum Flags { get; init; }
