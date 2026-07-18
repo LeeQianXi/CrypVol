@@ -17,7 +17,7 @@ public static partial class PackHelper
     /// <summary>
     ///     读取任务分配
     /// </summary>
-    private static Channel<FileEntry> TaskChannel { get; } = Channel.CreateUnbounded<FileEntry>();
+    private static Channel<FileEntry> EntryChannel { get; } = Channel.CreateUnbounded<FileEntry>();
 
     /// <summary>
     ///     原始数据队列
@@ -179,12 +179,6 @@ public static partial class PackHelper
         var writer = ScheduleWriterAsync(token);
         var compute = ScheduleComputeAsync(token);
         var reader = ScheduleReaderAsync(token);
-        var publisher = TaskChannel.Writer;
-        foreach (var ctx in VolumeContexts.Values)
-        foreach (var fileEntry in ctx.Entries)
-            await publisher.WriteAsync(fileEntry, token);
-
-        publisher.Complete();
         await Task.WhenAll(reroute, reader, compute, writer);
     }
 
@@ -194,12 +188,19 @@ public static partial class PackHelper
     private static async Task ScheduleReaderAsync(CancellationToken token)
     {
         VerboseLog("启动 读并发 调度器");
-        var tasks = Enumerable.Range(0, 6)
+        var total = VolumeContexts.Sum(pair => pair.Value.Entries.Count);
+        var tasks = Enumerable.Range(0, Math.Min(total, 6))
             .Select(_ => ReadLoopAsync(token))
             .ToList();
+        var publisher = EntryChannel.Writer;
+        foreach (var ctx in VolumeContexts.Values)
+        foreach (var fileEntry in ctx.Entries)
+            await publisher.WriteAsync(fileEntry, token);
+
+        publisher.Complete();
         await Task.WhenAll(tasks);
         RawBlockChannel.Writer.Complete();
-        VerboseLog("读并发 成功完成");
+        VerboseLog("退出 读并发 调度器=");
     }
 
     /// <summary>
@@ -228,13 +229,7 @@ public static partial class PackHelper
         {
             await WriterScheduleSlim.WaitAsync(token);
             var ctx = VolumeContexts[index];
-            var task = WriteLoopAsync(ctx, token).ContinueWith(t =>
-            {
-                if (t.IsFaulted)
-                    GlobalCancellationTokenSource.Cancel();
-
-                WriterScheduleSlim.Release();
-            }, token);
+            var task = WriteLoopAsync(ctx, token);
             tasks.Add(task);
             index++;
         }

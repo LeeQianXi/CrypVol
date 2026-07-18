@@ -29,6 +29,7 @@ public static partial class PackHelper
 
             var hasExtendedPath = relativePath.Length > 231;
             var headerSize = hasExtendedPath ? headerBaseSize + headerExtendedSize : headerBaseSize;
+            var flag = hasExtendedPath ? FileEntryHeaderFlagsEnum.HasExtendedHeader : default;
 
             var totalSize = fileInfo.Length;
             var remaining = totalSize;
@@ -50,7 +51,7 @@ public static partial class PackHelper
                 {
                     RelativePath = relativePath,
                     TotalFileSize = 0,
-                    HasExtendedPath = hasExtendedPath
+                    Flags = flag | FileEntryHeaderFlagsEnum.Full
                 });
                 usedInVolume += needed;
                 continue;
@@ -83,7 +84,7 @@ public static partial class PackHelper
 
                 var isFirstFragment = fragmentIdx == 0;
                 var isLastFragment = rawToWrite == remaining;
-                var flags = isFirstFragment switch
+                flag |= isFirstFragment switch
                 {
                     true when isLastFragment => FileEntryHeaderFlagsEnum.Full,
                     true => FileEntryHeaderFlagsEnum.CrossHead,
@@ -99,8 +100,7 @@ public static partial class PackHelper
                     SourceOffset = srcOffset,
                     LogicalDataLength = rawToWrite,
                     PhysicalDataLength = physicalDataLen,
-                    Flags = flags,
-                    HasExtendedPath = hasExtendedPath
+                    Flags = flag
                 });
                 // 更新状态
                 remaining -= physicalDataLen;
@@ -149,7 +149,7 @@ public static partial class PackHelper
     private static partial async Task ReadLoopAsync(CancellationToken token)
     {
         VerboseLog("启动 读循环 流程");
-        var provider = TaskChannel.Reader;
+        var provider = EntryChannel.Reader;
         var consumer = RawBlockChannel.Writer;
         var root = GlobalConfig.SourceDir;
         await foreach (var entry in provider.ReadAllAsync(token))
@@ -182,7 +182,7 @@ public static partial class PackHelper
             }
         }
 
-        VerboseLog("推出 读循环 流程");
+        VerboseLog("退出 读循环 流程");
     }
 
     private static partial async Task ComputeLoopAsync(CancellationToken token)
@@ -205,7 +205,7 @@ public static partial class PackHelper
             block.Dispose();
         }
 
-        VerboseLog("推出 压缩/加密循环 流程");
+        VerboseLog("退出 压缩/加密循环 流程");
 
         Stream ComplineStream()
         {
@@ -222,7 +222,12 @@ public static partial class PackHelper
             var volId = item.Metadata.FragmentIndex;
             var order = item.Metadata.Sequence;
             var context = VolumeContexts[volId];
-            if (order < context.NextExpectedSeq) continue;
+            if (order < context.NextExpectedSeq)
+            {
+                item.Dispose();
+                continue;
+            }
+
             if (order > context.NextExpectedSeq)
             {
                 context.Buffer.Add(order, item);
@@ -232,10 +237,11 @@ public static partial class PackHelper
             var writer = context.OutputChannel.Writer;
             context.NextExpectedSeq++;
             await writer.WriteAsync(item, token);
+
             while (context.Buffer.TryGetValue(context.NextExpectedSeq, out var next))
             {
-                context.NextExpectedSeq++;
                 context.Buffer.Remove(context.NextExpectedSeq);
+                context.NextExpectedSeq++;
                 await writer.WriteAsync(next, token);
             }
 
@@ -246,7 +252,7 @@ public static partial class PackHelper
         foreach (var context in VolumeContexts.Values)
             context.OutputChannel.Writer.TryComplete();
 
-        VerboseLog("推出 重路由 流程");
+        VerboseLog("退出 重路由 流程");
     }
 
     private static partial async Task WriteLoopAsync(VolumeContext ctx, CancellationToken token)
@@ -261,12 +267,14 @@ public static partial class PackHelper
         writer.SetLength(ctx.Entries.Select(i => i.PhysicalDataLength).Sum());
         await foreach (var item in reader.ReadAllAsync(token))
         {
-            VerboseLog("WriteLoopAsync:<{0},{1}>:{2}", item.Metadata.FragmentIndex, item.Metadata.Sequence,
-                item.Metadata.Length);
+            VerboseLog("WriteLoopAsync:<{0},{1}>:{2}kB", item.Metadata.FragmentIndex, item.Metadata.Sequence,
+                item.Metadata.Length / 1024);
             await writer.WriteAsync(item.Data, token);
+            item.Dispose();
+            await writer.FlushAsync(token);
         }
 
-        await writer.FlushAsync(token);
+        WriterScheduleSlim.Release();
         GeneralLog("卷{0} 写入完成", ctx.VolumeIndex);
         VerboseLog("退出 写循环 流程");
     }
