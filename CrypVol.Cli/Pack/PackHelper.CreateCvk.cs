@@ -11,6 +11,7 @@ public static partial class PackHelper
     private static partial async Task CreateCvkAsync(CancellationToken token)
     {
         if (GlobalConfig.Mode is EncryptionMode.None) return;
+        VerboseLog("准备创建 .cvk 文件");
         byte[] secret = [.. GlobalConfig.Cek, .. GlobalConfig.Salt];
         using var ms = new MemoryStream();
         await using var writer = new BinaryWriter(ms);
@@ -19,12 +20,14 @@ public static partial class PackHelper
         writer.Write((byte)1); // Version
         writer.Write((byte)GlobalConfig.Mode);
         var payloadLenPos = ms.Position;
+        VerboseLog("写入 .cvk 数据头");
         writer.Write(0); // 占位
         // 2. 根据模式写入负载
         switch (GlobalConfig.Mode)
         {
             case EncryptionMode.PlainKey:
                 writer.Write(secret);
+                VerboseLog("写入 .cvk 数据体");
                 break;
             case EncryptionMode.Password:
                 WritePasswordPayload(writer, secret, GlobalConfig.Password);
@@ -42,6 +45,7 @@ public static partial class PackHelper
         // 4. 编码为 Base64 并保存
         var base64 = Convert.ToBase64String(ms.ToArray());
         var filePath = Path.Combine(GlobalConfig.KeyOutputDir, $"{GlobalConfig.OutputPrefix}.cvk");
+        VerboseLog("编码 .cvk 数据");
         await File.WriteAllTextAsync(filePath, base64, token);
     }
 
@@ -59,6 +63,7 @@ public static partial class PackHelper
         argon2.MemorySize = (int)memory;
         argon2.Iterations = (int)time;
         var kek = argon2.GetBytes(32);
+        VerboseLog("派生 KEK 密钥");
         // AES-GCM 加密 Secret
         var nonce = RandomNumberGenerator.GetBytes(12);
         var ciphertext = new byte[secret.Length];
@@ -74,11 +79,13 @@ public static partial class PackHelper
         writer.Write(nonce);
         writer.Write(tag);
         writer.Write(ciphertext);
+        VerboseLog("写入 .cvk 数据体");
     }
 
     private static void WritePublicKeyPayload(BinaryWriter writer, byte[] secret, IEnumerable<FileInfo> recipientPemFiles)
     {
         var recipients = new List<(string KeyId, RSA Rsa)>();
+        VerboseLog("加载公钥列表");
         foreach (var pemFile in recipientPemFiles)
         {
             var pemContent = File.ReadAllText(pemFile.FullName);
@@ -108,6 +115,7 @@ public static partial class PackHelper
         var tag = new byte[16];
         using var aes = new AesGcm(dek, 16);
         aes.Encrypt(nonce, secret, ciphertext, tag);
+        VerboseLog("构建DEK");
         // 3. 为每个接收者加密 DEK
         writer.Write(BinaryPrimitives.ReverseEndianness((ushort)recipients.Count));
         foreach (var kv in recipients)
@@ -126,5 +134,6 @@ public static partial class PackHelper
         writer.Write(tag);
         writer.Write(ciphertext);
         recipients.ForEach(p => p.Rsa.Dispose());
+        VerboseLog("写入 .cvk 数据体");
     }
 }

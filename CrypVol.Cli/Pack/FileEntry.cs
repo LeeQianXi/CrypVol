@@ -25,7 +25,7 @@ public sealed class FileEntry
     public FileEntryHeaderFlagsEnum Flags { get; init; }
     public bool HasExtendedPath { get; init; }
 
-    private static ulong Fnv1AHash64(string input)
+    public static ulong Fnv1AHash64(string input)
     {
         const ulong fnvOffsetBasis = 14695981039346656037ul;
         const ulong fnvPrime = 1099511628211ul;

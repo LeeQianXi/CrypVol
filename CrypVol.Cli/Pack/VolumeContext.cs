@@ -17,15 +17,14 @@ public sealed class VolumeContext
     /// <summary>
     ///     写入线程当前渴望的序号
     /// </summary>
-    public long NextExpectedSeq { get; set; } = 0;
+    public long NextExpectedSeq { get; set; }
 
     public SortedDictionary<long, EncryptedBlock> Buffer { get; } = new();
 
     /// <summary>
     ///     专属数据通道
     /// </summary>
-    public Channel<EncryptedBlock> OutputChannel { get; init; } = Channel.CreateBounded<EncryptedBlock>(32);
+    public Channel<EncryptedBlock> OutputChannel { get; } = Channel.CreateBounded<EncryptedBlock>(32);
 
-    public int TotalBlocks { get; set; }
-    public int ReceivedCount { get; set; } = 0;
+    public long TotalBlocks { get; set; }
 }

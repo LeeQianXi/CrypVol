@@ -16,7 +16,7 @@ public static partial class PackHelper
     /// <summary>
     ///     读取任务分配
     /// </summary>
-    private static Channel<TaskItem> TaskChannel { get; } = Channel.CreateUnbounded<TaskItem>();
+    private static Channel<FileEntry> TaskChannel { get; } = Channel.CreateUnbounded<FileEntry>();
 
     /// <summary>
     ///     原始数据队列
@@ -134,6 +134,7 @@ public static partial class PackHelper
         // 启动程序
         await CreateCvkAsync(GlobalCancellationTokenSource.Token);
         await PreTreatmentAsync(GlobalCancellationTokenSource.Token);
+        await ScheduleAsync(GlobalCancellationTokenSource.Token);
         return 0;
     }
 
@@ -146,4 +147,78 @@ public static partial class PackHelper
     ///     预处理文件列表
     /// </summary>
     private static partial Task PreTreatmentAsync(CancellationToken token);
+
+    private static partial Task ReadLoopAsync(CancellationToken token);
+    private static partial Task ComputeLoopAsync(CancellationToken token);
+    private static partial Task RerouteLoopAsync(CancellationToken token);
+    private static partial Task WriteLoopAsync(VolumeContext ctx, CancellationToken token);
+
+    private static async Task ScheduleAsync(CancellationToken token)
+    {
+        VerboseLog("启动调度器");
+        var reroute = RerouteLoopAsync(token);
+        var writer = ScheduleWriterAsync(token);
+        var compute = ScheduleComputeAsync(token);
+        var reader = ScheduleReaderAsync(token);
+        var publisher = TaskChannel.Writer;
+        foreach (var ctx in VolumeContexts.Values)
+        {
+            foreach (var fileEntry in ctx.Entries)
+            {
+                await publisher.WriteAsync(fileEntry, token);
+            }
+        }
+        publisher.Complete();
+        await Task.WhenAll(reroute, reader, compute, writer);
+    }
+
+    private static async Task ScheduleReaderAsync(CancellationToken token)
+    {
+        VerboseLog("启动 读并发 调度器");
+        var tasks = Enumerable.Range(0, 6)
+            .Select(_ => ReadLoopAsync(token))
+            .ToList();
+        await Task.WhenAll(tasks);
+        RawBlockChannel.Writer.Complete();
+        VerboseLog("读并发 成功完成");
+    }
+
+    private static async Task ScheduleComputeAsync(CancellationToken token)
+    {
+        VerboseLog("启动 压缩/加密并发 调度器");
+        var tasks = Enumerable.Range(0, GlobalConfig.ComputeThreads)
+            .Select(_ => ComputeLoopAsync(token))
+            .ToList();
+        await Task.WhenAll(tasks);
+        EncryptedBlockChannel.Writer.Complete();
+        VerboseLog("压缩/加密并发 成功完成");
+    }
+
+    private static readonly SemaphoreSlim WriterScheduleSlim = new(2, 2);
+
+    private static async Task ScheduleWriterAsync(CancellationToken token)
+    {
+        VerboseLog("启动 写并发 调度器");
+        var index = 0;
+        var tasks = new List<Task>();
+        while (index < VolumeContexts.Count)
+        {
+            await WriterScheduleSlim.WaitAsync(token);
+            var ctx = VolumeContexts[index];
+            var task = WriteLoopAsync(ctx, token).ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    GlobalCancellationTokenSource.Cancel();
+                }
+
+                WriterScheduleSlim.Release();
+            }, token);
+            tasks.Add(task);
+            index++;
+        }
+
+        await Task.WhenAll(tasks);
+        VerboseLog("写并发 成功完成");
+    }
 }
