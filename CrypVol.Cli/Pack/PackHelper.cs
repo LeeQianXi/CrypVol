@@ -1,7 +1,7 @@
-using System.Collections.Concurrent;
+using System.Buffers;
 using System.CommandLine;
 using System.Security.Cryptography;
-using System.Threading.Channels;
+using CrypVol.Cli.Pipeline;
 using CrypVol.Lib;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
@@ -10,231 +10,328 @@ namespace CrypVol.Cli.Pack;
 
 public static partial class PackHelper
 {
-    private static readonly SemaphoreSlim WriterScheduleSlim = new(2, 2);
-    private static CancellationTokenSource GlobalCancellationTokenSource { get; set; } = null!;
-    private static PackConfig GlobalConfig { get; set; } = null!;
-
-    /// <summary>
-    ///     读取任务分配
-    /// </summary>
-    private static Channel<FileEntry> EntryChannel { get; } = Channel.CreateUnbounded<FileEntry>();
-
-    /// <summary>
-    ///     原始数据队列
-    /// </summary>
-    private static Channel<RawBlock> RawBlockChannel { get; } = Channel.CreateBounded<RawBlock>(200);
-
-    /// <summary>
-    ///     处理后数据队列
-    /// </summary>
-    private static Channel<EncryptedBlock> EncryptedBlockChannel { get; } = Channel.CreateBounded<EncryptedBlock>(200);
-
-    /// <summary>
-    ///     卷上下文映射
-    /// </summary>
-    private static ConcurrentDictionary<int, VolumeContext> VolumeContexts { get; } = new();
+    // ═══════════════════════════════════════════════════════
+    //  Invoker — 参数解析 + 管线编排
+    // ═══════════════════════════════════════════════════════
 
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
-        GlobalCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token);
-        // 初始化参数
-        Verbose = args.GetValue(CommandDefinition.Verbose);
+        var verbose = args.GetValue(CommandDefinition.Verbose);
+
+        // 1. 解析源路径
         var inputPath = args.GetRequiredValue(CommandDefinition.Pack.InputPath);
         if (!inputPath.Exists)
-            switch (inputPath)
-            {
-                case FileInfo:
-                    GeneralLog("文件\"{0}\"不存在", inputPath.Name);
-                    return 0;
-                case DirectoryInfo:
-                    GeneralLog("目录\"{0}\"不存在", inputPath.Name);
-                    return 0;
-                default:
-                    throw new FileNotFoundException();
-            }
+        {
+            Console.WriteLine(inputPath is FileInfo
+                ? $"文件 \"{inputPath.Name}\" 不存在"
+                : $"目录 \"{inputPath.Name}\" 不存在");
+            return 1;
+        }
 
+        // 2. 收集文件列表
         var config = new PackConfig();
 
-        if (inputPath is DirectoryInfo directoryInfo)
+        if (inputPath is DirectoryInfo di)
         {
             var filter = new Matcher();
             var include = args.GetValue(CommandDefinition.Pack.Include);
             filter.AddInclude(string.IsNullOrWhiteSpace(include) ? "**/*" : include);
             var exclude = args.GetValue(CommandDefinition.Pack.Exclude);
             if (!string.IsNullOrWhiteSpace(exclude)) filter.AddExclude(exclude);
-            var result = filter.Execute(new DirectoryInfoWrapper(directoryInfo));
+            var result = filter.Execute(new DirectoryInfoWrapper(di));
             if (!result.HasMatches)
             {
-                GeneralLog("目录\"{0}\"没有可处理的文件", inputPath.Name);
-                return 0;
+                Console.WriteLine($"目录 \"{di.Name}\" 没有可处理的文件");
+                return 1;
             }
 
-            config.SourceDir = directoryInfo.FullName;
-            config.Files = result.Files.Select(i => new FileInfo(Path.Combine(directoryInfo.FullName, i.Path)));
+            config.SourceDir = di.FullName;
+            config.Files = result.Files.Select(f => new FileInfo(Path.Combine(di.FullName, f.Path)));
         }
         else
         {
-            config.SourceDir = (inputPath as FileInfo)!.Directory!.FullName;
-            config.Files = (inputPath as FileInfo)!.Yield();
+            var fi = (FileInfo)inputPath;
+            config.SourceDir = fi.Directory!.FullName;
+            config.Files = new[] { fi };
         }
 
+        // 3. 输出目录
         var outputPath = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
-        if (!outputPath.Exists)
-        {
-            outputPath.Create();
-            VerboseLog("成功创建输出目录\"{0}\"", outputPath.Name);
-        }
-
+        if (!outputPath.Exists) outputPath.Create();
         config.OutputDir = outputPath.FullName;
 
         var prefix = args.GetValue(CommandDefinition.Pack.OutputPrefix);
         if (string.IsNullOrWhiteSpace(prefix))
         {
-            GeneralLog("无效的卷前缀:{0}", prefix);
-            return 0;
+            Console.WriteLine("无效的卷前缀");
+            return 1;
         }
 
         config.OutputPrefix = prefix;
 
-        var volumeSize = args.GetValue(CommandDefinition.Pack.VolumeSize);
-        config.VolumeDataCapacity = 1L * 1024 * 1024 * volumeSize;
-        var encryptionMode = args.GetValue(CommandDefinition.Pack.Mode);
-        config.Mode = encryptionMode;
-        config.Cek = RandomNumberGenerator.GetBytes(32);
-        config.Salt = RandomNumberGenerator.GetBytes(32);
-        switch (encryptionMode)
-        {
-            case EncryptionMode.Password:
-                var password = args.GetValue(CommandDefinition.Pack.Password);
-                if (string.IsNullOrWhiteSpace(password))
-                {
-                    GeneralLog("无效的密码输入");
-                    return 0;
-                }
+        // 4. 卷大小
+        var volumeSizeMb = args.GetValue(CommandDefinition.Pack.VolumeSize);
+        config.VolumeDataCapacity = 1L * 1024 * 1024 * volumeSizeMb;
 
-                config.Password = password;
-                break;
-            case EncryptionMode.Asymmetric:
-                var keyFile = args.GetValue(CommandDefinition.Pack.PublicKey);
-                config.PublicKey = keyFile ?? [];
-                break;
-            case EncryptionMode.None:
-            case EncryptionMode.PlainKey:
-            default:
-                break;
+        // 5. 密钥来源：二选一
+        var keyFile = args.GetValue(CommandDefinition.Pack.KeyFile);
+        if (keyFile is not null)
+        {
+            // 模式 A: 复用已有 .cvk 的 CEK
+            var (cek, salt, _) = KeyEnvelope.LoadEnvelope(keyFile.FullName);
+            config.Cek = cek;
+            config.Salt = salt;
+            config.Mode = EncryptionMode.PlainKey; // CEK 已就绪，无需额外保护
+            // 复制 .cvk 到输出目录
+            config.KeyOutputDir = args.GetValue(CommandDefinition.Pack.KeyOutputPath)!.FullName;
+            var destCvk = Path.Combine(config.KeyOutputDir, $"{prefix}.cvk");
+            File.Copy(keyFile.FullName, destCvk, overwrite: true);
+        }
+        else
+        {
+            // 模式 B: 生成新 CEK + .cvk
+            config.Cek = RandomNumberGenerator.GetBytes(32);
+            config.Salt = RandomNumberGenerator.GetBytes(32);
+            config.Mode = args.GetValue(CommandDefinition.Pack.Mode);
+
+            switch (config.Mode)
+            {
+                case EncryptionMode.Password:
+                    var pwd = args.GetValue(CommandDefinition.Pack.Password);
+                    if (string.IsNullOrWhiteSpace(pwd)) { Console.WriteLine("密码模式需要提供 --password"); return 1; }
+                    config.Password = pwd;
+                    break;
+                case EncryptionMode.Asymmetric:
+                    config.PublicKey = args.GetValue(CommandDefinition.Pack.PublicKey) ?? [];
+                    break;
+            }
+
+            config.KeyOutputDir = args.GetValue(CommandDefinition.Pack.KeyOutputPath)!.FullName;
+            await CreateCvkAsync(config, token);
         }
 
-        var keyOutputPath = args.GetValue(CommandDefinition.Pack.KeyOutputPath);
-        config.KeyOutputDir = keyOutputPath!.FullName;
-        var processThreads = args.GetValue(CommandDefinition.Pack.Threads);
-        processThreads = Math.Max(Math.Min(processThreads, Environment.ProcessorCount), 1);
-        config.ComputeThreads = processThreads;
-        var compress = args.GetValue(CommandDefinition.Pack.Compress);
-        config.EnableCompression = compress;
-        GlobalConfig = config;
-        // 启动程序
-        await CreateCvkAsync(GlobalCancellationTokenSource.Token);
-        await PreTreatmentAsync(GlobalCancellationTokenSource.Token);
-        await ScheduleAsync(GlobalCancellationTokenSource.Token);
+        // 6. 并行度和压缩
+        var threads = args.GetValue(CommandDefinition.Pack.Threads);
+        config.ComputeThreads = Math.Clamp(threads, 1, Environment.ProcessorCount);
+        config.EnableCompression = args.GetValue(CommandDefinition.Pack.Compress);
+        config.CompressionLevel = args.GetValue(CommandDefinition.Pack.CompressionLevel);
+
+        // 7. 构建 WorkItem 列表 + 分配卷
+        var (items, volumeInfos) = AllocateVolumes(config);
+
+        if (items.Count == 0)
+        {
+            Console.WriteLine("没有可处理的文件");
+            return 0;
+        }
+
+        Console.WriteLine($"预计生成 {volumeInfos.Count} 个数据卷");
+
+        // 8. 创建流水线
+        var pipelineConfig = new PipelineConfig
+        {
+            ReaderConcurrency = Math.Min(items.Count, 6),
+            TransformConcurrency = config.ComputeThreads,
+            WriterConcurrency = 2,
+            BlockSize = 4096,
+            LogInfo = verbose ? Console.WriteLine : null,
+            LogVerbose = verbose ? Console.WriteLine : null
+        };
+
+        var transform = new PackTransform(config.Cek, config.EnableCompression, config.CompressionLevel);
+
+        var pipeline = new Pipeline.Pipeline(pipelineConfig, transform)
+        {
+            ReadBlockAsync = (item, ct) => ReadFromFileAsync(config.SourceDir, item, ct),
+            WriteVolumeAsync = (ctx, ct) => WriteToCvpAsync(ctx, ct)
+        };
+
+        // 注册卷
+        foreach (var vi in volumeInfos)
+        {
+            var path = Path.Combine(config.OutputDir, $"{config.OutputPrefix}.{vi.Index}.cvp");
+            pipeline.AddVolume(vi.Index, path, vi.Size);
+        }
+
+        // 启动
+        await pipeline.RunAsync(items, token);
+        Console.WriteLine($"打包完成：{volumeInfos.Count} 个卷 → {config.OutputDir}");
         return 0;
     }
 
-    /// <summary>
-    ///     Cvk文件生成
-    /// </summary>
-    private static partial Task CreateCvkAsync(CancellationToken token);
+    // ═══════════════════════════════════════════════════════
+    //  文件 → WorkItem 分配
+    // ═══════════════════════════════════════════════════════
 
-    /// <summary>
-    ///     预处理文件列表
-    /// </summary>
-    private static partial Task PreTreatmentAsync(CancellationToken token);
-
-    /// <summary>
-    ///     读循环执行者
-    /// </summary>
-    private static partial Task ReadLoopAsync(CancellationToken token);
-
-    /// <summary>
-    ///     压缩/加密循环执行者
-    /// </summary>
-    private static partial Task ComputeLoopAsync(CancellationToken token);
-
-    /// <summary>
-    ///     重路由循环执行者
-    /// </summary>
-    private static partial Task RerouteLoopAsync(CancellationToken token);
-
-    /// <summary>
-    ///     写循环执行者
-    /// </summary>
-    private static partial Task WriteLoopAsync(VolumeContext ctx, CancellationToken token);
-
-    /// <summary>
-    ///     统一调度器
-    /// </summary>
-    private static async Task ScheduleAsync(CancellationToken token)
+    private static (List<WorkItem> items, List<(int Index, long Size)> volumes) AllocateVolumes(PackConfig config)
     {
-        VerboseLog("启动调度器");
-        var reroute = RerouteLoopAsync(token);
-        var writer = ScheduleWriterAsync(token);
-        var compute = ScheduleComputeAsync(token);
-        var reader = ScheduleReaderAsync(token);
-        await Task.WhenAll(reroute, reader, compute, writer);
-    }
+        const int headerSize = 256;
+        const int maxPathLen = 231 + 256;
+        const long alignment = 4096;
 
-    /// <summary>
-    ///     读执行者调度器
-    /// </summary>
-    private static async Task ScheduleReaderAsync(CancellationToken token)
-    {
-        VerboseLog("启动 读并发 调度器");
-        var total = VolumeContexts.Sum(pair => pair.Value.Entries.Count);
-        var tasks = Enumerable.Range(0, Math.Min(total, 6))
-            .Select(_ => ReadLoopAsync(token))
-            .ToList();
-        var publisher = EntryChannel.Writer;
-        foreach (var ctx in VolumeContexts.Values)
-        foreach (var fileEntry in ctx.Entries)
-            await publisher.WriteAsync(fileEntry, token);
+        var items = new List<WorkItem>();
+        var volumeSizes = new Dictionary<int, long>();
+        var perVolSeq = new Dictionary<int, long>(); // 每个卷独立的递增序号
+        var pathOrigin = config.SourceDir;
+        var capacity = config.VolumeDataCapacity;
 
-        publisher.Complete();
-        await Task.WhenAll(tasks);
-        RawBlockChannel.Writer.Complete();
-        VerboseLog("退出 读并发 调度器=");
-    }
+        int currentVol = 0;
+        long used = 0;
 
-    /// <summary>
-    ///     压缩/加密循环调度器
-    /// </summary>
-    private static async Task ScheduleComputeAsync(CancellationToken token)
-    {
-        VerboseLog("启动 压缩/加密并发 调度器");
-        var tasks = Enumerable.Range(0, GlobalConfig.ComputeThreads)
-            .Select(_ => ComputeLoopAsync(token))
-            .ToList();
-        await Task.WhenAll(tasks);
-        EncryptedBlockChannel.Writer.Complete();
-        VerboseLog("压缩/加密并发 成功完成");
-    }
-
-    /// <summary>
-    ///     写循环调度器
-    /// </summary>
-    private static async Task ScheduleWriterAsync(CancellationToken token)
-    {
-        VerboseLog("启动 写并发 调度器");
-        var index = 0;
-        var tasks = new List<Task>();
-        while (index < VolumeContexts.Count)
+        long NextSeq(int vol)
         {
-            await WriterScheduleSlim.WaitAsync(token);
-            var ctx = VolumeContexts[index];
-            var task = WriteLoopAsync(ctx, token);
-            tasks.Add(task);
-            index++;
+            perVolSeq.TryGetValue(vol, out var s);
+            perVolSeq[vol] = s + 1;
+            return s;
         }
 
-        await Task.WhenAll(tasks);
-        VerboseLog("写并发 成功完成");
+        foreach (var file in config.Files)
+        {
+            var relPath = Path.GetRelativePath(pathOrigin, file.FullName);
+            if (relPath.Length > maxPathLen)
+            {
+                Console.WriteLine($"路径过长，跳过：{relPath}");
+                continue;
+            }
+
+            var totalSize = file.Length;
+            if (totalSize == 0)
+            {
+                // 空文件只占一个 header
+                if (used + headerSize > capacity) { currentVol++; used = 0; }
+                items.Add(new WorkItem
+                {
+                    RelativePath = relPath,
+                    SourceFullPath = file.FullName,
+                    VolumeIndex = currentVol,
+                    Sequence = NextSeq(currentVol),
+                    SourceOffset = 0,
+                    Length = 0,
+                    TotalFileSize = 0,
+                    Flags = 0,
+                    IsFirstFragment = true
+                });
+                used += headerSize;
+                volumeSizes[currentVol] = used;
+                continue;
+            }
+
+            long remaining = totalSize;
+            long srcOffset = 0;
+            var fragmentIdx = 0;
+
+            while (remaining > 0)
+            {
+                if (capacity - used < headerSize) { currentVol++; used = 0; }
+
+                var dataSpace = capacity - used - headerSize;
+                var maxBlocks = dataSpace / alignment;
+                if (maxBlocks == 0) { currentVol++; used = 0; continue; }
+
+                var rawToWrite = Math.Min(remaining, maxBlocks * alignment);
+                var physicalLen = (rawToWrite + alignment - 1) / alignment * alignment;
+
+                byte flags = fragmentIdx switch
+                {
+                    0 when rawToWrite == remaining => 0, // Full
+                    0 => 1, // CrossHead
+                    _ when rawToWrite == remaining => 3, // CrossTail
+                    _ => 2 // CrossMid
+                };
+                if (relPath.Length > 231) flags |= 4; // HasExtendedHeader
+
+                items.Add(new WorkItem
+                {
+                    RelativePath = relPath,
+                    SourceFullPath = file.FullName,
+                    VolumeIndex = currentVol,
+                    Sequence = NextSeq(currentVol), // 卷内递增序号
+                    SourceOffset = srcOffset,
+                    Length = (int)rawToWrite,
+                    TotalFileSize = totalSize,
+                    Flags = flags,
+                    IsFirstFragment = fragmentIdx == 0
+                });
+
+                remaining -= physicalLen;
+                srcOffset += physicalLen;
+                fragmentIdx++;
+                used += headerSize + physicalLen;
+                volumeSizes[currentVol] = used;
+
+                if (used >= capacity) { currentVol++; used = 0; }
+            }
+        }
+
+        var volumes = volumeSizes
+            .OrderBy(kv => kv.Key)
+            .Select(kv => (kv.Key, kv.Value))
+            .ToList();
+
+        return (items, volumes);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Stage 1: 从文件系统读取
+    // ═══════════════════════════════════════════════════════
+
+    private static async Task<RawBlock?> ReadFromFileAsync(string sourceDir, WorkItem item, CancellationToken token)
+    {
+        if (item.Length == 0)
+        {
+            // 空文件：返回空数据块（仅用于触发头部写入）
+            var empty = ArrayPool<byte>.Shared.Rent(0);
+            return new RawBlock { Work = item, Data = empty, DataLength = 0 };
+        }
+
+        var array = ArrayPool<byte>.Shared.Rent(item.Length);
+        try
+        {
+            await using var fs = File.OpenRead(item.SourceFullPath);
+            fs.Position = item.SourceOffset;
+            var read = await fs.ReadAsync(array.AsMemory(0, item.Length), token);
+            return new RawBlock { Work = item, Data = array, DataLength = read };
+        }
+        catch
+        {
+            ArrayPool<byte>.Shared.Return(array);
+            throw;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Stage 4: 写入 .cvp
+    // ═══════════════════════════════════════════════════════
+
+    private static async Task WriteToCvpAsync(VolumeContext ctx, CancellationToken token)
+    {
+        await using var fs = new FileStream(ctx.OutputPath, FileMode.Create, FileAccess.Write,
+            FileShare.None, 4096 * 16, FileOptions.SequentialScan);
+
+        // 不预分配大小（加密后块大小不可预知），依赖顺序追加写入
+        long pos = 0;
+
+        await foreach (var block in ctx.OutputChannel.Reader.ReadAllAsync(token))
+        {
+            // 每个文件的第一个段：写入 FileEntryHeader
+            if (block.Work.IsFirstFragment)
+            {
+                var header = new FileEntryHeader
+                {
+                    FileId = FileEntry.Fnv1AHash64(block.Work.RelativePath),
+                    Flags = block.Work.Flags,
+                    FragmentIndex = (uint)block.Work.Sequence,
+                    SizeOrTotal = block.Work.TotalFileSize
+                };
+                fs.Position = pos;
+                await fs.WriteAsync(header.ToBytes(), token);
+                pos += FileEntryHeader.HeaderSize;
+            }
+
+            fs.Position = pos;
+            await fs.WriteAsync(block.Data.AsMemory(0, block.OutputLength), token);
+            pos += block.OutputLength;
+            block.Dispose();
+        }
     }
 }

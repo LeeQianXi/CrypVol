@@ -13,6 +13,8 @@ public sealed class FileEntry
     /// 该文件的跨卷序号
     public int FragmentIndex { get; init; }
 
+    public long SequenceStart { get; init; }
+
     /// 在源文件中的读取偏移
     public long SourceOffset { get; init; }
 

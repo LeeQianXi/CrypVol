@@ -34,41 +34,6 @@ public static partial class Extension
         }
     }
 
-    private static class HashSetPool<T>
-    {
-        private static readonly object _lock = new();
-        private static readonly Stack<HashSet<T>> _avaliable = new();
-        private static readonly HashSet<HashSet<T>> _inUse = [];
-
-        public static HashSet<T> Acquire()
-        {
-            lock (_lock)
-            {
-                if (_avaliable.Count == 0) _avaliable.Push([]);
-
-                var hashSet = _avaliable.Pop();
-
-                _inUse.Add(hashSet);
-
-                return hashSet;
-            }
-        }
-
-        public static void Release(HashSet<T> hashSet)
-        {
-            lock (_lock)
-            {
-                if (!_inUse.Remove(hashSet))
-                    throw new ArgumentException("The hash set to _avaliable is not in use by the pool.",
-                        nameof(hashSet));
-
-                hashSet.Clear();
-
-                _avaliable.Push(hashSet);
-            }
-        }
-    }
-
     extension<T>(IEnumerable<T> enumerable)
     {
         [Pure]
@@ -84,7 +49,7 @@ public static partial class Extension
 
         public HashSet<T> ToHashSet()
         {
-            return [..enumerable];
+            return [.. enumerable];
         }
         // NETUP: Replace with IReadOnlyCollection, IReadOnlyList
 
@@ -185,7 +150,7 @@ public static partial class Extension
             HashSet<T>? hashSet = null;
             foreach (var group in groups)
                 if (hashSet == null)
-                    hashSet = [..group];
+                    hashSet = [.. group];
                 else
                     hashSet.IntersectWith(group);
             return hashSet?.AsEnumerable() ?? [];
@@ -214,6 +179,41 @@ public static partial class Extension
 
             return source.OrderByDependencies(
                 depender => dependencies.TryGetValue(depender, out var expression) ? expression : [], throwOnCycle);
+        }
+    }
+
+    private static class HashSetPool<T>
+    {
+        private static readonly object _lock = new();
+        private static readonly Stack<HashSet<T>> _avaliable = new();
+        private static readonly HashSet<HashSet<T>> _inUse = [];
+
+        public static HashSet<T> Acquire()
+        {
+            lock (_lock)
+            {
+                if (_avaliable.Count == 0) _avaliable.Push([]);
+
+                var hashSet = _avaliable.Pop();
+
+                _inUse.Add(hashSet);
+
+                return hashSet;
+            }
+        }
+
+        public static void Release(HashSet<T> hashSet)
+        {
+            lock (_lock)
+            {
+                if (!_inUse.Remove(hashSet))
+                    throw new ArgumentException("The hash set to _avaliable is not in use by the pool.",
+                        nameof(hashSet));
+
+                hashSet.Clear();
+
+                _avaliable.Push(hashSet);
+            }
         }
     }
 }

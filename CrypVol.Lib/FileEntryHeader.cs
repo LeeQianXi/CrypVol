@@ -10,7 +10,7 @@ public unsafe struct FileEntryHeader()
     [FieldOffset(4)] public ulong FileId; // 4-11
     [FieldOffset(12)] public byte Flags; // 12
     [FieldOffset(13)] public uint FragmentIndex; // 13-16
-    [FieldOffset(17)] public ulong SizeOrTotal; // 17-24
+    [FieldOffset(17)] public long SizeOrTotal; // 17-24
 
     // ========== 路径数据段 (231 字节) ==========
     [FieldOffset(25)] private fixed byte FilePath[231];
@@ -18,6 +18,17 @@ public unsafe struct FileEntryHeader()
     // ------------------------- 常量 -------------------------
     public const uint MagicHeader = 0x48505643;
     public const int HeaderSize = 256;
+
+    public byte[] ToBytes()
+    {
+        var buffer = new byte[256];
+        fixed (FileEntryHeader* ptr = &this)
+        {
+            Marshal.Copy((IntPtr)ptr, buffer, 0, 256);
+        }
+
+        return buffer;
+    }
 }
 
 [Flags]
