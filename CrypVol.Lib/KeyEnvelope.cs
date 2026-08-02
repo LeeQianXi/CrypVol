@@ -133,6 +133,17 @@ public class KeyEnvelope
         writer.Write(ciphertext);
     }
 
+    /// <summary>读取密钥文件头，返回保护模式（不尝试验证凭据）</summary>
+    public static EnvelopeMode ReadMode(string filePath)
+    {
+        var data = Base64UrlDecode(File.ReadAllText(filePath));
+        if (data.Length < 6) throw new Exception("无效的密钥文件");
+        if (data[0] != 'K' || data[1] != 'E' || data[2] != 'Y' || data[3] != '0')
+            throw new Exception("无效的密钥文件头");
+        if (data[4] != 1) throw new Exception("不支持的版本");
+        return (EnvelopeMode)data[5];
+    }
+
     /// <summary>
     ///     解析信封并还原 CEK + Salt
     /// </summary>

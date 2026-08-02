@@ -2,9 +2,10 @@ using System.CommandLine;
 using CrypVol.Cli.Browse;
 using CrypVol.Cli.Convert;
 using CrypVol.Cli.Extract;
+using CrypVol.Cli.GenKey;
 using CrypVol.Cli.Info;
-using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Pack;
+using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
 using CrypVol.Lib;
@@ -42,6 +43,7 @@ public static class CommandDefinition
             """)
         {
             Verbose,
+            GenKey.SubCommand(),
             Pack.SubCommand(),
             Extract.SubCommand(),
             Browse.SubCommand(),
@@ -1323,6 +1325,92 @@ public static class CommandDefinition
             };
 
             cmd.SetAction(ConvertHelper.Invoker);
+            return cmd;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  genkey — 生成密钥文件
+    // ═══════════════════════════════════════════════════════════════
+
+    public static class GenKey
+    {
+        public static readonly Option<FileInfo> Output;
+        public static readonly Option<EncryptionMode> Mode;
+        public static readonly Option<string> Password;
+        public static readonly Option<IEnumerable<FileInfo>> PublicKey;
+        public static readonly Option<string> Prefix;
+        public static readonly Option<string> Comment;
+
+        static GenKey()
+        {
+            Output = new Option<FileInfo>("--output", "-o")
+            {
+                Description = "输出的 .cvk 密钥文件路径（必需）",
+                HelpName = "file"
+            }.AcceptLegalFilePathsOnly();
+
+            Mode = new Option<EncryptionMode>("--mode", "-m")
+            {
+                Description =
+                    """
+                    密钥保护模式：
+                    PlainKey   —— CEK 明文存储（默认）
+                    Password   —— 密码包裹 CEK
+                    Asymmetric —— 公钥包裹 CEK
+                    """,
+                DefaultValueFactory = static _ => EncryptionMode.PlainKey
+            };
+
+            Password = new Option<string>("--password", "-p")
+            {
+                Description = "加密 CEK 的密码（Password 模式必需）",
+                HelpName = "passphrase"
+            };
+
+            PublicKey = new Option<IEnumerable<FileInfo>>("--public-key")
+            {
+                Description = "RSA/ECC 公钥 PEM 文件（Asymmetric 模式必需）",
+                HelpName = "pem-file"
+            }.AcceptExistingOnly();
+
+            Prefix = new Option<string>("--prefix")
+            {
+                Description = "输出文件前缀（默认：输出文件主名）",
+                HelpName = "name"
+            };
+
+            Comment = new Option<string>("--comment")
+            {
+                Description = "在密钥文件中嵌入备注",
+                HelpName = "text"
+            };
+        }
+
+        public static Command SubCommand()
+        {
+            var cmd = new Command("genkey",
+                """
+                生成独立的 .cvk 密钥文件（不打包数据）。
+
+                预先生成密钥，供后续 pack --key-file 使用。
+                适用于：密钥预分发、批量打包统一密钥等场景。
+
+                示例：
+                  crypvol genkey -o ./project.cvk -m PlainKey
+                  crypvol genkey -o ./secret.cvk -m Password -p "mypassword"
+                  crypvol genkey -o ./team.cvk -m Asymmetric --public-key alice.pem --public-key bob.pem
+                """)
+            {
+                Output,
+                Mode,
+                Password,
+                PublicKey,
+                Prefix,
+                Comment
+            };
+
+            cmd.SetAction(GenKeyHelper.Invoker);
             return cmd;
         }
     }

@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace CrypVol.Cli.Pipeline;
+namespace CrypVol.Lib.Pipeline;
 
 /// <summary>
 ///     单个输出卷的运行时上下文。

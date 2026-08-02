@@ -1,6 +1,6 @@
 using System.Buffers;
 
-namespace CrypVol.Cli.Pipeline;
+namespace CrypVol.Lib.Pipeline;
 
 /// <summary>
 ///     管线中的一条工作项，描述一个文件片段的读取目标。

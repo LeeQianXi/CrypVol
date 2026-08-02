@@ -1,25 +1,23 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 
-namespace CrypVol.Cli.Pipeline;
+namespace CrypVol.Lib.Pipeline;
 
 /// <summary>
 ///     共享的并行流水线编排器。
 ///     四阶段串行流程（每个阶段内部并行），阶段间通过 Channel 解耦：
-///
 ///     Push → EntryChannel → [Read×N] → RawChannel → [Transform×M] → ProcessedChannel → Route → [Write×V]
-///
 ///     阶段边界由 Channel 的 Complete 保证：上游全部退出后才关闭通道，下游自然结束。
 /// </summary>
-public sealed class Pipeline
+public sealed class VolumePipeline
 {
     private readonly PipelineConfig _config;
-    private readonly IBlockTransform _transform;
 
     // ── 通道 ──
     private readonly Channel<WorkItem> _entryChannel = Channel.CreateUnbounded<WorkItem>();
-    private readonly Channel<RawBlock> _rawChannel;
     private readonly Channel<ProcessedBlock> _processedChannel;
+    private readonly Channel<RawBlock> _rawChannel;
+    private readonly IBlockTransform _transform;
 
     // ── 卷 ──
     private readonly ConcurrentDictionary<int, VolumeContext> _volumes = new();
@@ -28,11 +26,7 @@ public sealed class Pipeline
     private int _activeReaders;
     private int _activeTransforms;
 
-    // ── 可插拔委托 ──
-    public Func<WorkItem, CancellationToken, Task<RawBlock?>> ReadBlockAsync { private get; init; } = null!;
-    public Func<VolumeContext, CancellationToken, Task> WriteVolumeAsync { private get; init; } = null!;
-
-    public Pipeline(PipelineConfig config, IBlockTransform transform)
+    public VolumePipeline(PipelineConfig config, IBlockTransform transform)
     {
         _config = config;
         _transform = transform;
@@ -48,6 +42,10 @@ public sealed class Pipeline
                 FullMode = BoundedChannelFullMode.Wait
             });
     }
+
+    // ── 可插拔委托 ──
+    public Func<WorkItem, CancellationToken, Task<RawBlock?>> ReadBlockAsync { private get; init; } = null!;
+    public Func<VolumeContext, CancellationToken, Task> WriteVolumeAsync { private get; init; } = null!;
 
     // ═══════════════════════════════════════════════════════
     //  公开入口
@@ -95,7 +93,7 @@ public sealed class Pipeline
             writers.Add(WriteVolumeAsync!(v, token));
 
         // 等待全部完成
-        await Task.WhenAll([push, ..readers, ..transforms, route, ..writers]);
+        await Task.WhenAll([push, .. readers, .. transforms, route, .. writers]);
     }
 
     // ═══════════════════════════════════════════════════════

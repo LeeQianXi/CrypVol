@@ -1,30 +1,42 @@
 using System.CommandLine;
+using CrypVol.Lib;
 
 namespace CrypVol.Cli.Convert;
 
-/// <summary>
-///     块级密钥轮换：用旧 CEK 解密每个数据块，用新 CEK 重新加密，不解压不还原文件。
-/// </summary>
 public static class ConvertHelper
 {
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
-        var verbose = args.GetValue(CommandDefinition.Verbose);
-        var volFiles = args.GetValue(CommandDefinition.Convert.VolFiles);
-        var oldKeyFile = args.GetValue(CommandDefinition.Convert.OldKeyFile);
-        var oldPassword = args.GetValue(CommandDefinition.Convert.OldPassword);
-        var oldPrivkey = args.GetValue(CommandDefinition.Convert.OldPrivkey);
-        var oldPrivkeyPass = args.GetValue(CommandDefinition.Convert.OldPrivkeyPass);
-        var output = args.GetValue(CommandDefinition.Convert.Output);
+        var volFiles = args.GetRequiredValue(CommandDefinition.Convert.VolFiles);
+        var outputDir = args.GetValue(CommandDefinition.Convert.Output)!;
         var prefix = args.GetValue(CommandDefinition.Convert.OutputPrefix);
-        var mode = args.GetValue(CommandDefinition.Convert.Mode);
-        var password = args.GetValue(CommandDefinition.Convert.Password);
-        var publicKey = args.GetValue(CommandDefinition.Convert.PublicKey);
-        var threads = args.GetValue(CommandDefinition.Convert.Threads);
-        var backup = args.GetValue(CommandDefinition.Convert.Backup);
+        if (string.IsNullOrWhiteSpace(prefix))
+            prefix = "converted";
 
-        // TODO: 实现块级密钥轮换逻辑
-        await Task.CompletedTask;
+        var engine = new CrypVolEngine();
+        if (args.GetValue(CommandDefinition.Verbose))
+            engine.Progress = new ConsoleProgress();
+
+        var result = await engine.ConvertAsync(
+            volFiles.Select(f => f.FullName).ToList(),
+            outputDir.FullName,
+            prefix,
+            args.GetValue(CommandDefinition.Convert.OldKeyFile)?.FullName,
+            args.GetValue(CommandDefinition.Convert.OldPassword),
+            args.GetValue(CommandDefinition.Convert.KeyFile)?.FullName,
+            args.GetValue(CommandDefinition.Convert.Mode),
+            args.GetValue(CommandDefinition.Convert.Password),
+            args.GetValue(CommandDefinition.Convert.PublicKey)?.Select(f => f.FullName).ToList(),
+            args.GetValue(CommandDefinition.Convert.Threads),
+            token);
+
+        if (!result.Success)
+        {
+            Console.WriteLine($"错误: {result.Error}");
+            return 1;
+        }
+
+        Console.WriteLine($"密钥轮换完成：{result.VolumeCount} 个卷 → {outputDir.FullName}");
         return 0;
     }
 }

@@ -1,4 +1,4 @@
-namespace CrypVol.Cli.Pipeline;
+namespace CrypVol.Lib.Pipeline;
 
 /// <summary>
 ///     流水线运行时配置。
@@ -25,5 +25,6 @@ public sealed record PipelineConfig
 
     /// <summary>日志回调</summary>
     public Action<string>? LogInfo { get; init; }
+
     public Action<string>? LogVerbose { get; init; }
 }

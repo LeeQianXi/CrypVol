@@ -1,6 +1,4 @@
-using System.Buffers;
-
-namespace CrypVol.Cli.Pipeline;
+namespace CrypVol.Lib.Pipeline;
 
 /// <summary>
 ///     可插拔的块变换。不同子命令提供不同实现：
