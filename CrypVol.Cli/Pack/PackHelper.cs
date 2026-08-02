@@ -250,7 +250,7 @@ public static partial class PackHelper
                     Length = (int)rawToWrite,
                     TotalFileSize = totalSize,
                     Flags = flags,
-                    IsFirstFragment = fragmentIdx == 0
+                    IsFirstFragment = true // 每个段都需独立 header
                 });
 
                 remaining -= physicalLen;
@@ -313,7 +313,7 @@ public static partial class PackHelper
 
         await foreach (var block in ctx.OutputChannel.Reader.ReadAllAsync(token))
         {
-            // 每个文件的第一个段：写入 FileEntryHeader
+            // 每个片段都写 FileEntryHeader
             if (block.Work.IsFirstFragment)
             {
                 var header = new FileEntryHeader
@@ -323,14 +323,18 @@ public static partial class PackHelper
                     FragmentIndex = (uint)block.Work.Sequence,
                     SizeOrTotal = block.Work.TotalFileSize
                 };
+                header.SetFilePath(block.Work.RelativePath);
                 fs.Position = pos;
                 await fs.WriteAsync(header.ToBytes(), token);
                 pos += FileEntryHeader.HeaderSize;
             }
 
+            // 4 字节块长度前缀 + 数据
+            var lenBytes = BitConverter.GetBytes(block.OutputLength);
             fs.Position = pos;
+            await fs.WriteAsync(lenBytes, token);
             await fs.WriteAsync(block.Data.AsMemory(0, block.OutputLength), token);
-            pos += block.OutputLength;
+            pos += 4 + block.OutputLength;
             block.Dispose();
         }
     }

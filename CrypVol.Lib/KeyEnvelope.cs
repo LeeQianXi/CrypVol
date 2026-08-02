@@ -8,15 +8,32 @@ namespace CrypVol.Lib;
 public class KeyEnvelope
 {
     /// <summary>
-    ///     生成密钥信封并保存为 Base64URL 文本文件
+    ///     生成密钥信封并保存为 Base64URL 文本文件（生成新 CEK）
     /// </summary>
     public static void SaveEnvelope(string filePath, EnvelopeMode mode,
         string? password = null,
         Dictionary<string, RSA>? recipients = null)
     {
-        // 1. 生成秘密 (CEK + Salt)
         var cek = RandomNumberGenerator.GetBytes(32);
         var salt = RandomNumberGenerator.GetBytes(32);
+        SaveEnvelopeCore(filePath, mode, cek, salt, password, recipients);
+    }
+
+    /// <summary>
+    ///     使用已有 CEK 和 Salt 保存密钥信封（rekey 用）
+    /// </summary>
+    public static void SaveEnvelope(string filePath, EnvelopeMode mode,
+        byte[] cek, byte[] salt,
+        string? password = null,
+        Dictionary<string, RSA>? recipients = null)
+    {
+        SaveEnvelopeCore(filePath, mode, cek, salt, password, recipients);
+    }
+
+    private static void SaveEnvelopeCore(string filePath, EnvelopeMode mode,
+        byte[] cek, byte[] salt,
+        string? password, Dictionary<string, RSA>? recipients)
+    {
         var secret = new byte[32 + 32];
         Buffer.BlockCopy(cek, 0, secret, 0, 32);
         Buffer.BlockCopy(salt, 0, secret, 32, 32);

@@ -18,7 +18,13 @@ public sealed class PackTransform : IBlockTransform
     {
         _cek = cek;
         _enableCompression = enableCompression;
-        _compressionLevel = (CompressionLevel)compressionLevel;
+        _compressionLevel = compressionLevel switch
+        {
+            0 => CompressionLevel.NoCompression,
+            <= 3 => CompressionLevel.Fastest,
+            <= 6 => CompressionLevel.Optimal,
+            _ => CompressionLevel.SmallestSize
+        };
     }
 
     public byte[] Transform(byte[] input, int originalLength, out int outputLength)

@@ -29,6 +29,19 @@ public unsafe struct FileEntryHeader()
 
         return buffer;
     }
+
+    /// <summary>将文件路径写入头部的 fixed buffer（最多 231 字节）</summary>
+    public void SetFilePath(string path)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(path);
+        var len = Math.Min(bytes.Length, 230); // 留一个字节给 null 终止符
+        fixed (byte* fp = FilePath)
+        {
+            for (var i = 0; i < len; i++)
+                fp[i] = bytes[i];
+            fp[len] = 0;
+        }
+    }
 }
 
 [Flags]

@@ -22,7 +22,15 @@ public static partial class PackHelper
         // 写入头
         writer.Write(Encoding.ASCII.GetBytes("KEY0"));
         writer.Write((byte)1); // Version
-        writer.Write((byte)config.Mode);
+        // 映射 EncryptionMode → EnvelopeMode 字节值
+        writer.Write(config.Mode switch
+        {
+            EncryptionMode.None => (byte)0,
+            EncryptionMode.PlainKey => (byte)0,  // EnvelopeMode.Plain
+            EncryptionMode.Password => (byte)1,   // EnvelopeMode.Password
+            EncryptionMode.Asymmetric => (byte)2, // EnvelopeMode.PublicKey
+            _ => throw new Exception("未知加密模式")
+        });
 
         var payloadLenPos = ms.Position;
         writer.Write(0); // 占位
