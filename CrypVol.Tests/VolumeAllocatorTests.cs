@@ -72,7 +72,7 @@ public class VolumeAllocatorTests
         // Use small volume capacity to force splitting
         var file = MakeFile(tmp.Dir, "big.bin", 10000);
 
-        var (items, volumes) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
+        var (items, volumes) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284);
 
         // File should be split across multiple volumes
         Assert.True(volumes.Count >= 3);
@@ -152,7 +152,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "split.bin", 20000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284);
 
         // First item should start at offset 0
         Assert.Equal(0, items[0].SourceOffset);
@@ -167,7 +167,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "multi.bin", 20000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284);
 
         Assert.All(items, item => Assert.Equal(20000, item.TotalFileSize));
     }
@@ -186,7 +186,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "big.dat", 50000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284);
 
         // Should have at least one CrossMid (flags=2) fragment
         Assert.Contains(items, i => i.Flags == 2);
@@ -197,7 +197,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "test.bin", 20000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284);
 
         // Current implementation sets IsFirstFragment=true on ALL fragments
         Assert.All(items, item => Assert.True(item.IsFirstFragment));

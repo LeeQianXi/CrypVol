@@ -1,17 +1,15 @@
-using CrypVol.Lib;
 using System.Buffers;
 using System.Security.Cryptography;
 using CrypVol.Lib.Pipeline;
-using System.IO;
 
 namespace CrypVol.Lib.Transforms;
 
 /// <summary>块级密钥轮换：旧 CEK 解密 → 新 CEK 加密，不解压，保留 CRC32</summary>
 public sealed class ConvertTransform : IBlockTransform
 {
+    private readonly bool _enableCrc32;
     private readonly byte[] _newCek;
     private readonly byte[] _oldCek;
-    private readonly bool _enableCrc32;
 
     public ConvertTransform(byte[] oldCek, byte[] newCek, IntegrityLevel integrityLevel = IntegrityLevel.None)
     {

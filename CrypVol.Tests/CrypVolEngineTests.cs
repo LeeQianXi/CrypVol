@@ -90,7 +90,7 @@ public class CrypVolEngineTests : IDisposable
 
         var restored = Path.Combine(restoreDir.FullName, "hello.txt");
         Assert.True(File.Exists(restored));
-        Assert.Equal("Hello, World!", File.ReadAllText(restored));
+        Assert.Equal("Hello, World!", await File.ReadAllTextAsync(restored));
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public class CrypVolEngineTests : IDisposable
 
         var restored = Path.Combine(restoreDir.FullName, "secret.txt");
         Assert.True(File.Exists(restored));
-        Assert.Equal("Top Secret Data", File.ReadAllText(restored));
+        Assert.Equal("Top Secret Data", await File.ReadAllTextAsync(restored));
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public class CrypVolEngineTests : IDisposable
         var extractResult = await engine.ExtractAsync(extractOpts);
         Assert.True(extractResult.Success, extractResult.Error);
         Assert.Equal("Password Protected Content",
-            File.ReadAllText(Path.Combine(restoreDir.FullName, "protected.txt")));
+            await File.ReadAllTextAsync(Path.Combine(restoreDir.FullName, "protected.txt")));
     }
 
     // ═══════════════════════════════════════════════════════
@@ -368,7 +368,7 @@ public class CrypVolEngineTests : IDisposable
         var extractResult = await engine.ExtractAsync(extractOpts);
         Assert.True(extractResult.Success, extractResult.Error);
         Assert.True(File.Exists(Path.Combine(restoreDir.FullName, "data.bin")));
-        Assert.Equal(data, File.ReadAllBytes(Path.Combine(restoreDir.FullName, "data.bin")));
+        Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(restoreDir.FullName, "data.bin")));
     }
 
     // ═══════════════════════════════════════════════════════
@@ -501,7 +501,7 @@ public class CrypVolEngineTests : IDisposable
 
         var restored = Path.Combine(restoreDir.FullName, "big.dat");
         Assert.True(File.Exists(restored));
-        Assert.Equal(data, File.ReadAllBytes(restored));
+        Assert.Equal(data, await File.ReadAllBytesAsync(restored));
     }
 
     // ═══════════════════════════════════════════════════════
@@ -578,7 +578,7 @@ public class CrypVolEngineTests : IDisposable
 
         var extractResult = await engine.ExtractAsync(extractOpts);
         Assert.True(extractResult.Success, extractResult.Error);
-        Assert.Equal(binaryData, File.ReadAllBytes(Path.Combine(restoreDir.FullName, "binary.bin")));
+        Assert.Equal(binaryData, await File.ReadAllBytesAsync(Path.Combine(restoreDir.FullName, "binary.bin")));
     }
 
     // ═══════════════════════════════════════════════════════

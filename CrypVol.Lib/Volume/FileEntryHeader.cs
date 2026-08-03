@@ -34,12 +34,15 @@ public unsafe struct FileEntryHeader()
     private const byte IntegrityMask = 0b_0001_1000;
 
     /// <summary>从 Flags 中提取 IntegrityLevel</summary>
-    public IntegrityLevel GetIntegrityLevel() => (IntegrityLevel)((Flags >> IntegrityShift) & 3);
+    public IntegrityLevel GetIntegrityLevel()
+    {
+        return (IntegrityLevel)(Flags >> IntegrityShift & 3);
+    }
 
     /// <summary>将 IntegrityLevel 编码到 Flags 中</summary>
     public void SetIntegrityLevel(IntegrityLevel level)
     {
-        Flags = (byte)((Flags & ~IntegrityMask) | (((int)level & 3) << IntegrityShift));
+        Flags = (byte)(Flags & ~IntegrityMask | ((int)level & 3) << IntegrityShift);
     }
 
     public byte[] ToBytes()

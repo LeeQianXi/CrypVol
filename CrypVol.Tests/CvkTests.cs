@@ -150,8 +150,8 @@ public class CvkTests
         var privPath = TempPath(".priv.pem");
         try
         {
-            File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
-            File.WriteAllText(privPath, rsa.ExportRSAPrivateKeyPem());
+            await File.WriteAllTextAsync(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
+            await File.WriteAllTextAsync(privPath, rsa.ExportRSAPrivateKeyPem());
 
             var pubKey = new FileInfo(pubPath);
             var w = new CvkWriter(EncryptionMode.Asymmetric, publicKeyFiles: [pubKey]);
@@ -184,9 +184,10 @@ public class CvkTests
         var privPath = TempPath(".priv.pem");
         try
         {
-            File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
-            var encPriv = rsa.ExportEncryptedPkcs8PrivateKeyPem("privpass".AsSpan(), new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100000));
-            File.WriteAllText(privPath, encPriv);
+            await File.WriteAllTextAsync(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
+            var encPriv = rsa.ExportEncryptedPkcs8PrivateKeyPem("privpass".AsSpan(),
+                new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100000));
+            await File.WriteAllTextAsync(privPath, encPriv);
 
             var w = new CvkWriter(EncryptionMode.Asymmetric, publicKeyFiles: [new FileInfo(pubPath)]);
             var creds = await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -218,8 +219,8 @@ public class CvkTests
         var wrongPrivPath = TempPath(".priv.pem");
         try
         {
-            File.WriteAllText(pubPath, rsa1.ExportSubjectPublicKeyInfoPem());
-            File.WriteAllText(wrongPrivPath, rsa2.ExportRSAPrivateKeyPem());
+            await File.WriteAllTextAsync(pubPath, rsa1.ExportSubjectPublicKeyInfoPem());
+            await File.WriteAllTextAsync(wrongPrivPath, rsa2.ExportRSAPrivateKeyPem());
 
             var w = new CvkWriter(EncryptionMode.Asymmetric, publicKeyFiles: [new FileInfo(pubPath)]);
             await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -248,7 +249,7 @@ public class CvkTests
         var pubPath = TempPath(".pub.pem");
         try
         {
-            File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
+            await File.WriteAllTextAsync(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
             var w = new CvkWriter(EncryptionMode.Asymmetric, publicKeyFiles: [new FileInfo(pubPath)]);
             await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
             File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".cvk"), path, true);
@@ -280,14 +281,13 @@ public class CvkTests
     // ═══════════════════════════════════════════════════════
 
     [Fact]
-    public void ReadMode_ReturnsCorrectMode()
+    public async Task ReadMode_ReturnsCorrectMode()
     {
         var path = TempPath();
         try
         {
             var w = new CvkWriter(EncryptionMode.Password, "p");
-            var t = w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
-            t.Wait();
+            await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
             File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".cvk"), path, true);
             Assert.Equal(EnvelopeMode.Password, CvkReader.ReadMode(path));
         }
@@ -299,14 +299,13 @@ public class CvkTests
     }
 
     [Fact]
-    public void ReadMode_PlainKey()
+    public async Task ReadMode_PlainKey()
     {
         var path = TempPath();
         try
         {
             var w = new CvkWriter(EncryptionMode.PlainKey);
-            var t = w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
-            t.Wait();
+            await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
             File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".cvk"), path, true);
             Assert.Equal(EnvelopeMode.Plain, CvkReader.ReadMode(path));
         }
@@ -318,17 +317,16 @@ public class CvkTests
     }
 
     [Fact]
-    public void ReadMode_PublicKey()
+    public async Task ReadMode_PublicKey()
     {
         using var rsa = RSA.Create(2048);
         var pubPath = TempPath(".pub.pem");
         var cvkPath = TempPath();
         try
         {
-            File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
+            await File.WriteAllTextAsync(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
             var w = new CvkWriter(EncryptionMode.Asymmetric, publicKeyFiles: [new FileInfo(pubPath)]);
-            var t = w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(cvkPath));
-            t.Wait();
+            await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(cvkPath));
             File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(cvkPath) + ".cvk"), cvkPath, true);
             Assert.Equal(EnvelopeMode.PublicKey, CvkReader.ReadMode(cvkPath));
         }
@@ -425,8 +423,8 @@ public class CvkTests
         var path2 = TempPath();
         try
         {
-            File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
-            File.WriteAllText(privPath, rsa.ExportRSAPrivateKeyPem());
+            await File.WriteAllTextAsync(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
+            await File.WriteAllTextAsync(privPath, rsa.ExportRSAPrivateKeyPem());
 
             var w1 = new CvkWriter(EncryptionMode.Password, "oldpass");
             var c1 = await w1.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path1));

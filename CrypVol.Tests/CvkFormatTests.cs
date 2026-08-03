@@ -38,7 +38,7 @@ public class CvkFormatTests
         var path = TempPath();
         try
         {
-            File.WriteAllText(path, b64);
+            await File.WriteAllTextAsync(path, b64);
             var loaded = await new CvkReader(new FileInfo(path)).LoadKeyAsync();
             Assert.Equal(cek, loaded.Cek);
             Assert.Equal(EncryptionMode.PlainKey, loaded.EncryptionMode);
@@ -96,7 +96,7 @@ public class CvkFormatTests
         try
         {
             Assert.True(File.Exists(cvkPath));
-            var b64 = File.ReadAllText(cvkPath).Trim();
+            var b64 = (await File.ReadAllTextAsync(cvkPath)).Trim();
             var data = Convert.FromBase64String(b64);
 
             // Parse with BinaryReader

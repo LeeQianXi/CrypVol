@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using CrypVol.Lib;
-using CrypVol.Lib.Pipeline;
 using CrypVol.Lib.Transforms;
 using CrypVol.Lib.Volume;
 using Xunit;
@@ -20,7 +19,7 @@ public class FileEntryHeaderIntegrityTests
     [Fact]
     public void SetGet_RoundTrip_AllValues()
     {
-        foreach (IntegrityLevel level in Enum.GetValues<IntegrityLevel>())
+        foreach (var level in Enum.GetValues<IntegrityLevel>())
         {
             var hdr = new FileEntryHeader();
             hdr.SetIntegrityLevel(level);
@@ -31,7 +30,10 @@ public class FileEntryHeaderIntegrityTests
     [Fact]
     public void SetIntegrityLevel_PreservesFragmentFlags()
     {
-        var hdr = new FileEntryHeader { Flags = 3 }; // CrossTail
+        var hdr = new FileEntryHeader
+        {
+            Flags = 3
+        }; // CrossTail
         hdr.SetIntegrityLevel(IntegrityLevel.Block);
         Assert.Equal(3, hdr.Flags & 3); // fragment flags preserved
         Assert.Equal(IntegrityLevel.Block, hdr.GetIntegrityLevel());
@@ -40,7 +42,10 @@ public class FileEntryHeaderIntegrityTests
     [Fact]
     public void SetIntegrityLevel_PreservesExtendedHeaderFlag()
     {
-        var hdr = new FileEntryHeader { Flags = 4 }; // HasExtendedHeader
+        var hdr = new FileEntryHeader
+        {
+            Flags = 4
+        }; // HasExtendedHeader
         hdr.SetIntegrityLevel(IntegrityLevel.Volume);
         Assert.Equal(4, hdr.Flags & 4); // HasExtendedHeader preserved
         Assert.Equal(IntegrityLevel.Volume, hdr.GetIntegrityLevel());
@@ -62,7 +67,7 @@ public class FileEntryHeaderIntegrityTests
         var hdr = new FileEntryHeader();
         hdr.SetIntegrityLevel(IntegrityLevel.File);
         var bytes = hdr.ToBytes();
-        Assert.Equal(IntegrityLevel.File, (IntegrityLevel)((bytes[12] >> 3) & 3));
+        Assert.Equal(IntegrityLevel.File, (IntegrityLevel)(bytes[12] >> 3 & 3));
     }
 
     [Fact]
@@ -84,7 +89,7 @@ public class PackTransformIntegrityTests
     public void None_NoCrc32Appended()
     {
         var cek = RandomNumberGenerator.GetBytes(32);
-        var t = new PackTransform(cek, false, 6, IntegrityLevel.None);
+        var t = new PackTransform(cek, false, 6);
         var input = ArrayPool<byte>.Shared.Rent(100);
         try
         {
@@ -151,8 +156,8 @@ public class ExtractTransformIntegrityTests
     public void None_DecryptsNormally()
     {
         var cek = RandomNumberGenerator.GetBytes(32);
-        var pack = new PackTransform(cek, false, 6, IntegrityLevel.None);
-        var extract = new ExtractTransform(cek, false, IntegrityLevel.None);
+        var pack = new PackTransform(cek, false, 6);
+        var extract = new ExtractTransform(cek, false);
 
         var input = ArrayPool<byte>.Shared.Rent(200);
         try
@@ -277,9 +282,9 @@ public class ConvertTransformIntegrityTests
     {
         var oldCek = RandomNumberGenerator.GetBytes(32);
         var newCek = RandomNumberGenerator.GetBytes(32);
-        var pack = new PackTransform(oldCek, false, 6, IntegrityLevel.None);
-        var convert = new ConvertTransform(oldCek, newCek, IntegrityLevel.None);
-        var extract = new ExtractTransform(newCek, false, IntegrityLevel.None);
+        var pack = new PackTransform(oldCek, false, 6);
+        var convert = new ConvertTransform(oldCek, newCek);
+        var extract = new ExtractTransform(newCek, false);
 
         var input = ArrayPool<byte>.Shared.Rent(200);
         try
@@ -317,7 +322,10 @@ public class ConvertTransformIntegrityTests
 
 public class VolumeAllocatorIntegrityTests
 {
-    private static string TempDir() => Path.Combine(Path.GetTempPath(), $"vai-{Guid.NewGuid()}");
+    private static string TempDir()
+    {
+        return Path.Combine(Path.GetTempPath(), $"vai-{Guid.NewGuid()}");
+    }
 
     [Fact]
     public void Allocate_BlockLevel_EncodesInFlags()
@@ -334,9 +342,13 @@ public class VolumeAllocatorIntegrityTests
 
             Assert.Single(items);
             var flags = items[0].Flags;
-            Assert.Equal(IntegrityLevel.Block, (IntegrityLevel)((flags >> 3) & 3));
+            Assert.Equal(IntegrityLevel.Block, (IntegrityLevel)(flags >> 3 & 3));
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -353,9 +365,13 @@ public class VolumeAllocatorIntegrityTests
                 [new FileInfo(path)], dir, 1024 * 1024, 256, IntegrityLevel.Volume);
 
             Assert.Single(items);
-            Assert.Equal(IntegrityLevel.Volume, (IntegrityLevel)((items[0].Flags >> 3) & 3));
+            Assert.Equal(IntegrityLevel.Volume, (IntegrityLevel)(items[0].Flags >> 3 & 3));
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -372,8 +388,12 @@ public class VolumeAllocatorIntegrityTests
                 [new FileInfo(path)], dir, 1024 * 1024, 256); // default None
 
             Assert.Single(items);
-            Assert.Equal(IntegrityLevel.None, (IntegrityLevel)((items[0].Flags >> 3) & 3));
+            Assert.Equal(IntegrityLevel.None, (IntegrityLevel)(items[0].Flags >> 3 & 3));
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 }

@@ -1,5 +1,3 @@
-using System.Buffers;
-
 namespace CrypVol.Lib;
 
 /// <summary>CRC-32 (IEEE 802.3) 快速实现</summary>
@@ -16,9 +14,10 @@ public static class Crc32
         {
             var crc = i;
             for (var j = 0; j < 8; j++)
-                crc = (crc & 1) != 0 ? (crc >> 1) ^ Polynomial : crc >> 1;
+                crc = (crc & 1) != 0 ? crc >> 1 ^ Polynomial : crc >> 1;
             table[i] = crc;
         }
+
         return table;
     }
 
@@ -27,7 +26,7 @@ public static class Crc32
     {
         var crc = 0xFFFFFFFFu;
         foreach (var b in data)
-            crc = (crc >> 8) ^ _table[(crc ^ b) & 0xFF];
+            crc = crc >> 8 ^ _table[(crc ^ b) & 0xFF];
         return crc ^ 0xFFFFFFFFu;
     }
 }
