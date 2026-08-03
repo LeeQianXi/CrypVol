@@ -213,10 +213,8 @@ mkdir -p "$EMPTY_DIR/input" "$EMPTY_DIR/output" "$EMPTY_DIR/restored"
 touch "$EMPTY_DIR/input/empty.txt"
 echo "x" > "$EMPTY_DIR/input/x.txt"
 check     "pack 含空文件"              run pack "$EMPTY_DIR/input" -m PlainKey -o "$EMPTY_DIR/output"
-# 空文件提取是已知引擎限制(Scanner遇blockLen≤0会跳过)
-run extract "$EMPTY_DIR/output" -k "$EMPTY_DIR/output/archive.cvk" -o "$EMPTY_DIR/restored" >/dev/null 2>&1
-echo -e "  ${YELLOW}⊘${NC} extract 含空文件 (已知引擎限制)"
-SKIP=$((SKIP+1))
+verify_extract "extract 含空文件" "$EMPTY_DIR/output" "$EMPTY_DIR/restored" "$EMPTY_DIR/input" \
+    "-k $EMPTY_DIR/output/input.cvk"
 
 
 # 单字节文件
@@ -326,8 +324,8 @@ BIG_DIR="$TMP/big"
 mkdir -p "$BIG_DIR/input" "$BIG_DIR/output" "$BIG_DIR/restored"
 dd if=/dev/zero of="$BIG_DIR/input/big.bin" bs=1M count=100 2>/dev/null
 check     "100MB pack"         run pack "$BIG_DIR/input" -m PlainKey -o "$BIG_DIR/output" -s 40
-echo -e "  ${YELLOW}⊘${NC} 100MB extract (已知引擎限制)"
-SKIP=$((SKIP+1))
+verify_extract "100MB extract" "$BIG_DIR/output" "$BIG_DIR/restored" "$BIG_DIR/input" \
+    "-k $BIG_DIR/output/input.cvk"
 
 # ═══════════════════════════════════════
 section "10. 边界场景"

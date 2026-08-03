@@ -79,7 +79,7 @@ public static class VolumeScanner
                         if (BitConverter.ToUInt32(peek) == FileEntryHeader.MagicHeader) break;
 
                         var blockLen = BitConverter.ToInt32(peek);
-                        if (blockLen <= 0) break; // garbage data or EOF
+                        if (blockLen < 0) break; // garbage data or EOF; 0 is valid (empty file)
                         pos += 4;
 
                         if (!files.TryGetValue(relPath, out var list))
