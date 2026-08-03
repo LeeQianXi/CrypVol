@@ -34,7 +34,8 @@ public sealed class CrypVolEngine
                 opts.SourceFiles,
                 opts.SourceFolder,
                 capacity,
-                headerSize);
+                headerSize,
+                opts.IntegrityLevel);
             if (items.Count == 0)
                 return new PackResult
                 {
@@ -52,7 +53,7 @@ public sealed class CrypVolEngine
                 ProcessedChannelCapacity = 128
             }, mode is EncryptionMode.None
                 ? new NullTransform()
-                : new PackTransform(cek, opts.EnableCompression, opts.CompressionLevel))
+                : new PackTransform(cek, opts.EnableCompression, opts.CompressionLevel, opts.IntegrityLevel))
             {
                 ReadBlockAsync = (item, ct) => FileSource.ReadAsync(item, ct),
                 WriteVolumeAsync = async (ctx, ct) =>
@@ -147,6 +148,14 @@ public sealed class CrypVolEngine
                     });
             }
 
+            // Auto-detect integrity level from the first fragment's flags
+            var integrityLevel = IntegrityLevel.None;
+            if (fileFragments.Count > 0)
+            {
+                var firstFragment = fileFragments.Values.First(f => f.Count > 0);
+                integrityLevel = (IntegrityLevel)((firstFragment[0].Flags >> 3) & 3);
+            }
+
             Report("提取", 0, fileFragments.Count, "");
 
             var threads = Math.Clamp(opts.Threads, 1, Environment.ProcessorCount);
@@ -156,7 +165,9 @@ public sealed class CrypVolEngine
                 TransformConcurrency = threads,
                 RawChannelCapacity = 128,
                 ProcessedChannelCapacity = 128
-            }, mode is EncryptionMode.None ? new NullTransform() : new ExtractTransform(cek, false))
+            }, mode is EncryptionMode.None
+                ? new NullTransform()
+                : new ExtractTransform(cek, false, integrityLevel))
             {
                 ReadBlockAsync = (item, ct) => CvpSource.ReadAsync(item, ct),
                 WriteVolumeAsync = (ctx, ct) =>
@@ -277,6 +288,14 @@ public sealed class CrypVolEngine
                     Error = "无数据块"
                 };
 
+            // Auto-detect integrity level from the first fragment's flags
+            var integrityLevel = IntegrityLevel.None;
+            if (fileFragments.Count > 0)
+            {
+                var firstFragment = fileFragments.Values.First(f => f.Count > 0);
+                integrityLevel = (IntegrityLevel)((firstFragment[0].Flags >> 3) & 3);
+            }
+
             var (newMode, newCek) = opts.NewCredentials;
             var t = Math.Clamp(opts.Threads, 1, Environment.ProcessorCount);
             var pipe = new VolumePipeline(new PipelineConfig
@@ -286,8 +305,8 @@ public sealed class CrypVolEngine
                     RawChannelCapacity = 128,
                     ProcessedChannelCapacity = 128
                 }, newMode is EncryptionMode.None
-                    ? new ExtractTransform(cek, false) // 解密不加密
-                    : new ConvertTransform(cek, newCek)) // 解密+加密
+                    ? new ExtractTransform(cek, false, integrityLevel) // 解密不加密
+                    : new ConvertTransform(cek, newCek, integrityLevel)) // 解密+加密
                 {
                     ReadBlockAsync = (item, ct) => CvpSource.ReadAsync(item, ct),
                     WriteVolumeAsync = (ctx, ct) =>

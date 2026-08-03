@@ -5,14 +5,16 @@ using CrypVol.Lib.Pipeline;
 
 namespace CrypVol.Lib.Transforms;
 
-/// <summary>GZip 压缩 + AES-GCM 加密</summary>
+/// <summary>GZip 压缩 + AES-GCM 加密 + 块级 CRC32</summary>
 public sealed class PackTransform : IBlockTransform
 {
     private readonly byte[] _cek;
     private readonly CompressionLevel _compressionLevel;
     private readonly bool _enableCompression;
+    private readonly bool _enableCrc32;
 
-    public PackTransform(byte[] cek, bool enableCompression, int compressionLevel)
+    public PackTransform(byte[] cek, bool enableCompression, int compressionLevel,
+        IntegrityLevel integrityLevel = IntegrityLevel.None)
     {
         _cek = cek;
         _enableCompression = enableCompression;
@@ -23,6 +25,7 @@ public sealed class PackTransform : IBlockTransform
             <= 6 => CompressionLevel.Optimal,
             _ => CompressionLevel.SmallestSize
         };
+        _enableCrc32 = integrityLevel >= IntegrityLevel.Block;
     }
 
     public byte[] Transform(byte[] input, int originalLength, out int outputLength)
@@ -56,11 +59,21 @@ public sealed class PackTransform : IBlockTransform
         using var aes = new AesGcm(_cek, 16);
         aes.Encrypt(nonce, toEncrypt, ciphertext, tag);
 
-        outputLength = 12 + ciphertext.Length + 16;
+        // layout: [nonce:12][ciphertext][tag:16][crc32:4?]
+        var crcLen = _enableCrc32 ? 4 : 0;
+        outputLength = 12 + preLen + 16 + crcLen;
         var output = ArrayPool<byte>.Shared.Rent(outputLength);
         Buffer.BlockCopy(nonce, 0, output, 0, 12);
         Buffer.BlockCopy(ciphertext, 0, output, 12, ciphertext.Length);
         Buffer.BlockCopy(tag, 0, output, 12 + ciphertext.Length, 16);
+
+        if (_enableCrc32)
+        {
+            var crc = Crc32.Compute(output.AsSpan(0, outputLength - 4));
+            var crcBytes = BitConverter.GetBytes(crc);
+            Buffer.BlockCopy(crcBytes, 0, output, outputLength - 4, 4);
+        }
+
         return output;
     }
 }

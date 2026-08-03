@@ -24,6 +24,24 @@ public unsafe struct FileEntryHeader()
     /// <summary>加密后的头部大小: Magic(4) + Nonce(12) + Ciphertext(252) + Tag(16)</summary>
     public const int EncryptedHeaderSize = 284;
 
+    // ── Flags 位布局 ──
+    // bits 0-1:   fragment type (FileEntryHeaderFlagsEnum)
+    // bit 2:      HasExtendedHeader
+    // bits 3-4:   IntegrityLevel (0=None, 1=Block, 2=File, 3=Volume)
+    // bits 5-7:   reserved
+
+    private const int IntegrityShift = 3;
+    private const byte IntegrityMask = 0b_0001_1000;
+
+    /// <summary>从 Flags 中提取 IntegrityLevel</summary>
+    public IntegrityLevel GetIntegrityLevel() => (IntegrityLevel)((Flags >> IntegrityShift) & 3);
+
+    /// <summary>将 IntegrityLevel 编码到 Flags 中</summary>
+    public void SetIntegrityLevel(IntegrityLevel level)
+    {
+        Flags = (byte)((Flags & ~IntegrityMask) | (((int)level & 3) << IntegrityShift));
+    }
+
     public byte[] ToBytes()
     {
         var buffer = new byte[256];

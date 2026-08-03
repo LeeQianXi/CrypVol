@@ -6,7 +6,8 @@ namespace CrypVol.Lib.Volume;
 public static class VolumeAllocator
 {
     public static (List<WorkItem> items, List<(int Index, long Size)> volumes)
-        Allocate(IEnumerable<FileInfo> files, DirectoryInfo sourceDir, long volumeCapacity, int headerSize = 284)
+        Allocate(IEnumerable<FileInfo> files, DirectoryInfo sourceDir, long volumeCapacity, int headerSize = 284,
+            IntegrityLevel integrityLevel = IntegrityLevel.None)
     {
         const int maxPathLen = 231 + 256;
         const long alignment = 4096;
@@ -47,7 +48,7 @@ public static class VolumeAllocator
                     Sequence = NextSeq(currentVol),
                     Length = 0,
                     TotalFileSize = 0,
-                    Flags = 0,
+                    Flags = (byte)(((int)integrityLevel & 3) << 3),
                     IsFirstFragment = true
                 });
                 used += headerSize;
@@ -87,6 +88,7 @@ public static class VolumeAllocator
                     _ => 2
                 };
                 if (relPath.Length > 231) flags |= 4;
+                flags |= (byte)(((int)integrityLevel & 3) << 3);
 
                 items.Add(new WorkItem
                 {

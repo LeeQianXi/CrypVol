@@ -1,3 +1,4 @@
+using System.IO;
 using System.Buffers;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -5,20 +6,33 @@ using CrypVol.Lib.Pipeline;
 
 namespace CrypVol.Lib.Transforms;
 
-/// <summary>AES-GCM 解密 + GZip 解压</summary>
+/// <summary>AES-GCM 解密 + GZip 解压 + 块级 CRC32 校验</summary>
 public sealed class ExtractTransform : IBlockTransform
 {
     private readonly byte[] _cek;
     private readonly bool _compressed;
+    private readonly bool _enableCrc32;
 
-    public ExtractTransform(byte[] cek, bool compressed)
+    public ExtractTransform(byte[] cek, bool compressed, IntegrityLevel integrityLevel = IntegrityLevel.None)
     {
         _cek = cek;
         _compressed = compressed;
+        _enableCrc32 = integrityLevel >= IntegrityLevel.Block;
     }
 
     public byte[] Transform(byte[] input, int inputLength, out int outputLength)
     {
+        // Verify CRC32 if present (last 4 bytes of input)
+        if (_enableCrc32)
+        {
+            var expectedCrc = BitConverter.ToUInt32(input, inputLength - 4);
+            var actualCrc = Crc32.Compute(input.AsSpan(0, inputLength - 4));
+            if (expectedCrc != actualCrc)
+                throw new InvalidDataException(
+                    $"CRC32 校验失败: 期望 {expectedCrc:X8}, 实际 {actualCrc:X8}");
+            inputLength -= 4; // strip CRC32 for decryption
+        }
+
         var nonce = input.AsSpan(0, 12);
         var tag = input.AsSpan(inputLength - 16, 16);
         var cipherLen = inputLength - 12 - 16;
