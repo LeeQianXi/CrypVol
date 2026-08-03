@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace CrypVol.Lib.RefPool;
+namespace CrypVol.Lib.Utility.RefPool;
 
 public static partial class ReferencePool
 {

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace CrypVol.Lib.RefPool;
+namespace CrypVol.Lib.Utility.RefPool;
 
 /// <summary>
 ///     引用池信息。
