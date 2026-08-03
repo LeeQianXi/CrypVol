@@ -1,6 +1,9 @@
 using System.CommandLine;
 using CrypVol.Lib;
-using CrypVol.Lib.Models;
+using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Engine;
+using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Volume;
 
 namespace CrypVol.Cli.Convert;
 

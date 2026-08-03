@@ -17,18 +17,11 @@ public class TransformTests
     {
         var transform = new NullTransform();
         var input = ArrayPool<byte>.Shared.Rent(100);
-        try
-        {
-            RandomNumberGenerator.Fill(input);
-            var output = transform.Transform(input, 100, out var outputLen);
-            Assert.Equal(100, outputLen);
-            Assert.True(input.AsSpan(0, 100).SequenceEqual(output.AsSpan(0, 100)));
-            ArrayPool<byte>.Shared.Return(output);
-        }
-        finally
-        {
-            // input was returned by NullTransform
-        }
+        RandomNumberGenerator.Fill(input);
+        var output = transform.Transform(input, 100, out var outputLen);
+        Assert.Equal(100, outputLen);
+        Assert.True(input.AsSpan(0, 100).SequenceEqual(output.AsSpan(0, 100)));
+        ArrayPool<byte>.Shared.Return(output);
     }
 
     [Fact]
@@ -49,7 +42,7 @@ public class TransformTests
     public void PackTransform_NoCompression_EncryptsData()
     {
         var cek = RandomNumberGenerator.GetBytes(32);
-        var transform = new PackTransform(cek, enableCompression: false, compressionLevel: 6);
+        var transform = new PackTransform(cek, false, 6);
 
         var input = ArrayPool<byte>.Shared.Rent(100);
         try
@@ -82,7 +75,7 @@ public class TransformTests
     public void PackTransform_WithCompression_CompressesAndEncrypts()
     {
         var cek = RandomNumberGenerator.GetBytes(32);
-        var transform = new PackTransform(cek, enableCompression: true, compressionLevel: 9);
+        var transform = new PackTransform(cek, true, 9);
 
         // Create repetitive data that compresses well
         var input = ArrayPool<byte>.Shared.Rent(4096);

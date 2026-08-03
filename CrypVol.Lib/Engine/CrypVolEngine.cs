@@ -1,11 +1,12 @@
 using System.Text.RegularExpressions;
-using CrypVol.Lib.Models;
+using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.IO.Sinks;
+using CrypVol.Lib.IO.Sources;
 using CrypVol.Lib.Pipeline;
-using CrypVol.Lib.Sinks;
-using CrypVol.Lib.Sources;
 using CrypVol.Lib.Transforms;
+using CrypVol.Lib.Volume;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Engine;
 
 /// <summary>
 ///     CrypVol 核心引擎。提供 Pack / Extract / Rekey 操作的统一入口，

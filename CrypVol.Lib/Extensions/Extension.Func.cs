@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Extensions;
 
 public static partial class Extension
 {

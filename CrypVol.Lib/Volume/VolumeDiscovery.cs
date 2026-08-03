@@ -1,4 +1,4 @@
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Volume;
 
 /// <summary>发现同组所有 .cvp 卷文件</summary>
 public static class VolumeDiscovery

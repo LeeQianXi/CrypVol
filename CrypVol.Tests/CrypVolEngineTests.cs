@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
 using CrypVol.Lib;
-using CrypVol.Lib.Models;
+using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Engine;
+using CrypVol.Lib.Engine.Models;
 using Xunit;
 
 namespace CrypVol.Tests;
@@ -20,7 +22,10 @@ public class CrypVolEngineTests : IDisposable
     public void Dispose()
     {
         try { _workDir.Delete(true); }
-        catch { /* best effort */ }
+        catch
+        {
+            /* best effort */
+        }
     }
 
     private FileInfo MakeFile(string relativePath, byte[] content)
@@ -33,10 +38,14 @@ public class CrypVolEngineTests : IDisposable
     }
 
     private FileInfo MakeFile(string relativePath, string content)
-        => MakeFile(relativePath, Encoding.UTF8.GetBytes(content));
+    {
+        return MakeFile(relativePath, Encoding.UTF8.GetBytes(content));
+    }
 
-    private static List<FileInfo> CvpFiles(PackResult r) =>
-        r.VolumePaths.Select(p => new FileInfo(p)).ToList();
+    private static List<FileInfo> CvpFiles(PackResult r)
+    {
+        return r.VolumePaths.Select(p => new FileInfo(p)).ToList();
+    }
 
     // ═══════════════════════════════════════════════════════
     //  Pack → Extract (None mode)
@@ -53,7 +62,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "hello.txt")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "hello.txt"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
             Threads = 1
@@ -95,8 +107,7 @@ public class CrypVolEngineTests : IDisposable
             SourceFolder = _workDir,
             SourceFiles = new[]
             {
-                new FileInfo(Path.Combine(_workDir.FullName, "x.txt")),
-                new FileInfo(Path.Combine(_workDir.FullName, "y.txt"))
+                new FileInfo(Path.Combine(_workDir.FullName, "x.txt")), new FileInfo(Path.Combine(_workDir.FullName, "y.txt"))
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
@@ -139,7 +150,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "secret.txt")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "secret.txt"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
             Threads = 1
@@ -177,7 +191,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "data.txt")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "data.txt"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
             Threads = 1
@@ -219,7 +236,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "protected.txt")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "protected.txt"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
             Threads = 1
@@ -308,7 +328,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "data.bin")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "data.bin"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = oldCredentials,
             Threads = 1
@@ -452,7 +475,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "big.dat")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "big.dat"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
             VolumeSizeMb = 1,
@@ -497,7 +523,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "prog.txt")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "prog.txt"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
             Threads = 1
@@ -527,7 +556,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "binary.bin")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "binary.bin"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
             Threads = 1
@@ -564,7 +596,10 @@ public class CrypVolEngineTests : IDisposable
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
-            SourceFiles = new[] { new FileInfo(Path.Combine(_workDir.FullName, "size.txt")) }.ToList(),
+            SourceFiles = new[]
+            {
+                new FileInfo(Path.Combine(_workDir.FullName, "size.txt"))
+            }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
             Threads = 1
@@ -575,7 +610,10 @@ public class CrypVolEngineTests : IDisposable
 
         var browseOpts = new BrowseOptions
         {
-            VolumeFiles = new[] { cvpFile }.AsReadOnly(),
+            VolumeFiles = new[]
+            {
+                cvpFile
+            }.AsReadOnly(),
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 

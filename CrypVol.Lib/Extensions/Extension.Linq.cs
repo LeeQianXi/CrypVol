@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Diagnostics.Contracts;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Extensions;
 
 public static partial class Extension
 {

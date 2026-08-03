@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Volume;
 
 /// <summary>扫描 .cvp 卷头，构建文件→片段映射。cek 非 null 时解密加密头。</summary>
 public static class VolumeScanner

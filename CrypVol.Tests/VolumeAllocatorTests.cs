@@ -1,11 +1,14 @@
-using CrypVol.Lib;
+using CrypVol.Lib.Volume;
 using Xunit;
 
 namespace CrypVol.Tests;
 
 public class VolumeAllocatorTests
 {
-    private static string TempDir() => Path.Combine(Path.GetTempPath(), $"va-{Guid.NewGuid()}");
+    private static string TempDir()
+    {
+        return Path.Combine(Path.GetTempPath(), $"va-{Guid.NewGuid()}");
+    }
 
     private static FileInfo MakeFile(DirectoryInfo dir, string name, long size)
     {
@@ -52,9 +55,7 @@ public class VolumeAllocatorTests
         using var tmp = new TempDirScope();
         var files = new[]
         {
-            MakeFile(tmp.Dir, "a.txt", 100),
-            MakeFile(tmp.Dir, "b.txt", 200),
-            MakeFile(tmp.Dir, "c.txt", 300)
+            MakeFile(tmp.Dir, "a.txt", 100), MakeFile(tmp.Dir, "b.txt", 200), MakeFile(tmp.Dir, "c.txt", 300)
         };
 
         var (items, volumes) = VolumeAllocator.Allocate(files, tmp.Dir, 1024 * 1024);
@@ -71,7 +72,7 @@ public class VolumeAllocatorTests
         // Use small volume capacity to force splitting
         var file = MakeFile(tmp.Dir, "big.bin", 10000);
 
-        var (items, volumes) = VolumeAllocator.Allocate([file], tmp.Dir, volumeCapacity: 4096 + 284, headerSize: 284);
+        var (items, volumes) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
 
         // File should be split across multiple volumes
         Assert.True(volumes.Count >= 3);
@@ -94,8 +95,7 @@ public class VolumeAllocatorTests
         using var tmp = new TempDirScope();
         var files = new[]
         {
-            MakeFile(tmp.Dir, "a.txt", 100),
-            MakeFile(tmp.Dir, "b.txt", 200)
+            MakeFile(tmp.Dir, "a.txt", 100), MakeFile(tmp.Dir, "b.txt", 200)
         };
 
         var (items, _) = VolumeAllocator.Allocate(files, tmp.Dir, 1024 * 1024);
@@ -152,7 +152,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "split.bin", 20000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, volumeCapacity: 4096 + 284, headerSize: 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
 
         // First item should start at offset 0
         Assert.Equal(0, items[0].SourceOffset);
@@ -167,7 +167,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "multi.bin", 20000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, volumeCapacity: 4096 + 284, headerSize: 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
 
         Assert.All(items, item => Assert.Equal(20000, item.TotalFileSize));
     }
@@ -186,7 +186,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "big.dat", 50000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, volumeCapacity: 4096 + 284, headerSize: 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
 
         // Should have at least one CrossMid (flags=2) fragment
         Assert.Contains(items, i => i.Flags == 2);
@@ -197,7 +197,7 @@ public class VolumeAllocatorTests
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "test.bin", 20000);
-        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, volumeCapacity: 4096 + 284, headerSize: 284);
+        var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284, 284);
 
         // Current implementation sets IsFirstFragment=true on ALL fragments
         Assert.All(items, item => Assert.True(item.IsFirstFragment));
@@ -207,17 +207,20 @@ public class VolumeAllocatorTests
 /// <summary>Helper to clean up temp directories after tests</summary>
 public sealed class TempDirScope : IDisposable
 {
-    public DirectoryInfo Dir { get; }
-
     public TempDirScope()
     {
         Dir = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"va-{Guid.NewGuid()}"));
         Dir.Create();
     }
 
+    public DirectoryInfo Dir { get; }
+
     public void Dispose()
     {
         try { Dir.Delete(true); }
-        catch { /* best effort */ }
+        catch
+        {
+            /* best effort */
+        }
     }
 }

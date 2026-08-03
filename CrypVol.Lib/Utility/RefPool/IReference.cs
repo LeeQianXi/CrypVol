@@ -1,4 +1,4 @@
-namespace CrypVol.Lib.RefPool;
+namespace CrypVol.Lib.Utility.RefPool;
 
 /// <summary>
 ///     引用接口。

@@ -1,4 +1,4 @@
-namespace CrypVol.Lib.Models;
+namespace CrypVol.Lib.Engine.Models;
 
 /// <summary>进度报告</summary>
 public sealed class ProgressReport

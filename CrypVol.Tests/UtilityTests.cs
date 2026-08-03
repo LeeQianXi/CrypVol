@@ -1,3 +1,7 @@
+using CrypVol.Lib;
+using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Pipeline;
 using CrypVol.Lib.Utility;
 using Xunit;
 
@@ -11,14 +15,20 @@ file sealed class TestSingleton
 
 file sealed class AnotherSingleton
 {
-    public int Value { get; set; } = 42;
+    public int Value { get; } = 42;
 }
 
-file abstract class TestSingletonBase : StaticSingleton<TestSingleton> { }
+file abstract class TestSingletonBase : StaticSingleton<TestSingleton>
+{
+}
 
-file abstract class AnotherSingletonBase : StaticSingleton<AnotherSingleton> { }
+file abstract class AnotherSingletonBase : StaticSingleton<AnotherSingleton>
+{
+}
 
-file abstract class LazySingletonBase : StaticSingleton<TestSingleton> { }
+file abstract class LazySingletonBase : StaticSingleton<TestSingleton>
+{
+}
 
 public class StaticSingletonTests
 {
@@ -64,12 +74,12 @@ public class EncryptionModeTests
     [Fact]
     public void EncryptionMode_ValuesAreDistinct()
     {
-        var values = Enum.GetValues<CrypVol.Lib.EncryptionMode>();
+        var values = Enum.GetValues<EncryptionMode>();
         Assert.Equal(4, values.Length);
-        Assert.Contains(CrypVol.Lib.EncryptionMode.None, values);
-        Assert.Contains(CrypVol.Lib.EncryptionMode.PlainKey, values);
-        Assert.Contains(CrypVol.Lib.EncryptionMode.Password, values);
-        Assert.Contains(CrypVol.Lib.EncryptionMode.Asymmetric, values);
+        Assert.Contains(EncryptionMode.None, values);
+        Assert.Contains(EncryptionMode.PlainKey, values);
+        Assert.Contains(EncryptionMode.Password, values);
+        Assert.Contains(EncryptionMode.Asymmetric, values);
     }
 }
 
@@ -78,7 +88,7 @@ public class IntegrityLevelTests
     [Fact]
     public void IntegrityLevel_HasAllValues()
     {
-        Assert.Equal(4, Enum.GetValues<CrypVol.Lib.IntegrityLevel>().Length);
+        Assert.Equal(4, Enum.GetValues<IntegrityLevel>().Length);
     }
 }
 
@@ -87,13 +97,13 @@ public class BrowseOutputModeTests
     [Fact]
     public void BrowseOutputMode_HasAllValues()
     {
-        Assert.Equal(4, Enum.GetValues<CrypVol.Lib.BrowseOutputMode>().Length);
+        Assert.Equal(4, Enum.GetValues<BrowseOutputMode>().Length);
     }
 
     [Fact]
     public void BrowseSortField_HasAllValues()
     {
-        Assert.Equal(3, Enum.GetValues<CrypVol.Lib.BrowseSortField>().Length);
+        Assert.Equal(3, Enum.GetValues<BrowseSortField>().Length);
     }
 }
 
@@ -102,9 +112,9 @@ public class EnvelopeModeTests
     [Fact]
     public void EnvelopeMode_Values()
     {
-        Assert.Equal(0, (byte)CrypVol.Lib.EnvelopeMode.Plain);
-        Assert.Equal(1, (byte)CrypVol.Lib.EnvelopeMode.Password);
-        Assert.Equal(2, (byte)CrypVol.Lib.EnvelopeMode.PublicKey);
+        Assert.Equal(0, (byte)EnvelopeMode.Plain);
+        Assert.Equal(1, (byte)EnvelopeMode.Password);
+        Assert.Equal(2, (byte)EnvelopeMode.PublicKey);
     }
 }
 
@@ -113,7 +123,7 @@ public class ProgressReportTests
     [Fact]
     public void ProgressReport_DefaultValues()
     {
-        var report = new CrypVol.Lib.Models.ProgressReport();
+        var report = new ProgressReport();
         Assert.Equal("", report.Phase);
         Assert.Equal(0, report.Completed);
         Assert.Equal(0, report.Total);
@@ -123,7 +133,7 @@ public class ProgressReportTests
     [Fact]
     public void ProgressReport_SetsProperties()
     {
-        var report = new CrypVol.Lib.Models.ProgressReport
+        var report = new ProgressReport
         {
             Phase = "Write",
             Completed = 5,
@@ -142,7 +152,7 @@ public class PipelineConfigTests
     [Fact]
     public void PipelineConfig_DefaultValues()
     {
-        var config = new CrypVol.Lib.Pipeline.PipelineConfig();
+        var config = new PipelineConfig();
         Assert.Equal(4, config.ReaderConcurrency);
         Assert.Equal(Environment.ProcessorCount, config.TransformConcurrency);
         Assert.Equal(2, config.WriterConcurrency);
@@ -159,7 +169,7 @@ public class WorkItemTests
     [Fact]
     public void WorkItem_Properties_SetCorrectly()
     {
-        var item = new CrypVol.Lib.Pipeline.WorkItem
+        var item = new WorkItem
         {
             RelativePath = "sub/file.txt",
             SourceFullPath = "/tmp/sub/file.txt",

@@ -1,6 +1,6 @@
 using CrypVol.Lib.Pipeline;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Volume;
 
 /// <summary>文件→卷的预分配算法</summary>
 public static class VolumeAllocator

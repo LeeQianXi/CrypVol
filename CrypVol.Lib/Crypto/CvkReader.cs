@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Crypto;
 
 /// <summary>CVK 读取黑盒。封装修凭据校验、格式解析、CEK 解密。</summary>
 public sealed class CvkReader
@@ -143,11 +143,4 @@ public sealed class CvkReader
         _ = BinaryPrimitives.ReverseEndianness(r.ReadInt32());
         return r; // caller must dispose ms via using
     }
-}
-
-public enum EnvelopeMode : byte
-{
-    Plain = 0x00,
-    Password = 0x01,
-    PublicKey = 0x02
 }

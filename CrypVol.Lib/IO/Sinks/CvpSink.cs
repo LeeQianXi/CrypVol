@@ -1,7 +1,8 @@
 using System.Text;
 using CrypVol.Lib.Pipeline;
+using CrypVol.Lib.Volume;
 
-namespace CrypVol.Lib.Sinks;
+namespace CrypVol.Lib.IO.Sinks;
 
 /// <summary>有序写入 .cvp 卷文件。cek 非 null 时加密文件头。</summary>
 public static class CvpSink

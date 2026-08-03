@@ -1,12 +1,16 @@
 using System.Security.Cryptography;
 using CrypVol.Lib;
+using CrypVol.Lib.Crypto;
 using Xunit;
 
 namespace CrypVol.Tests;
 
 public class CvkTests
 {
-    static string TempPath(string? ext = ".cvk") => Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid()}{ext}");
+    private static string TempPath(string? ext = ".cvk")
+    {
+        return Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid()}{ext}");
+    }
 
     // ═══════════════════════════════════════════════════════
     //  PlainKey
@@ -15,7 +19,8 @@ public class CvkTests
     [Fact]
     public async Task PlainKey_RoundTrip()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.PlainKey);
             var creds = await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -28,7 +33,11 @@ public class CvkTests
             Assert.Equal(creds.EncryptionMode, loaded.EncryptionMode);
             Assert.Equal(creds.Cek, loaded.Cek);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -48,7 +57,8 @@ public class CvkTests
     [Fact]
     public async Task Password_RoundTrip()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.Password, "testpass");
             var creds = await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -58,13 +68,18 @@ public class CvkTests
             var loaded = await r.LoadKeyAsync();
             Assert.Equal(creds.Cek, loaded.Cek);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
     public async Task Password_WrongPassword_Throws()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.Password, "correct");
             await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -73,13 +88,18 @@ public class CvkTests
             var r = new CvkReader(new FileInfo(path), "wrong");
             await Assert.ThrowsAnyAsync<Exception>(() => r.LoadKeyAsync());
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
     public async Task Password_EmptyOrWhitespace_Throws()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.Password, "valid");
             await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -89,13 +109,18 @@ public class CvkTests
             var r = new CvkReader(new FileInfo(path), "  ");
             await Assert.ThrowsAnyAsync<Exception>(() => r.LoadKeyAsync());
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
     public async Task Password_UnicodePassword_RoundTrip()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.Password, "密码🔐测试");
             await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -105,7 +130,11 @@ public class CvkTests
             var loaded = await r.LoadKeyAsync();
             Assert.Equal(32, loaded.Cek.Length);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -134,7 +163,49 @@ public class CvkTests
             Assert.Equal(creds.Cek, loaded.Cek);
             Assert.Equal(EncryptionMode.Asymmetric, loaded.EncryptionMode);
         }
-        finally { try { File.Delete(path); File.Delete(pubPath); File.Delete(privPath); } catch { } }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+                File.Delete(pubPath);
+                File.Delete(privPath);
+            }
+            catch { }
+        }
+    }
+
+    [Fact]
+    public async Task Asymmetric_WithEncryptedPrivateKey_RoundTrip()
+    {
+        var path = TempPath();
+        using var rsa = RSA.Create(2048);
+        var pubPath = TempPath(".pub.pem");
+        var privPath = TempPath(".priv.pem");
+        try
+        {
+            File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
+            var encPriv = rsa.ExportEncryptedPkcs8PrivateKeyPem("privpass".AsSpan(), new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100000));
+            File.WriteAllText(privPath, encPriv);
+
+            var w = new CvkWriter(EncryptionMode.Asymmetric, publicKeyFiles: [new FileInfo(pubPath)]);
+            var creds = await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
+            File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".cvk"), path, true);
+
+            var r = new CvkReader(new FileInfo(path), privateKeyFile: new FileInfo(privPath), privateKeyPass: "privpass");
+            var loaded = await r.LoadKeyAsync();
+            Assert.Equal(creds.Cek, loaded.Cek);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+                File.Delete(pubPath);
+                File.Delete(privPath);
+            }
+            catch { }
+        }
     }
 
     [Fact]
@@ -157,7 +228,16 @@ public class CvkTests
             var r = new CvkReader(new FileInfo(path), privateKeyFile: new FileInfo(wrongPrivPath));
             await Assert.ThrowsAnyAsync<Exception>(() => r.LoadKeyAsync());
         }
-        finally { try { File.Delete(path); File.Delete(pubPath); File.Delete(wrongPrivPath); } catch { } }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+                File.Delete(pubPath);
+                File.Delete(wrongPrivPath);
+            }
+            catch { }
+        }
     }
 
     [Fact]
@@ -176,7 +256,15 @@ public class CvkTests
             var r = new CvkReader(new FileInfo(path));
             await Assert.ThrowsAsync<InvalidOperationException>(() => r.LoadKeyAsync());
         }
-        finally { try { File.Delete(path); File.Delete(pubPath); } catch { } }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+                File.Delete(pubPath);
+            }
+            catch { }
+        }
     }
 
     [Fact]
@@ -192,33 +280,45 @@ public class CvkTests
     // ═══════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ReadMode_ReturnsCorrectMode()
+    public void ReadMode_ReturnsCorrectMode()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.Password, "p");
-            await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
+            var t = w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
+            t.Wait();
             File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".cvk"), path, true);
             Assert.Equal(EnvelopeMode.Password, CvkReader.ReadMode(path));
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
-    public async Task ReadMode_PlainKey()
+    public void ReadMode_PlainKey()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.PlainKey);
-            await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
+            var t = w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
+            t.Wait();
             File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".cvk"), path, true);
             Assert.Equal(EnvelopeMode.Plain, CvkReader.ReadMode(path));
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
-    public async Task ReadMode_PublicKey()
+    public void ReadMode_PublicKey()
     {
         using var rsa = RSA.Create(2048);
         var pubPath = TempPath(".pub.pem");
@@ -227,11 +327,20 @@ public class CvkTests
         {
             File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
             var w = new CvkWriter(EncryptionMode.Asymmetric, publicKeyFiles: [new FileInfo(pubPath)]);
-            await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(cvkPath));
+            var t = w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(cvkPath));
+            t.Wait();
             File.Move(Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(cvkPath) + ".cvk"), cvkPath, true);
             Assert.Equal(EnvelopeMode.PublicKey, CvkReader.ReadMode(cvkPath));
         }
-        finally { try { File.Delete(cvkPath); File.Delete(pubPath); } catch { } }
+        finally
+        {
+            try
+            {
+                File.Delete(cvkPath);
+                File.Delete(pubPath);
+            }
+            catch { }
+        }
     }
 
     [Fact]
@@ -243,7 +352,11 @@ public class CvkTests
             File.WriteAllText(path, Convert.ToBase64String("not a key file"u8.ToArray()));
             Assert.Throws<InvalidDataException>(() => CvkReader.ReadMode(path));
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -261,7 +374,11 @@ public class CvkTests
             File.WriteAllText(path, "AAAA");
             Assert.Throws<InvalidDataException>(() => CvkReader.ReadMode(path));
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -271,7 +388,9 @@ public class CvkTests
     [Fact]
     public async Task Rekey_PreservesCEK()
     {
-        var path1 = TempPath(); var path2 = TempPath(); try
+        var path1 = TempPath();
+        var path2 = TempPath();
+        try
         {
             var w1 = new CvkWriter(EncryptionMode.PlainKey);
             var c1 = await w1.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path1));
@@ -285,7 +404,15 @@ public class CvkTests
             var c2 = await r.LoadKeyAsync();
             Assert.Equal(c1.Cek, c2.Cek);
         }
-        finally { try { File.Delete(path1); File.Delete(path2); } catch { } }
+        finally
+        {
+            try
+            {
+                File.Delete(path1);
+                File.Delete(path2);
+            }
+            catch { }
+        }
     }
 
     [Fact]
@@ -294,7 +421,8 @@ public class CvkTests
         using var rsa = RSA.Create(2048);
         var pubPath = TempPath(".pub.pem");
         var privPath = TempPath(".priv.pem");
-        var path1 = TempPath(); var path2 = TempPath();
+        var path1 = TempPath();
+        var path2 = TempPath();
         try
         {
             File.WriteAllText(pubPath, rsa.ExportSubjectPublicKeyInfoPem());
@@ -314,7 +442,13 @@ public class CvkTests
         }
         finally
         {
-            try { File.Delete(path1); File.Delete(path2); File.Delete(pubPath); File.Delete(privPath); }
+            try
+            {
+                File.Delete(path1);
+                File.Delete(path2);
+                File.Delete(pubPath);
+                File.Delete(privPath);
+            }
             catch { }
         }
     }
@@ -326,7 +460,8 @@ public class CvkTests
     [Fact]
     public async Task Comment_Written_SurvivesRoundTrip()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.PlainKey, comment: "测试注释");
             await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -336,7 +471,11 @@ public class CvkTests
             var loaded = await r.LoadKeyAsync();
             Assert.NotNull(loaded.Cek);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -375,7 +514,8 @@ public class CvkTests
     [Fact]
     public async Task LoadKeyAsync_PasswordMode_NoPassword_Throws()
     {
-        var path = TempPath(); try
+        var path = TempPath();
+        try
         {
             var w = new CvkWriter(EncryptionMode.Password, "secret");
             await w.WriteCvkAsync(new DirectoryInfo(Path.GetTempPath()), Path.GetFileNameWithoutExtension(path));
@@ -384,7 +524,11 @@ public class CvkTests
             var r = new CvkReader(new FileInfo(path)); // no password provided
             await Assert.ThrowsAsync<InvalidOperationException>(() => r.LoadKeyAsync());
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     // ═══════════════════════════════════════════════════════

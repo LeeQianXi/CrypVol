@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using CrypVol.Lib.Crypto;
 
-namespace CrypVol.Lib.Models;
+namespace CrypVol.Lib.Engine.Models;
 
 public sealed record ExtractOptions
 {

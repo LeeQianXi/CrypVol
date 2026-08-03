@@ -1,6 +1,6 @@
 using CrypVol.Lib.Pipeline;
 
-namespace CrypVol.Lib.Sinks;
+namespace CrypVol.Lib.IO.Sinks;
 
 /// <summary>有序写入还原文件</summary>
 public static class FileSink

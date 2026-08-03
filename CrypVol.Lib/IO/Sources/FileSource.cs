@@ -1,7 +1,7 @@
 using System.Buffers;
 using CrypVol.Lib.Pipeline;
 
-namespace CrypVol.Lib.Sources;
+namespace CrypVol.Lib.IO.Sources;
 
 /// <summary>从文件系统读取原始数据块</summary>
 public static class FileSource

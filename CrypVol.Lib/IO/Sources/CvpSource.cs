@@ -1,7 +1,7 @@
 using System.Buffers;
 using CrypVol.Lib.Pipeline;
 
-namespace CrypVol.Lib.Sources;
+namespace CrypVol.Lib.IO.Sources;
 
 /// <summary>从 .cvp 文件读取加密数据块</summary>
 public static class CvpSource

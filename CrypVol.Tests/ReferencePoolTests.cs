@@ -1,4 +1,4 @@
-using CrypVol.Lib.RefPool;
+using CrypVol.Lib.Utility.RefPool;
 using Xunit;
 
 namespace CrypVol.Tests;
@@ -16,7 +16,9 @@ file sealed class TestReference : IReference<TestReference>
 
 file sealed class AnotherReference : IReference<AnotherReference>
 {
-    public void Reset() { }
+    public void Reset()
+    {
+    }
 }
 
 public class ReferencePoolTests : IDisposable

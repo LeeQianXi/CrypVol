@@ -1,4 +1,4 @@
-using CrypVol.Lib.Models;
+using CrypVol.Lib.Engine.Models;
 
 namespace CrypVol.Cli;
 

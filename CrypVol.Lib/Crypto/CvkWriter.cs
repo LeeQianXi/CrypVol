@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Crypto;
 
 /// <summary>CVK 生成黑盒。封装 CEK 生成、密钥包裹、二进制写入。</summary>
 public sealed class CvkWriter

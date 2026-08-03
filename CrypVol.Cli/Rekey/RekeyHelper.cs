@@ -1,5 +1,5 @@
 using System.CommandLine;
-using CrypVol.Lib;
+using CrypVol.Lib.Crypto;
 
 namespace CrypVol.Cli.Rekey;
 

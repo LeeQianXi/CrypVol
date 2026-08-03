@@ -1,11 +1,14 @@
-using CrypVol.Lib;
+using CrypVol.Lib.Volume;
 using Xunit;
 
 namespace CrypVol.Tests;
 
 public class VolumeDiscoveryTests
 {
-    private static string TempDir() => Path.Combine(Path.GetTempPath(), $"vd-{Guid.NewGuid()}");
+    private static string TempDir()
+    {
+        return Path.Combine(Path.GetTempPath(), $"vd-{Guid.NewGuid()}");
+    }
 
     [Fact]
     public void Discover_Directory_ReturnsAllCvpFiles()
@@ -24,7 +27,11 @@ public class VolumeDiscoveryTests
             Assert.Equal(3, result.Count);
             Assert.All(result, f => Assert.EndsWith(".cvp", f.Name));
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -37,7 +44,11 @@ public class VolumeDiscoveryTests
             var result = VolumeDiscovery.Discover([dir]);
             Assert.Empty(result);
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -56,7 +67,11 @@ public class VolumeDiscoveryTests
             Assert.Equal(3, result.Count);
             Assert.All(result, f => f.Name.StartsWith("data."));
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -77,7 +92,11 @@ public class VolumeDiscoveryTests
             Assert.Equal("vol.1.cvp", result[1].Name);
             Assert.Equal("vol.2.cvp", result[2].Name);
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -93,7 +112,11 @@ public class VolumeDiscoveryTests
 
             Assert.Single(result); // deduplicated
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -123,6 +146,10 @@ public class VolumeDiscoveryTests
             Assert.Equal("archive.1.cvp", result[0].Name);
             Assert.Equal("archive.2.cvp", result[1].Name);
         }
-        finally { try { dir.Delete(true); } catch { } }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
     }
 }

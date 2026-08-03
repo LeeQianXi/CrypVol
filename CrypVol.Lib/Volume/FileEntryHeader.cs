@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Volume;
 
 [StructLayout(LayoutKind.Explicit, Size = HeaderSize, Pack = 1)]
 public unsafe struct FileEntryHeader()

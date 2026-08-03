@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
-using CrypVol.Lib;
+using System.Text;
+using CrypVol.Lib.Volume;
 using Xunit;
 
 namespace CrypVol.Tests;
@@ -66,7 +67,10 @@ public class FileEntryHeaderTests
     [Fact]
     public void ToBytes_PreservesFileId()
     {
-        var hdr = new FileEntryHeader { FileId = 0xDEADBEEF12345678 };
+        var hdr = new FileEntryHeader
+        {
+            FileId = 0xDEADBEEF12345678
+        };
         var bytes = hdr.ToBytes();
         Assert.Equal(0xDEADBEEF12345678u, BitConverter.ToUInt64(bytes, 4));
     }
@@ -74,7 +78,10 @@ public class FileEntryHeaderTests
     [Fact]
     public void ToBytes_PreservesFlags()
     {
-        var hdr = new FileEntryHeader { Flags = 0xAB };
+        var hdr = new FileEntryHeader
+        {
+            Flags = 0xAB
+        };
         var bytes = hdr.ToBytes();
         Assert.Equal(0xAB, bytes[12]);
     }
@@ -82,7 +89,10 @@ public class FileEntryHeaderTests
     [Fact]
     public void ToBytes_PreservesFragmentIndex()
     {
-        var hdr = new FileEntryHeader { FragmentIndex = 42 };
+        var hdr = new FileEntryHeader
+        {
+            FragmentIndex = 42
+        };
         var bytes = hdr.ToBytes();
         Assert.Equal(42u, BitConverter.ToUInt32(bytes, 13));
     }
@@ -90,7 +100,10 @@ public class FileEntryHeaderTests
     [Fact]
     public void ToBytes_PreservesSizeOrTotal()
     {
-        var hdr = new FileEntryHeader { SizeOrTotal = 123456789 };
+        var hdr = new FileEntryHeader
+        {
+            SizeOrTotal = 123456789
+        };
         var bytes = hdr.ToBytes();
         Assert.Equal(123456789L, BitConverter.ToInt64(bytes, 17));
     }
@@ -104,7 +117,7 @@ public class FileEntryHeaderTests
         hdr.SetFilePath("test.txt");
         var bytes = hdr.ToBytes();
         var pathBytes = bytes.Skip(25).TakeWhile(b => b != 0).ToArray();
-        var path = System.Text.Encoding.UTF8.GetString(pathBytes);
+        var path = Encoding.UTF8.GetString(pathBytes);
         Assert.Equal("test.txt", path);
     }
 
@@ -144,7 +157,7 @@ public class FileEntryHeaderTests
         hdr.SetFilePath("测试文件.txt");
         var bytes = hdr.ToBytes();
         var pathBytes = bytes.Skip(25).TakeWhile(b => b != 0).ToArray();
-        var path = System.Text.Encoding.UTF8.GetString(pathBytes);
+        var path = Encoding.UTF8.GetString(pathBytes);
         Assert.Equal("测试文件.txt", path);
     }
 
@@ -258,7 +271,10 @@ public class FileEntryHeaderTests
     {
         var cek1 = RandomNumberGenerator.GetBytes(32);
         var cek2 = RandomNumberGenerator.GetBytes(32);
-        var hdr = new FileEntryHeader { FileId = 1 };
+        var hdr = new FileEntryHeader
+        {
+            FileId = 1
+        };
         hdr.SetFilePath("test");
 
         var e1 = FileEntryHeader.Encrypt(hdr, cek1);

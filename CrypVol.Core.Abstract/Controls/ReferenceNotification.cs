@@ -1,5 +1,5 @@
 using Avalonia.Controls.Notifications;
-using CrypVol.Lib.RefPool;
+using CrypVol.Lib.Utility.RefPool;
 
 namespace CrypVol.Core.Abstract.Controls;
 

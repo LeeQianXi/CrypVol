@@ -1,4 +1,6 @@
-namespace CrypVol.Lib.Models;
+using CrypVol.Lib.Crypto;
+
+namespace CrypVol.Lib.Engine.Models;
 
 public sealed record BrowseOptions
 {

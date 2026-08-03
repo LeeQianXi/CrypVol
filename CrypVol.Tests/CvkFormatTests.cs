@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using CrypVol.Lib;
+using CrypVol.Lib.Crypto;
 using Xunit;
 
 namespace CrypVol.Tests;
@@ -9,7 +10,10 @@ namespace CrypVol.Tests;
 /// <summary>Direct binary format tests for CVK envelope format.</summary>
 public class CvkFormatTests
 {
-    static string TempPath() => Path.Combine(Path.GetTempPath(), $"fmt-{Guid.NewGuid()}.cvk");
+    private static string TempPath()
+    {
+        return Path.Combine(Path.GetTempPath(), $"fmt-{Guid.NewGuid()}.cvk");
+    }
 
     [Fact]
     public async Task PlainKey_BinaryFormat_RoundTrip_ViaReader()
@@ -39,7 +43,11 @@ public class CvkFormatTests
             Assert.Equal(cek, loaded.Cek);
             Assert.Equal(EncryptionMode.PlainKey, loaded.EncryptionMode);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally
+        {
+            try { File.Delete(path); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -105,7 +113,11 @@ public class CvkFormatTests
             var parsedCek = r.ReadBytes(32);
             Assert.Equal(creds.Cek, parsedCek);
         }
-        finally { try { File.Delete(cvkPath); } catch { } }
+        finally
+        {
+            try { File.Delete(cvkPath); }
+            catch { }
+        }
     }
 
     [Fact]
@@ -126,6 +138,10 @@ public class CvkFormatTests
             var loaded = await reader.LoadKeyAsync();
             Assert.Equal(creds.Cek, loaded.Cek);
         }
-        finally { try { File.Delete(cvkPath); } catch { } }
+        finally
+        {
+            try { File.Delete(cvkPath); }
+            catch { }
+        }
     }
 }
