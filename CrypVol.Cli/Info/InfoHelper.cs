@@ -7,31 +7,36 @@ public static class InfoHelper
 {
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
-        var files = args.GetRequiredValue(CommandDefinition.Info.InputFiles);
+        var keyFile = args.GetRequiredValue(CommandDefinition.Info.KeyFile);
 
-        foreach (var f in files)
+        try
         {
-            if (f is not FileInfo fi) continue;
-            try
-            {
-                var mode = KeyEnvelope.ReadMode(fi.FullName);
-                var label = mode switch
-                {
-                    EnvelopeMode.Plain => "明文",
-                    EnvelopeMode.Password => "密码保护",
-                    EnvelopeMode.PublicKey => "公钥保护",
-                    _ => "未知"
-                };
-                var size = new FileInfo(fi.FullName).Length;
-                Console.WriteLine($"{fi.Name}: {label} ({size} bytes)");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"{fi.Name}: 读取失败 ({ex.Message})");
-            }
+            var c = await new CvkReader(keyFile,
+                    args.GetValue(CommandDefinition.Info.Password),
+                    args.GetValue(CommandDefinition.Info.PrivkeyKey),
+                    args.GetValue(CommandDefinition.Info.PrivkeyKeyPass))
+                .LoadKeyAsync(token);
+
+            Console.WriteLine(
+                $"{keyFile.Name}: {ModeLabel(c.EncryptionMode)} (验证通过, CEK: {System.Convert.ToHexString(c.Cek)[..8]}...)");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"读取失败: {ex.Message}");
+            return 1;
         }
 
-        await Task.CompletedTask;
         return 0;
+    }
+
+    private static string ModeLabel(EncryptionMode m)
+    {
+        return m switch
+        {
+            EncryptionMode.PlainKey => "明文",
+            EncryptionMode.Password => "密码保护",
+            EncryptionMode.Asymmetric => "公钥保护",
+            _ => "未知"
+        };
     }
 }

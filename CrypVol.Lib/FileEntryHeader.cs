@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace CrypVol.Lib;
@@ -20,6 +21,9 @@ public unsafe struct FileEntryHeader()
     public const uint MagicHeader = 0x48505643;
     public const int HeaderSize = 256;
 
+    /// <summary>加密后的头部大小: Magic(4) + Nonce(12) + Ciphertext(252) + Tag(16)</summary>
+    public const int EncryptedHeaderSize = 284;
+
     public byte[] ToBytes()
     {
         var buffer = new byte[256];
@@ -35,10 +39,51 @@ public unsafe struct FileEntryHeader()
     public void SetFilePath(string path)
     {
         var bytes = Encoding.UTF8.GetBytes(path);
-        var len = Math.Min(bytes.Length, 230); // 留一个字节给 null 终止符
+        var len = Math.Min(bytes.Length, 230);
         for (var i = 0; i < len; i++)
             FilePath[i] = bytes[i];
         FilePath[len] = 0;
+    }
+
+    /// <summary>加密头部：返回 Magic(4) + Nonce(12) + Ciphertext(252) + Tag(16) = 284 字节</summary>
+    public static byte[] Encrypt(FileEntryHeader hdr, byte[] cek)
+    {
+        var plain = hdr.ToBytes(); // 256B, includes Magic
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var payload = plain.AsSpan(4, 252); // skip Magic
+        var ciphertext = new byte[252];
+        var tag = new byte[16];
+
+        using var aes = new AesGcm(cek, 16);
+        aes.Encrypt(nonce, payload, ciphertext, tag);
+
+        var result = new byte[EncryptedHeaderSize]; // 284
+        Buffer.BlockCopy(plain, 0, result, 0, 4); // Magic
+        Buffer.BlockCopy(nonce, 0, result, 4, 12); // Nonce
+        Buffer.BlockCopy(ciphertext, 0, result, 16, 252); // Ciphertext
+        Buffer.BlockCopy(tag, 0, result, 268, 16); // Tag
+        return result;
+    }
+
+    /// <summary>解密头部：读取 284 字节，返回 FileEntryHeader</summary>
+    public static FileEntryHeader Decrypt(byte[] encrypted, byte[] cek)
+    {
+        var nonce = encrypted.AsSpan(4, 12);
+        var ciphertext = encrypted.AsSpan(16, 252);
+        var tag = encrypted.AsSpan(268, 16);
+        var plain = new byte[256];
+        Buffer.BlockCopy(encrypted, 0, plain, 0, 4); // copy magic
+
+        using var aes = new AesGcm(cek, 16);
+        aes.Decrypt(nonce, ciphertext, tag, plain.AsSpan(4, 252));
+
+        return MemoryMarshal.Read<FileEntryHeader>(plain);
+    }
+
+    /// <summary>仅读取加密头中的 Magic（无需解密）</summary>
+    public static uint ReadMagic(byte[] encrypted)
+    {
+        return BitConverter.ToUInt32(encrypted, 0);
     }
 }
 

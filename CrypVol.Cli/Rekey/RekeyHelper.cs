@@ -1,6 +1,5 @@
 using System.CommandLine;
 using CrypVol.Lib;
-using CrypVol.Lib.Models;
 
 namespace CrypVol.Cli.Rekey;
 
@@ -11,29 +10,39 @@ public static class RekeyHelper
         var cvkFile = args.GetRequiredValue(CommandDefinition.Rekey.CvkFile);
         var toMode = args.GetValue(CommandDefinition.Rekey.ToMode);
 
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose))
-            engine.Progress = new ConsoleProgress();
-
-        var result = await engine.RekeyAsync(new RekeyOptions
+        // 1. 加载源 CEK
+        CvkCredentials creds;
+        try
         {
-            SourceCvkPath = cvkFile.FullName,
-            OutputPath = args.GetValue(CommandDefinition.Rekey.Output)?.FullName,
-            TargetMode = toMode,
-            SourcePassword = args.GetValue(CommandDefinition.Rekey.Password),
-            NewPassword = args.GetValue(CommandDefinition.Rekey.NewPassword),
-            PublicKeyPaths = args.GetValue(CommandDefinition.Rekey.PublicKey)?.Select(f => f.FullName).ToList(),
-            SourcePrivateKeyPath = args.GetValue(CommandDefinition.Rekey.PrivkeyKey)?.FullName,
-            Backup = args.GetValue(CommandDefinition.Rekey.Backup)
-        }, token);
-
-        if (!result.Success)
+            creds = await new CvkReader(
+                    cvkFile,
+                    args.GetValue(CommandDefinition.Rekey.Password),
+                    args.GetValue(CommandDefinition.Rekey.PrivkeyKey),
+                    args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass))
+                .LoadKeyAsync(token);
+        }
+        catch (Exception ex)
         {
-            Console.WriteLine($"错误: {result.Error}");
+            Console.WriteLine(ex.Message);
             return 1;
         }
 
-        Console.WriteLine($"密钥已重新封装 → {result.OutputPath}");
+        // 2. 备份
+        if (args.GetValue(CommandDefinition.Rekey.Backup))
+            File.Copy(cvkFile.FullName, cvkFile.FullName + ".bak", true);
+
+        // 3. 重新封装
+        var output = args.GetValue(CommandDefinition.Rekey.Output);
+        var outDir = output?.Directory ?? cvkFile.Directory!;
+        var prefix = Path.GetFileNameWithoutExtension(output?.Name ?? cvkFile.Name);
+        var writer = new CvkWriter(
+            creds.Cek,
+            toMode,
+            args.GetValue(CommandDefinition.Rekey.NewPassword),
+            args.GetValue(CommandDefinition.Rekey.PublicKey));
+        await writer.WriteCvkAsync(outDir, prefix, token);
+
+        Console.WriteLine($"密钥已重新封装 → {Path.Combine(outDir.FullName, prefix + ".cvk")}");
         return 0;
     }
 }

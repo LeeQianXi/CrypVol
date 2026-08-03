@@ -3,10 +3,10 @@ using CrypVol.Lib.Pipeline;
 
 namespace CrypVol.Lib.Sinks;
 
-/// <summary>有序写入 .cvp 卷文件</summary>
+/// <summary>有序写入 .cvp 卷文件。cek 非 null 时加密文件头。</summary>
 public static class CvpSink
 {
-    public static async Task WriteAsync(VolumeContext ctx, CancellationToken token)
+    public static async Task WriteAsync(VolumeContext ctx, byte[]? cek, CancellationToken token)
     {
         await using var fs = new FileStream(ctx.OutputPath, FileMode.Create, FileAccess.Write,
             FileShare.None, 4096 * 16, FileOptions.SequentialScan);
@@ -25,9 +25,14 @@ public static class CvpSink
                     SizeOrTotal = block.Work.TotalFileSize
                 };
                 header.SetFilePath(block.Work.RelativePath);
+
+                var headerBytes = cek is not null
+                    ? FileEntryHeader.Encrypt(header, cek)
+                    : header.ToBytes();
+
                 fs.Position = pos;
-                await fs.WriteAsync(header.ToBytes(), token);
-                pos += FileEntryHeader.HeaderSize;
+                await fs.WriteAsync(headerBytes, token);
+                pos += headerBytes.Length;
             }
 
             var len = BitConverter.GetBytes(block.OutputLength);

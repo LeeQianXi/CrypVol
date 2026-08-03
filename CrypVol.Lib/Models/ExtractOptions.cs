@@ -1,26 +1,35 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace CrypVol.Lib.Models;
 
 public sealed record ExtractOptions
 {
-    /// <summary>.cvp 卷文件路径或所在目录</summary>
-    public required IReadOnlyList<string> VolumePaths { get; init; }
+    /// <summary>.cvp 卷文件（CLI 已解析为具体文件）</summary>
+    public required IReadOnlyCollection<FileInfo> VolumeFiles { get; init; }
 
     /// <summary>还原目标目录</summary>
-    public required string OutputDir { get; init; }
+    public required DirectoryInfo OutputDir { get; init; }
 
-    /// <summary>.cvk 密钥文件路径（自动搜索同目录）</summary>
-    public string? KeyFilePath { get; init; }
+    /// <summary>已加载的密钥（null = 未加密）</summary>
+    public required CvkCredentials Credentials { get; init; }
 
-    /// <summary>解密密码</summary>
-    public string? Password { get; init; }
+    /// <summary>Glob 包含模式</summary>
+    [field: AllowNull]
+    public string IncludePattern
+    {
+        get => field ?? string.Empty;
+        init;
+    }
 
-    /// <summary>私钥文件路径</summary>
-    public string? PrivateKeyPath { get; init; }
+    /// <summary>Glob 排除模式</summary>
+    [field: AllowNull]
+    public string ExcludePattern
+    {
+        get => field ?? string.Empty;
+        init;
+    }
 
-    /// <summary>覆盖已存在文件</summary>
     public bool Overwrite { get; init; }
-
-    /// <summary>并行线程数</summary>
     public int Threads { get; init; } = Environment.ProcessorCount;
 }
 

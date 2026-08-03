@@ -75,6 +75,8 @@ public static class CommandDefinition
         public static readonly Option<EncryptionMode> Mode;
         public static readonly Option<string> Password;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
+        public static readonly Option<FileInfo> PrivkeyKey;
+        public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<bool> Compress;
         public static readonly Option<int> CompressionLevel;
         public static readonly Option<int> Threads;
@@ -155,6 +157,18 @@ public static class CommandDefinition
                     """,
                 HelpName = "cvk-file"
             }.AcceptExistingOnly();
+
+            PrivkeyKey = new Option<FileInfo>("--privkey-key")
+            {
+                Description = "解密已有 .cvk 的私钥（Asymmetric 模式，与 --key-file 配合）",
+                HelpName = "pem-file"
+            }.AcceptExistingOnly();
+
+            PrivkeyKeyPass = new Option<string>("--key-pass")
+            {
+                Description = "私钥文件的解密密码（若私钥自身加密）",
+                HelpName = "passphrase"
+            };
 
             Mode = new Option<EncryptionMode>("--mode", "-m")
             {
@@ -300,6 +314,8 @@ public static class CommandDefinition
                 Mode,
                 Password,
                 PublicKey,
+                PrivkeyKey,
+                PrivkeyKeyPass,
                 Compress,
                 CompressionLevel,
                 Threads,
@@ -329,14 +345,9 @@ public static class CommandDefinition
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<int> Threads;
-        public static readonly Option<string> FileFilter;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
         public static readonly Option<bool> Overwrite;
-        public static readonly Option<bool> KeepPermissions;
-        public static readonly Option<bool> Rescue;
-        public static readonly Option<bool> DryRun;
-        public static readonly Option<bool> VerifyOnly;
 
         static Extract()
         {
@@ -398,20 +409,9 @@ public static class CommandDefinition
                 DefaultValueFactory = static _ => Environment.ProcessorCount
             };
 
-            FileFilter = new Option<string>("--file")
-            {
-                Description =
-                    """
-                    仅提取指定文件，支持 Glob 模式。
-                    例如：--file "**/*.jpg" 仅提取 JPEG 图片。
-                    可多次指定。
-                    """,
-                HelpName = "pattern"
-            };
-
             Include = new Option<string>("--include")
             {
-                Description = "仅提取匹配 Glob 模式的文件（同 --file）",
+                Description = "仅提取匹配 Glob 模式的文件",
                 HelpName = "pattern"
             };
 
@@ -424,34 +424,6 @@ public static class CommandDefinition
             Overwrite = new Option<bool>("--overwrite")
             {
                 Description = "覆盖目标目录中已存在的同名文件。未指定时遇到同名文件会跳过并警告"
-            };
-
-            KeepPermissions = new Option<bool>("--keep-permissions")
-            {
-                Description = "还原原始文件的 Unix 权限位（rwx）。仅在 Unix 平台上有效"
-            };
-
-            Rescue = new Option<bool>("--rescue")
-            {
-                Description =
-                    """
-                    救援模式。忽略对齐错误和块级损坏标记，跳过无法恢复的数据块，
-                    尽可能从损坏的卷中恢复可读数据。损坏区域将被零填充。
-                    """
-            };
-
-            DryRun = new Option<bool>("--dry-run")
-            {
-                Description = "预览还原计划：列出将解包的文件名、数量及预计大小，不实际写入"
-            };
-
-            VerifyOnly = new Option<bool>("--verify-only")
-            {
-                Description =
-                    """
-                    仅校验模式。读取卷数据并校验完整性（需要 --key-file 或无需密钥），
-                    但不将文件写入磁盘。相当于 verify 命令 + 解包预览。
-                    """
             };
         }
 
@@ -485,14 +457,9 @@ public static class CommandDefinition
                 PrivkeyKey,
                 PrivkeyKeyPass,
                 Threads,
-                FileFilter,
                 Include,
                 Exclude,
-                Overwrite,
-                KeepPermissions,
-                Rescue,
-                DryRun,
-                VerifyOnly
+                Overwrite
             };
 
             cmd.SetAction(ExtractHelper.Invoker);
@@ -507,19 +474,13 @@ public static class CommandDefinition
     public static class Browse
     {
         public static readonly Argument<ICollection<FileSystemInfo>> VolFiles;
-        public static readonly Option<FileInfo?> Output;
-        public static readonly Option<BrowseOutputMode> OutputFormat;
-        public static readonly Option<bool> ShowFragments;
         public static readonly Option<bool> LongFormat;
-        public static readonly Option<BrowseSortField> Sort;
-        public static readonly Option<bool> SortReverse;
         public static readonly Option<FileInfo> KeyFile;
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
-        public static readonly Option<bool> Rescue;
 
         static Browse()
         {
@@ -533,58 +494,9 @@ public static class CommandDefinition
                 Arity = ArgumentArity.OneOrMore
             }.AcceptExistingOnly();
 
-            Output = new Option<FileInfo?>("--output", "-o")
-            {
-                Description = "将文件清单写入指定文件（默认输出到标准输出 / 终端）",
-                HelpName = "file",
-                DefaultValueFactory = static result =>
-                {
-                    var input = result.GetValue(VolFiles)?.FirstOrDefault();
-                    return input switch
-                    {
-                        FileInfo fi => fi.Directory != null
-                            ? new FileInfo(Path.Combine(fi.Directory.FullName, "browse-output.txt"))
-                            : null,
-                        DirectoryInfo di => new FileInfo(Path.Combine(di.FullName, "browse-output.txt")),
-                        _ => null
-                    };
-                }
-            }.AcceptLegalFilePathsOnly();
-
-            OutputFormat = new Option<BrowseOutputMode>("--output-format", "-f")
-            {
-                Description =
-                    """
-                    输出格式：
-
-                    Table —— 对齐表格，适合人类阅读（默认）
-                    Csv   —— 逗号分隔值，适合导入 Excel
-                    Json  —— JSON 数组
-                    Yaml  —— YAML 列表
-                    """,
-                DefaultValueFactory = static _ => BrowseOutputMode.Table
-            };
-
-            ShowFragments = new Option<bool>("--show-fragments")
-            {
-                Description = "显示跨卷文件的分段详情（卷号、偏移量、数据大小），用于排查卷损坏或定位数据"
-            };
-
             LongFormat = new Option<bool>("--long", "-l")
             {
                 Description = "长格式输出：显示文件大小、修改时间、文件权限、卷号等详细信息"
-            };
-
-            Sort = new Option<BrowseSortField>("--sort")
-            {
-                Description = "列表排序字段：Name（按文件名）、Size（按大小）、Date（按修改时间）",
-                HelpName = "field",
-                DefaultValueFactory = static _ => BrowseSortField.Name
-            };
-
-            SortReverse = new Option<bool>("--reverse", "-r")
-            {
-                Description = "逆序排列（与 --sort 配合使用）"
             };
 
             KeyFile = new Option<FileInfo>("--key-file", "-k")
@@ -622,11 +534,6 @@ public static class CommandDefinition
                 Description = "隐藏匹配 Glob 模式的文件",
                 HelpName = "pattern"
             };
-
-            Rescue = new Option<bool>("--rescue")
-            {
-                Description = "救援模式：尽可能从损坏的卷中读取文件列表和元数据"
-            };
         }
 
         public static Command SubCommand()
@@ -653,19 +560,13 @@ public static class CommandDefinition
                 """)
             {
                 VolFiles,
-                Output,
-                OutputFormat,
-                ShowFragments,
                 LongFormat,
-                Sort,
-                SortReverse,
                 KeyFile,
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
                 Include,
-                Exclude,
-                Rescue
+                Exclude
             };
 
             cmd.SetAction(BrowseHelper.Invoker);
@@ -679,51 +580,17 @@ public static class CommandDefinition
 
     public static class Info
     {
-        public static readonly Argument<ICollection<FileSystemInfo>> InputFiles;
-        public static readonly Option<BrowseOutputMode> OutputFormat;
-        public static readonly Option<FileInfo?> Output;
+        public static readonly Argument<FileInfo> KeyFile;
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
 
         static Info()
         {
-            InputFiles = new Argument<ICollection<FileSystemInfo>>("cvk")
+            KeyFile = new Argument<FileInfo>("cvk")
             {
-                Description = "一个或多个 .cvk 密钥文件路径",
-                Arity = ArgumentArity.OneOrMore
+                Description = ".cvk 密钥文件路径"
             }.AcceptExistingOnly();
-
-            OutputFormat = new Option<BrowseOutputMode>("--output-format", "-f")
-            {
-                Description =
-                    """
-                    输出格式：
-
-                    Table —— 对齐表格，适合人类阅读（默认）
-                    Json  —— JSON 格式（支持管道给 jq 等工具）
-                    Yaml  —— YAML 格式
-                    """,
-                DefaultValueFactory = static _ => BrowseOutputMode.Table
-            };
-
-            Output = new Option<FileInfo?>("--output", "-o")
-            {
-                Description = "将结果写入指定文件（默认输出到终端）",
-                HelpName = "file",
-                DefaultValueFactory = static result =>
-                {
-                    var input = result.GetValue(InputFiles)?.FirstOrDefault();
-                    return input switch
-                    {
-                        FileInfo fi => fi.Directory != null
-                            ? new FileInfo(Path.Combine(fi.Directory.FullName, "info-output.txt"))
-                            : null,
-                        DirectoryInfo di => new FileInfo(Path.Combine(di.FullName, "info-output.txt")),
-                        _ => null
-                    };
-                }
-            }.AcceptLegalFilePathsOnly();
 
             Password = new Option<string>("--password", "-p")
             {
@@ -764,9 +631,7 @@ public static class CommandDefinition
                     验证密码并展示 CEK 指纹等完整信息
                 """)
             {
-                InputFiles,
-                OutputFormat,
-                Output,
+                KeyFile,
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass
@@ -1045,28 +910,24 @@ public static class CommandDefinition
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  merge — 合并多个卷组
-    // ═══════════════════════════════════════════════════════════════
-
-    // ═══════════════════════════════════════════════════════════════
     //  rekey — 重新封装密钥信封
     // ═══════════════════════════════════════════════════════════════
 
     public static class Rekey
     {
-        public static readonly Argument<FileSystemInfo> CvkFile;
-        public static readonly Option<FileInfo?> Output;
-        public static readonly Option<EncryptionMode> ToMode;
+        public static readonly Argument<FileInfo> CvkFile;
         public static readonly Option<string> Password;
-        public static readonly Option<string> NewPassword;
-        public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
+        public static readonly Option<FileInfo?> Output;
+        public static readonly Option<EncryptionMode> ToMode;
+        public static readonly Option<string> NewPassword;
+        public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<bool> Backup;
 
         static Rekey()
         {
-            CvkFile = new Argument<FileSystemInfo>("cvk")
+            CvkFile = new Argument<FileInfo>("cvk")
             {
                 Description = "要重新封装的 .cvk 密钥文件路径"
             }.AcceptExistingOnly();
@@ -1166,18 +1027,23 @@ public static class CommandDefinition
     public static class Convert
     {
         public static readonly Argument<ICollection<FileSystemInfo>> VolFiles;
+
         public static readonly Option<FileInfo> OldKeyFile;
         public static readonly Option<string> OldPassword;
         public static readonly Option<FileInfo> OldPrivkey;
         public static readonly Option<string> OldPrivkeyPass;
+
         public static readonly Option<DirectoryInfo> Output;
         public static readonly Option<string> OutputPrefix;
+
         public static readonly Option<FileInfo> KeyFile;
-        public static readonly Option<EncryptionMode> Mode;
         public static readonly Option<string> Password;
-        public static readonly Option<IEnumerable<FileInfo>> PublicKey;
+        public static readonly Option<FileInfo> PrivkeyKey;
+        public static readonly Option<string> PrivkeyKeyPass;
+
         public static readonly Option<int> Threads;
         public static readonly Option<bool> Backup;
+
 
         static Convert()
         {
@@ -1250,28 +1116,23 @@ public static class CommandDefinition
                     """,
                 HelpName = "cvk-file"
             }.AcceptExistingOnly();
-
-            Mode = new Option<EncryptionMode>("--mode", "-m")
-            {
-                Description =
-                    """
-                    新密钥的保护模式（未指定 --key-file 时生效）。
-                    未指定时沿用原模式（但仍然生成新 CEK）。
-                    """,
-                HelpName = "mode"
-            };
-
             Password = new Option<string>("--password", "-p")
             {
                 Description = "新密钥的加密密码（Password 模式）",
                 HelpName = "passphrase"
             };
 
-            PublicKey = new Option<IEnumerable<FileInfo>>("--public-key")
+            PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "新的公钥文件（Asymmetric 模式）",
+                Description = "当前 .cvk 的解密私钥（当前为 Asymmetric 模式时必需）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
+
+            PrivkeyKeyPass = new Option<string>("--key-pass")
+            {
+                Description = "当前私钥文件的密码",
+                HelpName = "passphrase"
+            };
 
             Threads = new Option<int>("--threads", "-t")
             {
@@ -1317,9 +1178,9 @@ public static class CommandDefinition
                 Output,
                 OutputPrefix,
                 KeyFile,
-                Mode,
                 Password,
-                PublicKey,
+                PrivkeyKey,
+                PrivkeyKeyPass,
                 Threads,
                 Backup
             };
@@ -1335,20 +1196,28 @@ public static class CommandDefinition
 
     public static class GenKey
     {
-        public static readonly Option<FileInfo> Output;
+        public static readonly Option<DirectoryInfo> Output;
+        public static readonly Option<string> Name;
         public static readonly Option<EncryptionMode> Mode;
         public static readonly Option<string> Password;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
-        public static readonly Option<string> Prefix;
         public static readonly Option<string> Comment;
 
         static GenKey()
         {
-            Output = new Option<FileInfo>("--output", "-o")
+            Output = new Option<DirectoryInfo>("--output", "-o")
             {
-                Description = "输出的 .cvk 密钥文件路径（必需）",
-                HelpName = "file"
+                Description = "输出目录（默认：当前目录）",
+                HelpName = "dir",
+                DefaultValueFactory = static _ => new DirectoryInfo(Directory.GetCurrentDirectory())
             }.AcceptLegalFilePathsOnly();
+
+            Name = new Option<string>("--name", "-n")
+            {
+                Description = "密钥文件名（不含扩展名，默认：key）",
+                HelpName = "name",
+                DefaultValueFactory = static _ => "key"
+            };
 
             Mode = new Option<EncryptionMode>("--mode", "-m")
             {
@@ -1374,12 +1243,6 @@ public static class CommandDefinition
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
-            Prefix = new Option<string>("--prefix")
-            {
-                Description = "输出文件前缀（默认：输出文件主名）",
-                HelpName = "name"
-            };
-
             Comment = new Option<string>("--comment")
             {
                 Description = "在密钥文件中嵌入备注",
@@ -1394,22 +1257,23 @@ public static class CommandDefinition
                 生成独立的 .cvk 密钥文件（不打包数据）。
 
                 预先生成密钥，供后续 pack --key-file 使用。
-                适用于：密钥预分发、批量打包统一密钥等场景。
 
                 示例：
-                  crypvol genkey -o ./project.cvk -m PlainKey
-                  crypvol genkey -o ./secret.cvk -m Password -p "mypassword"
-                  crypvol genkey -o ./team.cvk -m Asymmetric --public-key alice.pem --public-key bob.pem
+                  crypvol genkey
+                    生成 ./key.cvk (PlainKey)
+                  crypvol genkey -m Password -p "mypassword" -n secret
+                    生成 ./secret.cvk (Password)
+                  crypvol genkey -o /keys -n project -m Asymmetric --public-key alice.pem
+                    生成 /keys/project.cvk (Asymmetric)
                 """)
             {
                 Output,
+                Name,
                 Mode,
                 Password,
                 PublicKey,
-                Prefix,
                 Comment
             };
-
             cmd.SetAction(GenKeyHelper.Invoker);
             return cmd;
         }

@@ -6,9 +6,8 @@ namespace CrypVol.Lib;
 public static class VolumeAllocator
 {
     public static (List<WorkItem> items, List<(int Index, long Size)> volumes)
-        Allocate(IEnumerable<FileInfo> files, string sourceDir, long volumeCapacity)
+        Allocate(IEnumerable<FileInfo> files, DirectoryInfo sourceDir, long volumeCapacity, int headerSize = 284)
     {
-        const int headerSize = 256;
         const int maxPathLen = 231 + 256;
         const long alignment = 4096;
 
@@ -28,7 +27,7 @@ public static class VolumeAllocator
 
         foreach (var file in files)
         {
-            var relPath = Path.GetRelativePath(sourceDir, file.FullName);
+            var relPath = Path.GetRelativePath(sourceDir.FullName, file.FullName);
             if (relPath.Length > maxPathLen) continue;
 
             var totalSize = file.Length;
