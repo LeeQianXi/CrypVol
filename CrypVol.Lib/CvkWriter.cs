@@ -45,10 +45,10 @@ public sealed class CvkWriter
             using var w = new BinaryWriter(ms);
             w.Write(Encoding.ASCII.GetBytes("KEY0"));
             w.Write((byte)1);
-            w.Write(EncryptionMode switch
+            w.Write((byte)(EncryptionMode switch
             {
                 EncryptionMode.PlainKey => 0, EncryptionMode.Password => 1, EncryptionMode.Asymmetric => 2, _ => 0
-            });
+            }));
             var plPos = ms.Position;
             w.Write(0);
             if (EncryptionMode == EncryptionMode.PlainKey) w.Write(secret);
