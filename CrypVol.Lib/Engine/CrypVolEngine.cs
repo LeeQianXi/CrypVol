@@ -503,35 +503,44 @@ public sealed class CrypVolEngine
             }
             else
             {
-                // Scan volumes to find corrupted blocks
-                foreach (var (_, fragments) in fileFragments)
-                foreach (var f in fragments)
+                // Parallel scan to find corrupted blocks
+                var threads = Math.Clamp(opts.Threads, 1, Environment.ProcessorCount);
+                var ioLimit = Math.Min(threads, opts.VolumeFiles.Count * 2);
+                var semaphore = new SemaphoreSlim(ioLimit, ioLimit);
+                var parallelOpts = new ParallelOptions { MaxDegreeOfParallelism = threads, CancellationToken = token };
+                var sync = new object();
+
+                var allFragments = fileFragments.SelectMany(kv => kv.Value.Select(f => (kv.Key, f))).ToList();
+
+                await Parallel.ForEachAsync(allFragments, parallelOpts, async (item, ct) =>
                 {
+                    var (_, f) = item;
                     var il = (IntegrityLevel)(f.Flags >> 3 & 3);
-                    if (il < IntegrityLevel.Block) continue;
+                    if (il < IntegrityLevel.Block) return;
 
                     try
                     {
-                        await using var fs = File.OpenRead(f.CvpFile.FullName);
-                        var buf = new byte[f.BlockSize];
-                        fs.Position = f.CvpOffset;
-                        if (await fs.ReadAsync(buf, token) < f.BlockSize)
+                        await semaphore.WaitAsync(ct);
+                        try
                         {
-                            corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));
-                            continue;
-                        }
+                            await using var fs = File.OpenRead(f.CvpFile.FullName);
+                            var buf = new byte[f.BlockSize];
+                            fs.Position = f.CvpOffset;
+                            if (await fs.ReadAsync(buf, ct) < f.BlockSize) goto corrupted;
 
-                        var dataLen = f.BlockSize - 4;
-                        var expected = BitConverter.ToUInt32(buf, dataLen);
-                        var actual = Crc32.Compute(buf.AsSpan(0, dataLen));
-                        if (expected != actual)
-                            corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));
+                            var dataLen = f.BlockSize - 4;
+                            var expected = BitConverter.ToUInt32(buf, dataLen);
+                            var actual = Crc32.Compute(buf.AsSpan(0, dataLen));
+                            if (expected == actual) return;
+                        }
+                        finally { semaphore.Release(); }
                     }
-                    catch
-                    {
+                    catch { }
+
+                corrupted:
+                    lock (sync)
                         corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));
-                    }
-                }
+                });
             }
 
             if (corrupted.Count == 0)
