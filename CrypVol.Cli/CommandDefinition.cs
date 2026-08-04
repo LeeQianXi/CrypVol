@@ -481,6 +481,8 @@ public static class CommandDefinition
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
+        public static readonly Option<OutputFormat> OutputFormat;
+        public static readonly Option<FileInfo> Output;
 
         static Browse()
         {
@@ -534,6 +536,19 @@ public static class CommandDefinition
                 Description = "隐藏匹配 Glob 模式的文件",
                 HelpName = "pattern"
             };
+
+            OutputFormat = new Option<OutputFormat>("--format", "-f")
+            {
+                Description = "输出格式：List（简洁列表）、Table（对齐表格）、Json、Csv",
+                HelpName = "fmt",
+                DefaultValueFactory = static _ => Cli.OutputFormat.List
+            };
+
+            Output = new Option<FileInfo>("--output", "-o")
+            {
+                Description = "将输出写入文件而非控制台",
+                HelpName = "path"
+            };
         }
 
         public static Command SubCommand()
@@ -561,6 +576,8 @@ public static class CommandDefinition
             {
                 VolFiles,
                 LongFormat,
+                OutputFormat,
+                Output,
                 KeyFile,
                 Password,
                 PrivkeyKey,

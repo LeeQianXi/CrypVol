@@ -78,7 +78,7 @@ public class VolumeScannerTests
             };
             var cvp = WritePlainCvp(dir, "archive.0.cvp", "test.txt", data);
 
-            var result = VolumeScanner.Scan([cvp], EncryptionMode.None);
+            var result = VolumeScanner.Scan([cvp], EncryptionMode.None).Files;
 
             Assert.Single(result);
             Assert.True(result.ContainsKey("test.txt"));
@@ -125,7 +125,7 @@ public class VolumeScannerTests
                 });
             }
 
-            var result = VolumeScanner.Scan([cvp], EncryptionMode.None);
+            var result = VolumeScanner.Scan([cvp], EncryptionMode.None).Files;
 
             Assert.Equal(2, result.Count);
             Assert.Contains("a.txt", result.Keys);
@@ -148,7 +148,7 @@ public class VolumeScannerTests
             var emptyCvp = new FileInfo(Path.Combine(dir.FullName, "empty.cvp"));
             File.WriteAllText(emptyCvp.FullName, "");
 
-            var result = VolumeScanner.Scan([emptyCvp], EncryptionMode.None);
+            var result = VolumeScanner.Scan([emptyCvp], EncryptionMode.None).Files;
 
             Assert.Empty(result);
         }
@@ -169,7 +169,7 @@ public class VolumeScannerTests
             var path = Path.Combine(dir.FullName, "junk.cvp");
             File.WriteAllBytes(path, new byte[100]); // all zeros, no magic
 
-            var result = VolumeScanner.Scan([new FileInfo(path)], EncryptionMode.None);
+            var result = VolumeScanner.Scan([new FileInfo(path)], EncryptionMode.None).Files;
 
             Assert.Empty(result);
         }
@@ -196,7 +196,7 @@ public class VolumeScannerTests
             };
             var cvp = WriteEncryptedCvp(dir, "archive.0.cvp", "secret.txt", data, cek);
 
-            var result = VolumeScanner.Scan([cvp], EncryptionMode.PlainKey, cek);
+            var result = VolumeScanner.Scan([cvp], EncryptionMode.PlainKey, cek).Files;
 
             Assert.Single(result);
             Assert.True(result.ContainsKey("secret.txt"));
@@ -226,7 +226,7 @@ public class VolumeScannerTests
             };
             var cvp = WriteEncryptedCvp(dir, "archive.0.cvp", "data.txt", data, cek1);
 
-            var result = VolumeScanner.Scan([cvp], EncryptionMode.PlainKey, cek2);
+            var result = VolumeScanner.Scan([cvp], EncryptionMode.PlainKey, cek2).Files;
 
             // With wrong CEK, header decryption fails and is skipped
             Assert.Empty(result);
@@ -244,7 +244,7 @@ public class VolumeScannerTests
     public void Fragment_CorrectProperties()
     {
         var cvpFile = new FileInfo("/tmp/test.cvp");
-        var fragment = new VolumeScanner.Fragment(cvpFile, 256, 100, 5000, 1, true);
+        var fragment = new VolumeScanner.Fragment(cvpFile, 256, 100, 5000, 1, true, 0);
 
         Assert.Same(cvpFile, fragment.CvpFile);
         Assert.Equal(256, fragment.CvpOffset);
@@ -266,7 +266,7 @@ public class VolumeScannerTests
             var cvp1 = WritePlainCvp(dir, "vol.0.cvp", "file1.txt", [1, 2]);
             var cvp2 = WritePlainCvp(dir, "vol.1.cvp", "file2.txt", [3, 4]);
 
-            var result = VolumeScanner.Scan([cvp1, cvp2], EncryptionMode.None);
+            var result = VolumeScanner.Scan([cvp1, cvp2], EncryptionMode.None).Files;
 
             Assert.Equal(2, result.Count);
             Assert.Contains("file1.txt", result.Keys);
@@ -291,7 +291,7 @@ public class VolumeScannerTests
 
             // With null CEK, header decryption fails inside catch block, returns empty
             // The null-forgiving cek! in Decrypt causes NRE caught by catch{}
-            var result = VolumeScanner.Scan([cvp], EncryptionMode.PlainKey);
+            var result = VolumeScanner.Scan([cvp], EncryptionMode.PlainKey).Files;
             Assert.Empty(result);
         }
         finally

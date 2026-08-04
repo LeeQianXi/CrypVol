@@ -6,13 +6,15 @@ namespace CrypVol.Lib.Volume;
 /// <summary>扫描 .cvp 卷头，构建文件→片段映射。cek 非 null 时解密加密头。</summary>
 public static class VolumeScanner
 {
-    public static Dictionary<string, List<Fragment>> Scan(IEnumerable<FileInfo> volumes, EncryptionMode mode,
+    public static ScanResult Scan(IEnumerable<FileInfo> volumes, EncryptionMode mode,
         byte[]? cek = null)
     {
         var files = new Dictionary<string, List<Fragment>>();
+        var possiblyEncrypted = false;
 
         foreach (var cvp in volumes)
         {
+            if (possiblyEncrypted) break;
             using var fs = File.OpenRead(cvp.FullName);
             long pos = 0;
             var magicBuf = new byte[4];
@@ -37,6 +39,21 @@ public static class VolumeScanner
                     if (fs.Read(plainBuf) < FileEntryHeader.HeaderSize) break;
 
                     hdr = MemoryMarshal.Read<FileEntryHeader>(plainBuf);
+
+                    // 校验 None 模式下的头部字段：若魔数存在但字段非法 → 数据被加密
+                    if ((hdr.Flags & 0xE0) != 0 || hdr.SizeOrTotal <= 0)
+                    {
+                        if (pos == 0)
+                        {
+                            // 首部即非法 → 卷已加密但未提供密钥 → 快速失败
+                            possiblyEncrypted = true;
+                            break;
+                        }
+
+                        pos += 4;
+                        continue;
+                    }
+
                     headerLen = FileEntryHeader.HeaderSize;
                 }
                 else
@@ -86,7 +103,7 @@ public static class VolumeScanner
                             files[relPath] = list = [];
 
                         list.Add(new Fragment(cvp, pos, blockLen, hdr.SizeOrTotal,
-                            hdr.Flags, isFirst && list.Count == 0));
+                            hdr.Flags, isFirst && list.Count == 0, hdr.FragmentIndex));
 
                         pos += blockLen;
                     }
@@ -98,7 +115,13 @@ public static class VolumeScanner
             }
         }
 
-        return files;
+        return new ScanResult { Files = files, PossiblyEncrypted = possiblyEncrypted };
+    }
+
+    /// <summary>校验 None 模式下解析的头部是否为合法明文头部（非加密乱码）</summary>
+    private static bool IsValidPlainHeader(FileEntryHeader hdr)
+    {
+        return (hdr.Flags & 0xE0) == 0 && hdr.SizeOrTotal > 0;
     }
 
     private static string ReadPath(FileEntryHeader hdr)
@@ -110,5 +133,11 @@ public static class VolumeScanner
         return Encoding.UTF8.GetString(bytes, start, end - start);
     }
 
-    public record Fragment(FileInfo CvpFile, long CvpOffset, int BlockSize, long TotalFileSize, byte Flags, bool IsFirst);
+    public record Fragment(FileInfo CvpFile, long CvpOffset, int BlockSize, long TotalFileSize, byte Flags, bool IsFirst, uint FragmentIndex);
+
+    public sealed class ScanResult
+    {
+        public required Dictionary<string, List<Fragment>> Files { get; init; }
+        public bool PossiblyEncrypted { get; init; }
+    }
 }
