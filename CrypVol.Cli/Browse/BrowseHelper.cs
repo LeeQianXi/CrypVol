@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text;
 using System.Text.Json;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
@@ -33,6 +34,7 @@ public static class BrowseHelper
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }
+
         if (keyFile is not null)
             try
             {
@@ -68,7 +70,7 @@ public static class BrowseHelper
         }
 
         // 3. 格式化输出
-        var output = Format(files: result.Files, volumeCount: result.VolumeCount, format: fmt, longFormat: longFormat);
+        var output = Format(result.Files, result.VolumeCount, fmt, longFormat);
 
         if (outputFile is not null)
             await File.WriteAllTextAsync(outputFile.FullName, output, token);
@@ -92,7 +94,7 @@ public static class BrowseHelper
     // ── List ──
     private static string FormatList(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
         var incomplete = files.Where(f => !f.IsComplete).Select(f => f.Path).ToList();
         if (incomplete.Count > 0)
             sb.AppendLine($"警告: 以下文件不完整: {string.Join(", ", incomplete)}");
@@ -106,13 +108,14 @@ public static class BrowseHelper
             else
                 sb.AppendLine($"  {f.Path}{status}");
         }
+
         return sb.ToString();
     }
 
     // ── Table ──
     private static string FormatTable(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
         var incomplete = files.Where(f => !f.IsComplete).Select(f => f.Path).ToList();
         if (incomplete.Count > 0)
             sb.AppendLine($"警告: 以下文件不完整: {string.Join(", ", incomplete)}");
@@ -144,6 +147,7 @@ public static class BrowseHelper
                 sb.AppendLine($"{size,-10} {f.FragmentCount,-6} {status,-8} {f.Path}");
             }
         }
+
         return sb.ToString();
     }
 
@@ -153,22 +157,30 @@ public static class BrowseHelper
         var jsonFiles = files.Select(f => new
         {
             f.Path,
-            Size = f.Size,
+            f.Size,
             SizeFormatted = Fmt(f.Size),
             f.FragmentCount,
-            Volumes = f.Volumes,
+            f.Volumes,
             CrossVolume = f.FragmentCount > 1,
             VolumeSpan = f.Volumes.Count > 0 ? $"{f.Volumes.Min()}->{f.Volumes.Max()}" : "",
             f.IsComplete
         });
-        var obj = new { VolumeCount = volumeCount, FileCount = files.Count, Files = jsonFiles };
-        return JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+        var obj = new
+        {
+            VolumeCount = volumeCount,
+            FileCount = files.Count,
+            Files = jsonFiles
+        };
+        return JsonSerializer.Serialize(obj, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
     }
 
     // ── Csv ──
     private static string FormatCsv(List<BrowseFileEntry> files, bool longFormat)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
         if (longFormat)
         {
             sb.AppendLine("Path,Size,FragmentCount,Volumes,CrossVolume,VolumeSpan,IsComplete");
@@ -183,6 +195,7 @@ public static class BrowseHelper
                 sb.AppendLine(
                     $"\"{f.Path}\",{f.Size},{f.FragmentCount},\"{string.Join(";", f.Volumes)}\",{f.IsComplete}");
         }
+
         return sb.ToString();
     }
 

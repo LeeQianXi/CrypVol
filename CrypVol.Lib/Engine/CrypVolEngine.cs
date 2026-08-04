@@ -100,9 +100,12 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
             if (scanResult.PossiblyEncrypted)
-                return new ExtractResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
+                return new ExtractResult
+                {
+                    Error = "卷已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
             var fileFragments = scanResult.Files;
             var incompleteFiles = FindIncompleteFiles(fileFragments);
             if (incompleteFiles.Count > 0)
@@ -112,6 +115,7 @@ public sealed class CrypVolEngine
                 foreach (var skipped in incompleteFiles)
                     fileFragments.Remove(skipped);
             }
+
             // Filter by --include / --exclude
             if (!string.IsNullOrWhiteSpace(opts.IncludePattern) || !string.IsNullOrWhiteSpace(opts.ExcludePattern))
             {
@@ -224,9 +228,12 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
             if (scanResult.PossiblyEncrypted)
-                return new BrowseResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
+                return new BrowseResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
             var fileFragments = scanResult.Files;
 
             // 过滤 include/exclude
@@ -241,6 +248,7 @@ public sealed class CrypVolEngine
                         fileFragments.Remove(k);
                         continue;
                     }
+
                     if (!string.IsNullOrWhiteSpace(opts.ExcludePattern) &&
                         SimpleGlobMatch(opts.ExcludePattern, k))
                         fileFragments.Remove(k);
@@ -292,9 +300,12 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.OldCredentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
             if (scanResult.PossiblyEncrypted)
-                return new ConvertResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
+                return new ConvertResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
             var fileFragments = scanResult.Files;
             var items = new List<WorkItem>();
             var volMap = new Dictionary<int, int>();
@@ -381,9 +392,12 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
             if (scanResult.PossiblyEncrypted)
-                return new VerifyResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
+                return new VerifyResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
             var fileFragments = scanResult.Files;
             if (fileFragments.Count == 0)
                 return new VerifyResult
@@ -512,9 +526,12 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
             if (scanResult.PossiblyEncrypted)
-                return new RepairResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
+                return new RepairResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
             var fileFragments = scanResult.Files;
             if (fileFragments.Count == 0)
                 return new RepairResult
@@ -551,7 +568,11 @@ public sealed class CrypVolEngine
                 var threads = Math.Clamp(opts.Threads, 1, Environment.ProcessorCount);
                 var ioLimit = Math.Min(threads, opts.VolumeFiles.Count * 2);
                 var semaphore = new SemaphoreSlim(ioLimit, ioLimit);
-                var parallelOpts = new ParallelOptions { MaxDegreeOfParallelism = threads, CancellationToken = token };
+                var parallelOpts = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = threads,
+                    CancellationToken = token
+                };
                 var sync = new object();
 
                 var allFragments = fileFragments.SelectMany(kv => kv.Value.Select(f => (kv.Key, f))).ToList();
@@ -581,9 +602,11 @@ public sealed class CrypVolEngine
                     }
                     catch { }
 
-                corrupted:
+                    corrupted:
                     lock (sync)
+                    {
                         corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));
+                    }
                 });
             }
 
@@ -677,8 +700,8 @@ public sealed class CrypVolEngine
     }
 
     /// <summary>
-    /// 校验每个文件的片段完整性（块大小总和是否等于 TotalFileSize、首尾类型正确）。
-    /// 返回不完整的文件路径列表；空列表表示所有文件完整。
+    ///     校验每个文件的片段完整性（块大小总和是否等于 TotalFileSize、首尾类型正确）。
+    ///     返回不完整的文件路径列表；空列表表示所有文件完整。
     /// </summary>
     private static List<string> FindIncompleteFiles(Dictionary<string, List<VolumeScanner.Fragment>> fileFragments)
     {
@@ -708,11 +731,11 @@ public sealed class CrypVolEngine
 
             // 多片段：检查首尾 fragment 类型链
             var hasCrossHead = fragments.Any(f => f.IsFirst &&
-                                                  ((FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
-                                                      or FileEntryHeaderFlagsEnum.CrossHead));
+                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
+                                                  or FileEntryHeaderFlagsEnum.CrossHead);
             var hasCrossTail = fragments.Any(f => !f.IsFirst &&
-                                                  ((FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
-                                                      or FileEntryHeaderFlagsEnum.CrossTail));
+                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
+                                                  or FileEntryHeaderFlagsEnum.CrossTail);
             if (!hasCrossHead || !hasCrossTail)
                 incomplete.Add(path);
         }

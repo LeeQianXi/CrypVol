@@ -39,8 +39,8 @@ public static class VolumeDiscovery
     }
 
     /// <summary>
-    /// 在卷文件所在目录自动发现同前缀的 .cvk 密钥文件（archive.1.cvp → archive.cvk）。
-    /// 多个卷组并存时优先使用第一个卷组的前缀；未找到返回 null。
+    ///     在卷文件所在目录自动发现同前缀的 .cvk 密钥文件（archive.1.cvp → archive.cvk）。
+    ///     多个卷组并存时优先使用第一个卷组的前缀；未找到返回 null。
     /// </summary>
     public static FileInfo? DiscoverKeyFile(IReadOnlyList<FileInfo> volFiles)
     {

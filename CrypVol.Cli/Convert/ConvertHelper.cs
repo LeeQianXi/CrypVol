@@ -38,6 +38,7 @@ public static class ConvertHelper
             if (oldKeyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {oldKeyFile.FullName}");
         }
+
         if (oldKeyFile is not null)
             try
             {

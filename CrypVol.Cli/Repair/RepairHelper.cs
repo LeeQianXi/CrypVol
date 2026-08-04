@@ -30,8 +30,8 @@ public static class RepairHelper
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }
+
         if (keyFile is not null)
-        {
             try
             {
                 var reader = new CvkReader(
@@ -47,11 +47,8 @@ public static class RepairHelper
                 await Console.Error.WriteLineAsync($"密钥加载失败: {ex.Message}");
                 return 1;
             }
-        }
         else
-        {
             creds = new CvkCredentials(EncryptionMode.None, null!);
-        }
 
         // 3. Engine 修复
         var engine = new CrypVolEngine();

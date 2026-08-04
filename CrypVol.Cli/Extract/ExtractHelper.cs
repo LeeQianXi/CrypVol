@@ -32,6 +32,7 @@ public static class ExtractHelper
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }
+
         if (keyFile is not null)
             try
             {
