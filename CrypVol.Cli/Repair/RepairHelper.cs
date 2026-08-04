@@ -24,6 +24,12 @@ public static class RepairHelper
         // 2. 密钥加载
         CvkCredentials creds;
         var keyFile = args.GetValue(CommandDefinition.Repair.KeyFile);
+        if (keyFile is null)
+        {
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            if (keyFile is not null)
+                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+        }
         if (keyFile is not null)
         {
             try

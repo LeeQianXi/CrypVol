@@ -25,6 +25,12 @@ public static class BrowseHelper
 
         CvkCredentials? creds;
         var keyFile = args.GetValue(CommandDefinition.Browse.KeyFile);
+        if (keyFile is null)
+        {
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            if (keyFile is not null)
+                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+        }
         if (keyFile is not null)
             try
             {
