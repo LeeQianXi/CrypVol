@@ -26,6 +26,13 @@ public static class ExtractHelper
         // 2. 密钥加载（昂贵的密码学操作，提前做完）
         CvkCredentials? creds;
         var keyFile = args.GetValue(CommandDefinition.Extract.KeyFile);
+        if (keyFile is null)
+        {
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            if (keyFile is not null)
+                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+        }
+
         if (keyFile is not null)
             try
             {

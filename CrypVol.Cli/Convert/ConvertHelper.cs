@@ -32,6 +32,13 @@ public static class ConvertHelper
         // 2. 加载旧 CEK
         CvkCredentials? oldCreds;
         var oldKeyFile = args.GetValue(CommandDefinition.Convert.OldKeyFile);
+        if (oldKeyFile is null)
+        {
+            oldKeyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            if (oldKeyFile is not null)
+                Console.WriteLine($"自动发现密钥文件: {oldKeyFile.FullName}");
+        }
+
         if (oldKeyFile is not null)
             try
             {

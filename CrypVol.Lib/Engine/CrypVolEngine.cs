@@ -100,7 +100,22 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var fileFragments = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            if (scanResult.PossiblyEncrypted)
+                return new ExtractResult
+                {
+                    Error = "卷已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
+            var fileFragments = scanResult.Files;
+            var incompleteFiles = FindIncompleteFiles(fileFragments);
+            if (incompleteFiles.Count > 0)
+            {
+                Report("不完整文件已跳过", incompleteFiles.Count, incompleteFiles.Count,
+                    string.Join(", ", incompleteFiles));
+                foreach (var skipped in incompleteFiles)
+                    fileFragments.Remove(skipped);
+            }
+
             // Filter by --include / --exclude
             if (!string.IsNullOrWhiteSpace(opts.IncludePattern) || !string.IsNullOrWhiteSpace(opts.ExcludePattern))
             {
@@ -213,7 +228,34 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var fileFragments = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            if (scanResult.PossiblyEncrypted)
+                return new BrowseResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
+            var fileFragments = scanResult.Files;
+
+            // 过滤 include/exclude
+            if (!string.IsNullOrWhiteSpace(opts.IncludePattern) || !string.IsNullOrWhiteSpace(opts.ExcludePattern))
+            {
+                var keys = fileFragments.Keys.ToList();
+                foreach (var k in keys)
+                {
+                    if (!string.IsNullOrWhiteSpace(opts.IncludePattern) &&
+                        !SimpleGlobMatch(opts.IncludePattern, k))
+                    {
+                        fileFragments.Remove(k);
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(opts.ExcludePattern) &&
+                        SimpleGlobMatch(opts.ExcludePattern, k))
+                        fileFragments.Remove(k);
+                }
+            }
+
+            var incompleteSet = new HashSet<string>(FindIncompleteFiles(fileFragments));
             var files = new List<BrowseFileEntry>();
             foreach (var (path, fragments) in fileFragments)
             {
@@ -227,7 +269,8 @@ public sealed class CrypVolEngine
                         var name = Path.GetFileNameWithoutExtension(f.CvpFile.Name);
                         var parts = name.Split('.');
                         return parts.Length > 1 && int.TryParse(parts[^1], out var n) ? n : 0;
-                    }).Distinct().OrderBy(n => n).ToList()
+                    }).Distinct().OrderBy(n => n).ToList(),
+                    IsComplete = !incompleteSet.Contains(path)
                 };
                 files.Add(entry);
             }
@@ -257,7 +300,13 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.OldCredentials;
-            var fileFragments = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            if (scanResult.PossiblyEncrypted)
+                return new ConvertResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
+            var fileFragments = scanResult.Files;
             var items = new List<WorkItem>();
             var volMap = new Dictionary<int, int>();
             var newVolIdx = 0;
@@ -343,7 +392,13 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var fileFragments = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            if (scanResult.PossiblyEncrypted)
+                return new VerifyResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
+            var fileFragments = scanResult.Files;
             if (fileFragments.Count == 0)
                 return new VerifyResult
                 {
@@ -471,7 +526,13 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var fileFragments = VolumeScanner.Scan(opts.VolumeFiles, mode, cek);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            if (scanResult.PossiblyEncrypted)
+                return new RepairResult
+                {
+                    Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
+                };
+            var fileFragments = scanResult.Files;
             if (fileFragments.Count == 0)
                 return new RepairResult
                 {
@@ -507,7 +568,11 @@ public sealed class CrypVolEngine
                 var threads = Math.Clamp(opts.Threads, 1, Environment.ProcessorCount);
                 var ioLimit = Math.Min(threads, opts.VolumeFiles.Count * 2);
                 var semaphore = new SemaphoreSlim(ioLimit, ioLimit);
-                var parallelOpts = new ParallelOptions { MaxDegreeOfParallelism = threads, CancellationToken = token };
+                var parallelOpts = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = threads,
+                    CancellationToken = token
+                };
                 var sync = new object();
 
                 var allFragments = fileFragments.SelectMany(kv => kv.Value.Select(f => (kv.Key, f))).ToList();
@@ -537,9 +602,11 @@ public sealed class CrypVolEngine
                     }
                     catch { }
 
-                corrupted:
+                    corrupted:
                     lock (sync)
+                    {
                         corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));
+                    }
                 });
             }
 
@@ -630,5 +697,49 @@ public sealed class CrypVolEngine
             .Replace("\\*\\*", ".*")
             .Replace("\\*", "[^/]*") + "$";
         return Regex.IsMatch(path, regex);
+    }
+
+    /// <summary>
+    ///     校验每个文件的片段完整性（块大小总和是否等于 TotalFileSize、首尾类型正确）。
+    ///     返回不完整的文件路径列表；空列表表示所有文件完整。
+    /// </summary>
+    private static List<string> FindIncompleteFiles(Dictionary<string, List<VolumeScanner.Fragment>> fileFragments)
+    {
+        var incomplete = new List<string>();
+        foreach (var (path, fragments) in fileFragments)
+        {
+            if (fragments.Count == 0) continue;
+
+            var totalSize = fragments[0].TotalFileSize;
+            var sumBlockSize = fragments.Sum(f => (long)f.BlockSize);
+
+            // 核心检查：所有数据块大小之和必须 >= 文件总大小
+            if (sumBlockSize < totalSize)
+            {
+                incomplete.Add(path);
+                continue;
+            }
+
+            // 单片段：必须为 Full
+            if (fragments.Count == 1)
+            {
+                var type = (FileEntryHeaderFlagsEnum)(fragments[0].Flags & 3);
+                if (type != FileEntryHeaderFlagsEnum.Full)
+                    incomplete.Add(path);
+                continue;
+            }
+
+            // 多片段：检查首尾 fragment 类型链
+            var hasCrossHead = fragments.Any(f => f.IsFirst &&
+                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
+                                                  or FileEntryHeaderFlagsEnum.CrossHead);
+            var hasCrossTail = fragments.Any(f => !f.IsFirst &&
+                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
+                                                  or FileEntryHeaderFlagsEnum.CrossTail);
+            if (!hasCrossHead || !hasCrossTail)
+                incomplete.Add(path);
+        }
+
+        return incomplete;
     }
 }

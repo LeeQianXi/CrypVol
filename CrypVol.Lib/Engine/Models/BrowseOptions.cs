@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using CrypVol.Lib.Crypto;
 
 namespace CrypVol.Lib.Engine.Models;
@@ -9,6 +10,22 @@ public sealed record BrowseOptions
 
     /// <summary>已加载的密钥（None 哨兵 = 无密钥）</summary>
     public required CvkCredentials Credentials { get; init; }
+
+    /// <summary>Glob 包含模式</summary>
+    [field: AllowNull]
+    public string IncludePattern
+    {
+        get => field ?? string.Empty;
+        init;
+    }
+
+    /// <summary>Glob 排除模式</summary>
+    [field: AllowNull]
+    public string ExcludePattern
+    {
+        get => field ?? string.Empty;
+        init;
+    }
 }
 
 public sealed record BrowseResult
@@ -25,4 +42,5 @@ public sealed record BrowseFileEntry
     public long Size { get; init; }
     public int FragmentCount { get; init; }
     public List<int> Volumes { get; init; } = [];
+    public bool IsComplete { get; init; } = true;
 }

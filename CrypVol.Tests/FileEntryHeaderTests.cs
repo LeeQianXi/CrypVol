@@ -200,13 +200,13 @@ public class FileEntryHeaderTests
     }
 
     [Fact]
-    public void Encrypt_PreservesMagicInPlaintext()
+    public void Encrypt_EmitsEncryptedMagic()
     {
         var cek = RandomNumberGenerator.GetBytes(32);
         var hdr = new FileEntryHeader();
 
         var encrypted = FileEntryHeader.Encrypt(hdr, cek);
-        Assert.Equal(FileEntryHeader.MagicHeader, BitConverter.ToUInt32(encrypted, 0));
+        Assert.Equal(FileEntryHeader.MagicHeaderEncrypted, BitConverter.ToUInt32(encrypted, 0));
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public class FileEntryHeaderTests
         var hdr = new FileEntryHeader();
         var encrypted = FileEntryHeader.Encrypt(hdr, cek);
 
-        Assert.Equal(FileEntryHeader.MagicHeader, FileEntryHeader.ReadMagic(encrypted));
+        Assert.Equal(FileEntryHeader.MagicHeaderEncrypted, FileEntryHeader.ReadMagic(encrypted));
     }
 
     [Fact]

@@ -24,8 +24,14 @@ public static class RepairHelper
         // 2. 密钥加载
         CvkCredentials creds;
         var keyFile = args.GetValue(CommandDefinition.Repair.KeyFile);
-        if (keyFile is not null)
+        if (keyFile is null)
         {
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            if (keyFile is not null)
+                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+        }
+
+        if (keyFile is not null)
             try
             {
                 var reader = new CvkReader(
@@ -41,11 +47,8 @@ public static class RepairHelper
                 await Console.Error.WriteLineAsync($"密钥加载失败: {ex.Message}");
                 return 1;
             }
-        }
         else
-        {
             creds = new CvkCredentials(EncryptionMode.None, null!);
-        }
 
         // 3. Engine 修复
         var engine = new CrypVolEngine();

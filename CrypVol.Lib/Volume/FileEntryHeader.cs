@@ -18,7 +18,8 @@ public unsafe struct FileEntryHeader()
     [FieldOffset(25)] private fixed byte FilePath[231];
 
     // ------------------------- 常量 -------------------------
-    public const uint MagicHeader = 0x48505643;
+    public const uint MagicHeader = 0x48505643; // "CVPH" — 明文头
+    public const uint MagicHeaderEncrypted = 0x45505643; // "CVPE" — 加密头
     public const int HeaderSize = 256;
 
     /// <summary>加密后的头部大小: Magic(4) + Nonce(12) + Ciphertext(252) + Tag(16)</summary>
@@ -79,21 +80,21 @@ public unsafe struct FileEntryHeader()
         aes.Encrypt(nonce, payload, ciphertext, tag);
 
         var result = new byte[EncryptedHeaderSize]; // 284
-        Buffer.BlockCopy(plain, 0, result, 0, 4); // Magic
+        BitConverter.TryWriteBytes(result.AsSpan(0, 4), MagicHeaderEncrypted); // CVPE (plaintext)
         Buffer.BlockCopy(nonce, 0, result, 4, 12); // Nonce
         Buffer.BlockCopy(ciphertext, 0, result, 16, 252); // Ciphertext
         Buffer.BlockCopy(tag, 0, result, 268, 16); // Tag
         return result;
     }
 
-    /// <summary>解密头部：读取 284 字节，返回 FileEntryHeader</summary>
+    /// <summary>解密头部：读取 284 字节，返回 FileEntryHeader（自动处理 CVPE→CVPH）</summary>
     public static FileEntryHeader Decrypt(byte[] encrypted, byte[] cek)
     {
         var nonce = encrypted.AsSpan(4, 12);
         var ciphertext = encrypted.AsSpan(16, 252);
         var tag = encrypted.AsSpan(268, 16);
         var plain = new byte[256];
-        Buffer.BlockCopy(encrypted, 0, plain, 0, 4); // copy magic
+        BitConverter.TryWriteBytes(plain.AsSpan(0, 4), MagicHeader); // normalize CVPE→CVPH
 
         using var aes = new AesGcm(cek, 16);
         aes.Decrypt(nonce, ciphertext, tag, plain.AsSpan(4, 252));
@@ -101,10 +102,22 @@ public unsafe struct FileEntryHeader()
         return MemoryMarshal.Read<FileEntryHeader>(plain);
     }
 
-    /// <summary>仅读取加密头中的 Magic（无需解密）</summary>
-    public static uint ReadMagic(byte[] encrypted)
+    /// <summary>仅读取头部中的 Magic（无需解密）</summary>
+    public static uint ReadMagic(byte[] data)
     {
-        return BitConverter.ToUInt32(encrypted, 0);
+        return BitConverter.ToUInt32(data, 0);
+    }
+
+    /// <summary>判断魔数是否为加密头（CVPE）</summary>
+    public static bool IsEncryptedMagic(uint magic)
+    {
+        return magic == MagicHeaderEncrypted;
+    }
+
+    /// <summary>判断魔数是否为有效头部（CVPH 或 CVPE）</summary>
+    public static bool IsValidMagic(uint magic)
+    {
+        return magic is MagicHeader or MagicHeaderEncrypted;
     }
 }
 
