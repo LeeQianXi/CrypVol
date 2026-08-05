@@ -187,7 +187,7 @@ public class TransformTests
     {
         var cek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(cek, false, 6);
-        var extract = new ExtractTransform(cek, false);
+        var extract = new ExtractTransform(cek);
 
         var input = ArrayPool<byte>.Shared.Rent(256);
         try
@@ -238,7 +238,7 @@ public class TransformTests
         var cek1 = RandomNumberGenerator.GetBytes(32);
         var cek2 = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(cek1, false, 6);
-        var extract = new ExtractTransform(cek2, false);
+        var extract = new ExtractTransform(cek2);
 
         var input = ArrayPool<byte>.Shared.Rent(100);
         try
@@ -258,7 +258,7 @@ public class TransformTests
     {
         var cek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(cek, false, 6);
-        var extract = new ExtractTransform(cek, false);
+        var extract = new ExtractTransform(cek);
 
         var input = ArrayPool<byte>.Shared.Rent(1);
         try
@@ -289,7 +289,7 @@ public class TransformTests
         var newCek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(oldCek, false, 6);
         var convert = new ConvertTransform(oldCek, newCek);
-        var extract = new ExtractTransform(newCek, false);
+        var extract = new ExtractTransform(newCek);
 
         var input = ArrayPool<byte>.Shared.Rent(500);
         try

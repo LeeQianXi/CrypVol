@@ -38,7 +38,7 @@ public static class CommandDefinition
             """
             CrypVol —— 加密分卷归档工具 (Cryptographic Volume Package)
 
-            将文件或目录打包为带加密保护的 .cvp 数据卷，支持分卷存储、压缩、
+            将文件或目录打包为带加密保护的 .cvp 数据卷，支持分卷存储、
             多层密钥保护，并可从卷中提取、浏览、校验数据。
             """)
         {
@@ -260,14 +260,12 @@ public static class CommandDefinition
             {
                 Description =
                     """
-                    嵌入数据完整性校验信息：
+                    块级数据完整性校验：
 
-                    None   —— 不嵌入校验数据（体积最小，但无法检测数据损坏）
-                    Block  —— 每个 4KB 数据块附带 CRC32（默认）
-                    File   —— 块级校验 + 每个文件附带 SHA256
-                    Volume —— 上述全部 + 卷末尾附带整卷 SHA256（最高安全性）
+                    None  —— 不嵌入校验数据
+                    Block —— 每个数据块附带 CRC32（默认），可检测磁盘静默损坏
                     """,
-                DefaultValueFactory = static _ => IntegrityLevel.File
+                DefaultValueFactory = static _ => IntegrityLevel.Block
             };
 
             // ── 预览 ──
@@ -296,13 +294,10 @@ public static class CommandDefinition
                 """
                 将文件或目录打包为加密卷 (.cvp) 并生成对应的密钥文件 (.cvk)。
 
-                打包流程：扫描源路径 → 应用 Glob 过滤 → 预分配数据到各卷
-                → 并行读取原始数据 → 压缩/加密处理 → 按卷写入磁盘。
-
                 示例：
-                  crypvol pack ./docs -m Password -p "secret123" -c
+                  crypvol pack ./docs -m Password -p "secret123"
                   crypvol pack ./photos -s 2048 --include "**/*.jpg"
-                  crypvol pack ./data -m Asymmetric --public-key alice.pem --public-key bob.pem
+                  crypvol pack ./data -m Asymmetric --public-key alice.pem
                   crypvol pack ./archive --dry-run
                 """)
             {
@@ -431,23 +426,20 @@ public static class CommandDefinition
         {
             var cmd = new Command("extract",
                 """
-                从加密卷 (.cvp) 中还原文件。
+                从数据卷 (.cvp) 中还原文件。
 
-                自动发现同组的所有卷文件，无需逐个指定。
-                支持按文件名 Glob 过滤、覆盖控制、Unix 权限还原。
+                只需提供任意一个卷文件，程序自动发现同组所有卷。
+                支持 Glob 过滤和覆盖控制。
 
                 示例：
                   crypvol extract ./archive.1.cvp
-                    自动发现同目录下 archive.2.cvp, archive.3.cvp...，一并还原
+                    自动发现同组卷并还原到当前目录
 
                   crypvol extract ./data.1.cvp -p "secret123" -o ./restored --overwrite
-                    用密码解密 .cvk，提取到 ./restored，覆盖已存在文件
+                    用密码解密，提取到指定目录，覆盖已存在文件
 
                   crypvol extract ./vol.1.cvp --privkey-key ./mykey.pem --include "**/*.docx"
-                    用 RSA 私钥解密，仅提取 Word 文档
-
-                  crypvol extract ./vol.1.cvp --dry-run
-                    预览将还原的文件，不实际写入
+                    用私钥解密，仅提取 Word 文档
                 """)
             {
                 VolFiles,
@@ -498,7 +490,14 @@ public static class CommandDefinition
 
             LongFormat = new Option<bool>("--long", "-l")
             {
-                Description = "长格式输出：显示文件大小、修改时间、文件权限、卷号等详细信息"
+                Description =
+                    """
+                    详细信息模式：
+                    Table  —— 增加跨卷链列
+                    List   —— 显示文件大小、片段数、卷号
+                    Json   —— 增加 CrossVolume、VolumeSpan 字段
+                    Csv    —— 增加 CrossVolume、VolumeSpan 列
+                    """
             };
 
             KeyFile = new Option<FileInfo>("--key-file", "-k")
@@ -555,23 +554,23 @@ public static class CommandDefinition
         {
             var cmd = new Command("browse",
                 """
-                列出加密卷 (.cvp) 中的文件清单，无需完整解包。
+                列出数据卷 (.cvp) 中的文件清单，无需完整解包。
 
-                即使卷内容已加密，也可以浏览文件名和目录结构（PlainKey 模式下无需密钥）。
-                支持多种输出格式和排序方式。
+                支持四种输出格式：List（简洁列表）、Table（对齐表格）、Json、Csv。
+                加密卷需提供密钥文件才能读取元数据。
 
                 示例：
                   crypvol browse ./archive.1.cvp
-                    以表格形式列出所有文件
+                    默认列表格式
 
-                  crypvol browse ./archive.1.cvp --long --sort Size --reverse
-                    按文件大小从大到小列出（长格式）
+                  crypvol browse ./archive.1.cvp -f Table -l
+                    表格格式 + 跨卷详情
 
-                  crypvol browse ./archive.1.cvp -o filelist.csv -f Csv
-                    导出为 CSV 文件
+                  crypvol browse ./archive.1.cvp -f Json -o files.json
+                    导出为 JSON 文件
 
-                  crypvol browse ./archive.1.cvp --show-fragments --include "**/bigfile.*"
-                    查看大文件跨卷分段的详情
+                  crypvol browse ./archive.1.cvp --include "**/*.jpg"
+                    仅列出匹配的文件
                 """)
             {
                 VolFiles,
@@ -634,18 +633,15 @@ public static class CommandDefinition
                 """
                 显示密钥文件 (.cvk) 的元数据信息。
 
-                输出内容包括：文件格式版本、密钥保护模式、Argon2id 参数（Password模式）、
-                接收者列表及 KeyID（Asymmetric 模式）、CEK 指纹（需提供解密凭据）等。
+                输出内容包括：保护模式、格式版本、CEK 指纹等。
+                提供解密凭据后将验证密钥并展示完整信息。
 
                 示例：
                   crypvol info ./archive.cvk
-                    查看 .cvk 的基本元数据（模式、版本等）
-
-                  crypvol info ./archive.cvk -f Json
-                    以 JSON 格式输出元数据
+                    查看基本元数据
 
                   crypvol info ./archive.cvk -p "secret123"
-                    验证密码并展示 CEK 指纹等完整信息
+                    验证密码并展示 CEK 指纹
                 """)
             {
                 KeyFile,
@@ -757,8 +753,8 @@ public static class CommandDefinition
                 """
                 校验数据卷 (.cvp) 的完整性和数据一致性。
 
-                逐块验证 CRC32 / SHA256 校验值（取决于打包时的 --integrity 设置），
-                报告任何数据损坏或不一致。可生成损坏报告供 repair 命令使用。
+                逐块验证 CRC32 校验值，报告数据损坏或缺失。
+                可生成损坏报告供 repair 命令使用。
 
                 退出码：0 = 完整无损坏，1 = 检测到损坏，2 = 无法读取/致命错误
 
@@ -770,7 +766,7 @@ public static class CommandDefinition
                     快速检查卷头结构完整性
 
                   crypvol verify ./archive.1.cvp -r damage-report.txt
-                    校验并生成详细损坏报告
+                    校验并生成损坏报告
                 """)
             {
                 VolFiles,
@@ -889,15 +885,10 @@ public static class CommandDefinition
         {
             var cmd = new Command("repair",
                 """
-                尝试修复损坏的 .cvp 数据卷。
+                修复损坏的 .cvp 数据卷。
 
-                通过冗余校验信息（CRC32 / SHA256）定位损坏区域，并尝试
-                尽可能恢复数据。无法恢复的损坏区域将被标记或零填充。
-
-                修复原理：
-                  1. 扫描卷结构，定位可识别的文件和段头
-                  2. 逐块校验数据完整性
-                  3. 无法恢复的块标记为损坏（后续 extract --rescue 会跳过）
+                定位并零填充无法恢复的损坏块，写入有效 CRC32 以保持卷结构完整。
+                建议配合 --backup 在修复前备份原始文件。
 
                 示例：
                   crypvol repair ./archive.1.cvp --backup

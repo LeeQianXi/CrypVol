@@ -157,7 +157,7 @@ public class ExtractTransformIntegrityTests
     {
         var cek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(cek, false, 6);
-        var extract = new ExtractTransform(cek, false);
+        var extract = new ExtractTransform(cek);
 
         var input = ArrayPool<byte>.Shared.Rent(200);
         try
@@ -177,7 +177,7 @@ public class ExtractTransformIntegrityTests
     {
         var cek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(cek, false, 6, IntegrityLevel.Block);
-        var extract = new ExtractTransform(cek, false, IntegrityLevel.Block);
+        var extract = new ExtractTransform(cek, integrityLevel: IntegrityLevel.Block);
 
         var input = ArrayPool<byte>.Shared.Rent(200);
         try
@@ -198,7 +198,7 @@ public class ExtractTransformIntegrityTests
     {
         var cek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(cek, false, 6, IntegrityLevel.Block);
-        var extract = new ExtractTransform(cek, false, IntegrityLevel.Block);
+        var extract = new ExtractTransform(cek, integrityLevel: IntegrityLevel.Block);
 
         var input = ArrayPool<byte>.Shared.Rent(200);
         try
@@ -217,7 +217,7 @@ public class ExtractTransformIntegrityTests
     {
         var cek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(cek, false, 6, IntegrityLevel.Block);
-        var extract = new ExtractTransform(cek, false, IntegrityLevel.Block);
+        var extract = new ExtractTransform(cek, integrityLevel: IntegrityLevel.Block);
 
         var input = ArrayPool<byte>.Shared.Rent(200);
         try
@@ -261,7 +261,7 @@ public class ConvertTransformIntegrityTests
         var newCek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(oldCek, false, 6, IntegrityLevel.Block);
         var convert = new ConvertTransform(oldCek, newCek, IntegrityLevel.Block);
-        var extract = new ExtractTransform(newCek, false, IntegrityLevel.Block);
+        var extract = new ExtractTransform(newCek, integrityLevel: IntegrityLevel.Block);
 
         var input = ArrayPool<byte>.Shared.Rent(300);
         try
@@ -284,7 +284,7 @@ public class ConvertTransformIntegrityTests
         var newCek = RandomNumberGenerator.GetBytes(32);
         var pack = new PackTransform(oldCek, false, 6);
         var convert = new ConvertTransform(oldCek, newCek);
-        var extract = new ExtractTransform(newCek, false);
+        var extract = new ExtractTransform(newCek);
 
         var input = ArrayPool<byte>.Shared.Rent(200);
         try

@@ -35,13 +35,16 @@ public sealed class CrypVolEngine
                 opts.SourceFolder,
                 capacity,
                 headerSize,
-                opts.IntegrityLevel);
+                opts.IntegrityLevel,
+                opts.EnableCompression);
             if (items.Count == 0)
                 return new PackResult
                 {
                     Error = "无工作项"
                 };
-            Report("分配", 0, items.Count, $"共 {volumes.Count} 卷");
+            var compressing = mode != EncryptionMode.None && opts.EnableCompression;
+            Report("分配", 0, items.Count,
+                $"共 {volumes.Count} 卷, 加密={(mode != EncryptionMode.None ? "是" : "否")}, 压缩={(compressing ? $"是 (L{opts.CompressionLevel})" : "否")}, 完整性={opts.IntegrityLevel}");
             // Pipeline
             var encryptHeaders = mode != EncryptionMode.None;
             var threads = Math.Clamp(opts.Threads, 1, Environment.ProcessorCount);
@@ -52,7 +55,7 @@ public sealed class CrypVolEngine
                 RawChannelCapacity = 128,
                 ProcessedChannelCapacity = 128
             }, mode is EncryptionMode.None
-                ? new NullTransform()
+                ? new NullTransform(opts.EnableCompression, opts.CompressionLevel)
                 : new PackTransform(cek, opts.EnableCompression, opts.CompressionLevel, opts.IntegrityLevel))
             {
                 ReadBlockAsync = (item, ct) => FileSource.ReadAsync(item, ct),
@@ -163,15 +166,18 @@ public sealed class CrypVolEngine
                     });
             }
 
-            // Auto-detect integrity level from the first fragment's flags
+            // Auto-detect from the first fragment's flags
             var integrityLevel = IntegrityLevel.None;
+            var isCompressed = false;
             if (fileFragments.Count > 0)
             {
                 var firstFragment = fileFragments.Values.First(f => f.Count > 0);
                 integrityLevel = (IntegrityLevel)(firstFragment[0].Flags >> 3 & 3);
+                isCompressed = (firstFragment[0].Flags & 0x20) != 0;
             }
 
-            Report("提取", 0, fileFragments.Count, "");
+            Report("提取", 0, fileFragments.Count,
+                $"解密={(mode != EncryptionMode.None ? "是" : "否")}, 解压={isCompressed}, 完整性={integrityLevel}");
 
             var threads = Math.Clamp(opts.Threads, 1, Environment.ProcessorCount);
             var pipe = new VolumePipeline(new PipelineConfig
@@ -181,8 +187,8 @@ public sealed class CrypVolEngine
                 RawChannelCapacity = 128,
                 ProcessedChannelCapacity = 128
             }, mode is EncryptionMode.None
-                ? new NullTransform()
-                : new ExtractTransform(cek, false, integrityLevel))
+                ? NullTransform.ForExtract(isCompressed)
+                : new ExtractTransform(cek, isCompressed, integrityLevel))
             {
                 ReadBlockAsync = (item, ct) => CvpSource.ReadAsync(item, ct),
                 WriteVolumeAsync = (ctx, ct) =>
@@ -337,12 +343,14 @@ public sealed class CrypVolEngine
                     Error = "无数据块"
                 };
 
-            // Auto-detect integrity level from the first fragment's flags
+            // Auto-detect from the first fragment's flags
             var integrityLevel = IntegrityLevel.None;
+            var isCompressed = false;
             if (fileFragments.Count > 0)
             {
                 var firstFragment = fileFragments.Values.First(f => f.Count > 0);
                 integrityLevel = (IntegrityLevel)(firstFragment[0].Flags >> 3 & 3);
+                isCompressed = (firstFragment[0].Flags & 0x20) != 0;
             }
 
             var (newMode, newCek) = opts.NewCredentials;
@@ -354,7 +362,7 @@ public sealed class CrypVolEngine
                     RawChannelCapacity = 128,
                     ProcessedChannelCapacity = 128
                 }, newMode is EncryptionMode.None
-                    ? new ExtractTransform(cek, false, integrityLevel) // 解密不加密
+                    ? new ExtractTransform(cek, isCompressed, integrityLevel)
                     : new ConvertTransform(cek, newCek, integrityLevel)) // 解密+加密
                 {
                     ReadBlockAsync = (item, ct) => CvpSource.ReadAsync(item, ct),
@@ -709,16 +717,6 @@ public sealed class CrypVolEngine
         foreach (var (path, fragments) in fileFragments)
         {
             if (fragments.Count == 0) continue;
-
-            var totalSize = fragments[0].TotalFileSize;
-            var sumBlockSize = fragments.Sum(f => (long)f.BlockSize);
-
-            // 核心检查：所有数据块大小之和必须 >= 文件总大小
-            if (sumBlockSize < totalSize)
-            {
-                incomplete.Add(path);
-                continue;
-            }
 
             // 单片段：必须为 Full
             if (fragments.Count == 1)

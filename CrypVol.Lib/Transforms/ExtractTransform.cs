@@ -13,8 +13,8 @@ public sealed class ExtractTransform : IBlockTransform
     private readonly bool _enableCrc32;
     private readonly bool _rescue;
 
-    public ExtractTransform(byte[] cek, bool compressed, IntegrityLevel integrityLevel = IntegrityLevel.None,
-        bool rescue = false)
+    public ExtractTransform(byte[] cek, bool compressed = false,
+        IntegrityLevel integrityLevel = IntegrityLevel.None, bool rescue = false)
     {
         _cek = cek;
         _compressed = compressed;
