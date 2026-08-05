@@ -651,7 +651,7 @@ public sealed class CrypVolEngine
     ///     校验每个文件的片段完整性（块大小总和是否等于 TotalFileSize、首尾类型正确）。
     ///     返回不完整的文件路径列表；空列表表示所有文件完整。
     /// </summary>
-    private static List<string> FindIncompleteFiles(Dictionary<string, List<VolumeScanner.Fragment>> fileFragments)
+    internal static List<string> FindIncompleteFiles(Dictionary<string, List<VolumeScanner.Fragment>> fileFragments)
     {
         var incomplete = new List<string>();
         foreach (var (path, fragments) in fileFragments)

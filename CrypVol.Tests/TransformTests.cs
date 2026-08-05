@@ -356,4 +356,73 @@ public class TransformTests
             ArrayPool<byte>.Shared.Return(input);
         }
     }
+
+    // ═══════════════════════════════════════════════════════
+    //  NullTransform.ForExtract (decompress)
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void NullTransform_ForExtract_Uncompressed_Passthrough()
+    {
+        var transform = NullTransform.ForExtract(false);
+        var input = ArrayPool<byte>.Shared.Rent(100);
+        try
+        {
+            RandomNumberGenerator.Fill(input);
+            var output = transform.Transform(input, 100, out var outputLen);
+            Assert.Equal(100, outputLen);
+            Assert.True(input.AsSpan(0, 100).SequenceEqual(output.AsSpan(0, 100)));
+            ArrayPool<byte>.Shared.Return(output);
+        }
+        finally { ArrayPool<byte>.Shared.Return(input); }
+    }
+
+    [Fact]
+    public void NullTransform_CompressThenDecompress_RoundTrip()
+    {
+        var pack = new NullTransform(true, 6);
+        var extract = NullTransform.ForExtract(true);
+
+        var input = ArrayPool<byte>.Shared.Rent(4096);
+        try
+        {
+            Array.Fill(input, (byte)'X', 0, 4096);
+            var compressed = pack.Transform(input, 4096, out var compLen);
+            // Compressed repetitive data should be much smaller
+            Assert.True(compLen < 4096);
+
+            var decompressed = extract.Transform(compressed, compLen, out var decompLen);
+            Assert.Equal(4096, decompLen);
+            Assert.True(input.AsSpan(0, 4096).SequenceEqual(decompressed.AsSpan(0, 4096)));
+
+            ArrayPool<byte>.Shared.Return(compressed);
+            ArrayPool<byte>.Shared.Return(decompressed);
+        }
+        finally { ArrayPool<byte>.Shared.Return(input); }
+    }
+
+    [Fact]
+    public void NullTransform_PackCompress_ExtractUncompressed_ReturnsRawGzip()
+    {
+        // Extract with compressed=false on compressed data → returns raw GZip bytes
+        var pack = new NullTransform(true);
+        var extract = NullTransform.ForExtract(false);
+
+        var input = ArrayPool<byte>.Shared.Rent(100);
+        try
+        {
+            Array.Fill(input, (byte)'A', 0, 100);
+            var compressed = pack.Transform(input, 100, out var compLen);
+            var passthrough = extract.Transform(compressed, compLen, out var passLen);
+
+            // Passthrough should return the raw compressed data (starts with GZip header 1F 8B)
+            Assert.Equal(compLen, passLen);
+            Assert.Equal((byte)0x1F, passthrough[0]);
+            Assert.Equal((byte)0x8B, passthrough[1]);
+
+            ArrayPool<byte>.Shared.Return(compressed);
+            ArrayPool<byte>.Shared.Return(passthrough);
+        }
+        finally { ArrayPool<byte>.Shared.Return(input); }
+    }
 }
