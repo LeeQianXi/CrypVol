@@ -3,10 +3,10 @@ using System.Text;
 
 namespace CrypVol.Lib.Volume;
 
-/// <summary>扫描 .cvp 卷头，构建文件→片段映射。魔数自动识别明文(CVPH)/加密(CVPE)头。</summary>
+/// <summary>扫描 .cvp 卷头，构建文件→片段映射。魔数自动识别明文(CVPH)/加密(CVPE)头。filter 非 null 时跳过不匹配的文件。</summary>
 public static class VolumeScanner
 {
-    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null)
+    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null, GlobMatcher? filter = null)
     {
         var files = new Dictionary<string, List<Fragment>>();
         var possiblyEncrypted = false;
@@ -67,6 +67,23 @@ public static class VolumeScanner
                 catch { break; }
 
                 pos += headerLen;
+
+                // Glob 过滤：不匹配的文件跳过，但需推进 pos 越过数据块
+                var includeFile = filter is null || filter.IsMatch(relPath);
+                if (!includeFile)
+                {
+                    while (pos + 4 <= fs.Length)
+                    {
+                        fs.Position = pos;
+                        if (fs.Read(peekBuf) < 4) break;
+                        if (FileEntryHeader.IsValidMagic(BitConverter.ToUInt32(peekBuf))) break;
+                        var skipLen = BitConverter.ToInt32(peekBuf);
+                        if (skipLen < 0) break;
+                        pos += 4 + skipLen;
+                    }
+
+                    continue;
+                }
 
                 var flags = (FileEntryHeaderFlagsEnum)hdr.Flags;
                 var isFirst = !flags.HasFlag(FileEntryHeaderFlagsEnum.CrossMid)

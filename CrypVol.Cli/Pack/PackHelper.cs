@@ -1,10 +1,9 @@
 using System.CommandLine;
+using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Engine;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Volume;
-using Microsoft.Extensions.FileSystemGlobbing;
-using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 
 namespace CrypVol.Cli.Pack;
 
@@ -30,26 +29,33 @@ public static class PackHelper
             return 1;
         }
 
-        // Globbing (CLI-specific, stays here)
+        // Globbing — enumerate files, filter with DotNet.Glob
         var sourceFolder = inputPath switch
         {
             FileInfo fi => fi.Directory!,
             DirectoryInfo di => di,
             _ => throw new InvalidOperationException()
         };
-        var filter = new Matcher();
+        var matcher = new GlobMatcher();
         var inc = args.GetValue(CommandDefinition.Pack.Include);
-        filter.AddInclude(string.IsNullOrWhiteSpace(inc) ? "**/*" : inc);
+        if (!string.IsNullOrWhiteSpace(inc)) matcher.AddInclude(inc);
         var exc = args.GetValue(CommandDefinition.Pack.Exclude);
-        if (!string.IsNullOrWhiteSpace(exc)) filter.AddExclude(exc);
-        var globResult = filter.Execute(new DirectoryInfoWrapper(sourceFolder));
-        if (!globResult.HasMatches)
+        if (!string.IsNullOrWhiteSpace(exc)) matcher.AddExclude(exc);
+
+        var allFiles = Directory.GetFiles(sourceFolder.FullName, "*", SearchOption.AllDirectories);
+        var files = new List<FileInfo>();
+        foreach (var f in allFiles)
+        {
+            var rel = Path.GetRelativePath(sourceFolder.FullName, f);
+            if (matcher.IsMatch(rel))
+                files.Add(new FileInfo(f));
+        }
+
+        if (files.Count == 0)
         {
             Console.WriteLine("无可处理文件");
             return 1;
         }
-
-        var files = globResult.Files.Select(f => new FileInfo(Path.Combine(sourceFolder.FullName, f.Path))).ToList();
 
         // Dry-run: 仅估算，不调用引擎
         if (args.GetValue(CommandDefinition.Pack.DryRun))

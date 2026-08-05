@@ -60,8 +60,8 @@ public static class BrowseHelper
         {
             VolumeFiles = volFiles,
             Credentials = creds,
-            IncludePattern = args.GetValue(CommandDefinition.Browse.Include) ?? string.Empty,
-            ExcludePattern = args.GetValue(CommandDefinition.Browse.Exclude) ?? string.Empty
+            IncludePattern = args.GetValue(CommandDefinition.Browse.Include),
+            ExcludePattern = args.GetValue(CommandDefinition.Browse.Exclude)
         }, token);
         if (!result.Success)
         {

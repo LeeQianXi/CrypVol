@@ -17,10 +17,10 @@ public sealed record VerifyOptions
     public int Threads { get; init; } = Environment.ProcessorCount;
 
     /// <summary>Glob 包含模式</summary>
-    public string IncludePattern { get; init; } = string.Empty;
+    public string? IncludePattern { get; init; }
 
     /// <summary>Glob 排除模式</summary>
-    public string ExcludePattern { get; init; } = string.Empty;
+    public string? ExcludePattern { get; init; }
 }
 
 public sealed record VerifyResult

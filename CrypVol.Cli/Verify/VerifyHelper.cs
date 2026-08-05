@@ -59,8 +59,8 @@ public static class VerifyHelper
             Credentials = creds,
             Quick = args.GetValue(CommandDefinition.Verify.Quick),
             Threads = args.GetValue(CommandDefinition.Verify.Threads),
-            IncludePattern = args.GetValue(CommandDefinition.Verify.Include) ?? string.Empty,
-            ExcludePattern = args.GetValue(CommandDefinition.Verify.Exclude) ?? string.Empty
+            IncludePattern = args.GetValue(CommandDefinition.Verify.Include),
+            ExcludePattern = args.GetValue(CommandDefinition.Verify.Exclude)
         }, token);
 
         if (!result.Success)

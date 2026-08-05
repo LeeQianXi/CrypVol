@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using CrypVol.Lib.Crypto;
 
 namespace CrypVol.Lib.Engine.Models;
@@ -12,20 +11,10 @@ public sealed record BrowseOptions
     public required CvkCredentials Credentials { get; init; }
 
     /// <summary>Glob 包含模式</summary>
-    [field: AllowNull]
-    public string IncludePattern
-    {
-        get => field ?? string.Empty;
-        init;
-    }
+    public string? IncludePattern { get; init; }
 
     /// <summary>Glob 排除模式</summary>
-    [field: AllowNull]
-    public string ExcludePattern
-    {
-        get => field ?? string.Empty;
-        init;
-    }
+    public string? ExcludePattern { get; init; }
 }
 
 public sealed record BrowseResult

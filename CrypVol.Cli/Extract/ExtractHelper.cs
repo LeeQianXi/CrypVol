@@ -62,8 +62,8 @@ public static class ExtractHelper
             OutputDir = outputDir,
             Credentials = creds,
             Overwrite = args.GetValue(CommandDefinition.Extract.Overwrite),
-            IncludePattern = args.GetValue(CommandDefinition.Extract.Include)!,
-            ExcludePattern = args.GetValue(CommandDefinition.Extract.Exclude)!,
+            IncludePattern = args.GetValue(CommandDefinition.Extract.Include),
+            ExcludePattern = args.GetValue(CommandDefinition.Extract.Exclude),
             Threads = args.GetValue(CommandDefinition.Extract.Threads)
         }, token);
 

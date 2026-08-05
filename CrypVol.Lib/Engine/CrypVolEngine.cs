@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.IO.Sinks;
 using CrypVol.Lib.IO.Sources;
@@ -103,7 +102,8 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null);
             if (scanResult.PossiblyEncrypted)
                 return new ExtractResult
                 {
@@ -119,23 +119,6 @@ public sealed class CrypVolEngine
                     fileFragments.Remove(skipped);
             }
 
-            // Filter by --include / --exclude
-            if (!string.IsNullOrWhiteSpace(opts.IncludePattern) || !string.IsNullOrWhiteSpace(opts.ExcludePattern))
-            {
-                var keys = fileFragments.Keys.ToList();
-                foreach (var k in keys)
-                {
-                    if (!string.IsNullOrWhiteSpace(opts.IncludePattern) &&
-                        !SimpleGlobMatch(opts.IncludePattern, k))
-                    {
-                        fileFragments.Remove(k);
-                        continue;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(opts.ExcludePattern) &&
-                        SimpleGlobMatch(opts.ExcludePattern, k)) fileFragments.Remove(k);
-                }
-            }
 
             if (fileFragments.Count == 0)
                 return new ExtractResult
@@ -234,32 +217,14 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null);
             if (scanResult.PossiblyEncrypted)
                 return new BrowseResult
                 {
                     Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件"
                 };
             var fileFragments = scanResult.Files;
-
-            // 过滤 include/exclude
-            if (!string.IsNullOrWhiteSpace(opts.IncludePattern) || !string.IsNullOrWhiteSpace(opts.ExcludePattern))
-            {
-                var keys = fileFragments.Keys.ToList();
-                foreach (var k in keys)
-                {
-                    if (!string.IsNullOrWhiteSpace(opts.IncludePattern) &&
-                        !SimpleGlobMatch(opts.IncludePattern, k))
-                    {
-                        fileFragments.Remove(k);
-                        continue;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(opts.ExcludePattern) &&
-                        SimpleGlobMatch(opts.ExcludePattern, k))
-                        fileFragments.Remove(k);
-                }
-            }
 
             var incompleteSet = new HashSet<string>(FindIncompleteFiles(fileFragments));
             var files = new List<BrowseFileEntry>();
@@ -400,7 +365,8 @@ public sealed class CrypVolEngine
         try
         {
             var (mode, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek);
+            var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null);
             if (scanResult.PossiblyEncrypted)
                 return new VerifyResult
                 {
@@ -413,24 +379,6 @@ public sealed class CrypVolEngine
                     Error = "未发现可识别的文件条目"
                 };
 
-            // Filter by --include / --exclude
-            if (!string.IsNullOrWhiteSpace(opts.IncludePattern) || !string.IsNullOrWhiteSpace(opts.ExcludePattern))
-            {
-                var keys = fileFragments.Keys.ToList();
-                foreach (var k in keys)
-                {
-                    if (!string.IsNullOrWhiteSpace(opts.IncludePattern) &&
-                        !SimpleGlobMatch(opts.IncludePattern, k))
-                    {
-                        fileFragments.Remove(k);
-                        continue;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(opts.ExcludePattern) &&
-                        SimpleGlobMatch(opts.ExcludePattern, k))
-                        fileFragments.Remove(k);
-                }
-            }
 
             if (fileFragments.Count == 0)
                 return new VerifyResult
@@ -698,14 +646,6 @@ public sealed class CrypVolEngine
         });
     }
 
-    private static bool SimpleGlobMatch(string pattern, string path)
-    {
-        if (pattern == "**" || pattern == "**/*") return true;
-        var regex = "^" + Regex.Escape(pattern)
-            .Replace("\\*\\*", ".*")
-            .Replace("\\*", "[^/]*") + "$";
-        return Regex.IsMatch(path, regex);
-    }
 
     /// <summary>
     ///     校验每个文件的片段完整性（块大小总和是否等于 TotalFileSize、首尾类型正确）。
@@ -739,5 +679,13 @@ public sealed class CrypVolEngine
         }
 
         return incomplete;
+    }
+
+    private static GlobMatcher BuildGlobMatcher(string? include, string? exclude)
+    {
+        var m = new GlobMatcher();
+        if (!string.IsNullOrWhiteSpace(include)) m.AddInclude(include);
+        if (!string.IsNullOrWhiteSpace(exclude)) m.AddExclude(exclude);
+        return m;
     }
 }
