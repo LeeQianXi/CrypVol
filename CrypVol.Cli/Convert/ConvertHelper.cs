@@ -91,8 +91,7 @@ public static class ConvertHelper
             OutputDir = outputDir,
             OutputPrefix = prefix,
             OldCredentials = oldCreds,
-            NewCredentials = newCreds,
-            Threads = args.GetValue(CommandDefinition.Convert.Threads)
+            NewCredentials = newCreds
         }, token);
 
         if (!result.Success)

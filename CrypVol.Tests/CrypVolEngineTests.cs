@@ -68,7 +68,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -81,7 +80,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -111,7 +109,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -122,7 +119,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -156,7 +152,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -167,7 +162,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = credentials,
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -197,7 +191,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -209,7 +202,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.PlainKey, wrongCek),
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -242,7 +234,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -256,7 +247,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = loaded,
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -287,7 +277,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -334,7 +323,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = oldCredentials,
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -350,7 +338,6 @@ public class CrypVolEngineTests : IDisposable
             OutputPrefix = "converted",
             OldCredentials = oldCredentials,
             NewCredentials = newCredentials,
-            Threads = 1
         };
 
         var convertResult = await engine.ConvertAsync(convertOpts);
@@ -362,7 +349,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = convertResult.VolumePaths.Select(p => new FileInfo(p)).ToList(),
             OutputDir = restoreDir,
             Credentials = newCredentials,
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -394,7 +380,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -406,7 +391,6 @@ public class CrypVolEngineTests : IDisposable
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
             IncludePattern = "keep.txt",
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -434,7 +418,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -446,7 +429,6 @@ public class CrypVolEngineTests : IDisposable
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
             ExcludePattern = "*.log",
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -482,7 +464,6 @@ public class CrypVolEngineTests : IDisposable
             OutputDir = outDir,
             Credentials = credentials,
             VolumeSizeMb = 1,
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -493,7 +474,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = credentials,
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -529,7 +509,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var result = await engine.PackAsync(packOpts);
@@ -562,7 +541,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -573,7 +551,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -602,7 +579,6 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         await engine.PackAsync(packOpts);
@@ -640,7 +616,6 @@ public class CrypVolEngineTests : IDisposable
             SourceFiles = Array.Empty<FileInfo>().ToList(),
             OutputDir = outDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var result = await engine.PackAsync(packOpts);
@@ -659,7 +634,6 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = Array.Empty<FileInfo>().AsReadOnly(),
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            Threads = 1
         };
 
         var result = await engine.ExtractAsync(extractOpts);

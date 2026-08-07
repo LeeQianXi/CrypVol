@@ -20,7 +20,6 @@ public sealed record ExtractOptions
     public string? ExcludePattern { get; init; }
 
     public bool Overwrite { get; init; }
-    public int Threads { get; init; } = Environment.ProcessorCount;
 }
 
 public sealed record ExtractResult

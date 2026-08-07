@@ -13,9 +13,6 @@ public sealed record VerifyOptions
     /// <summary>仅快速检查头结构（跳过 CRC32 数据校验）</summary>
     public bool Quick { get; init; }
 
-    /// <summary>并行线程数</summary>
-    public int Threads { get; init; } = Environment.ProcessorCount;
-
     /// <summary>Glob 包含模式</summary>
     public string? IncludePattern { get; init; }
 

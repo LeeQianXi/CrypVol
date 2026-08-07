@@ -79,7 +79,6 @@ public static class CommandDefinition
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<bool> Compress;
         public static readonly Option<int> CompressionLevel;
-        public static readonly Option<int> Threads;
         public static readonly Option<DirectoryInfo> KeyOutputPath;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
@@ -222,18 +221,6 @@ public static class CommandDefinition
                 DefaultValueFactory = static _ => 6
             }.AcceptOnlyFromAmong("0", "1", "2", "3", "4", "5", "6", "7", "8", "9");
 
-            // ── 处理选项 ──
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description =
-                    """
-                    并行处理线程数。影响压缩和加密阶段的并发度。
-                    设为 1 禁用并行；设为 0 表示自动（使用全部 CPU 核心）。
-                    """,
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             // ── 密钥输出 ──
             KeyOutputPath = new Option<DirectoryInfo>("--key-output")
             {
@@ -313,7 +300,6 @@ public static class CommandDefinition
                 PrivkeyKeyPass,
                 Compress,
                 CompressionLevel,
-                Threads,
                 KeyOutputPath,
                 Include,
                 Exclude,
@@ -339,7 +325,6 @@ public static class CommandDefinition
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<int> Threads;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
         public static readonly Option<bool> Overwrite;
@@ -397,13 +382,6 @@ public static class CommandDefinition
                 HelpName = "passphrase"
             };
 
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行解压/解密线程数。0 表示自动",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             Include = new Option<string>("--include")
             {
                 Description = "仅提取匹配 Glob 模式的文件",
@@ -448,7 +426,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Include,
                 Exclude,
                 Overwrite
@@ -666,7 +643,6 @@ public static class CommandDefinition
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<int> Threads;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
         public static readonly Option<bool> Quick;
@@ -706,13 +682,6 @@ public static class CommandDefinition
             {
                 Description = "私钥文件本身的密码",
                 HelpName = "passphrase"
-            };
-
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行校验线程数。0 表示自动",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
             };
 
             Include = new Option<string>("--include")
@@ -774,7 +743,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Include,
                 Exclude,
                 Quick,
@@ -798,7 +766,6 @@ public static class CommandDefinition
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<int> Threads;
         public static readonly Option<bool> Backup;
         public static readonly Option<FileInfo> VerifyReport;
 
@@ -854,13 +821,6 @@ public static class CommandDefinition
                 HelpName = "passphrase"
             };
 
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行处理线程数",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             Backup = new Option<bool>("--backup", "-b")
             {
                 Description =
@@ -907,7 +867,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Backup,
                 VerifyReport
             };
@@ -1049,7 +1008,6 @@ public static class CommandDefinition
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
 
-        public static readonly Option<int> Threads;
         public static readonly Option<bool> Backup;
 
 
@@ -1142,13 +1100,6 @@ public static class CommandDefinition
                 HelpName = "passphrase"
             };
 
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行处理线程数",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             Backup = new Option<bool>("--backup", "-b")
             {
                 Description = "操作前备份原始 .cvp 文件（追加 .bak 后缀）"
@@ -1189,7 +1140,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Backup
             };
 

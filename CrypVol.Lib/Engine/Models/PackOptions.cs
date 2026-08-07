@@ -41,9 +41,6 @@ public sealed record PackOptions
     /// <summary>压缩级别 0-9</summary>
     public int CompressionLevel { get; init; } = 6;
 
-    /// <summary>并行线程数</summary>
-    public int Threads { get; init; } = Environment.ProcessorCount;
-
     /// <summary>完整性校验级别</summary>
     public IntegrityLevel IntegrityLevel { get; init; } = IntegrityLevel.File;
 }

@@ -18,9 +18,6 @@ public sealed record RepairOptions
 
     /// <summary>从 verify 报告读取损坏位置（跳过扫描）</summary>
     public FileInfo? VerifyReport { get; init; }
-
-    /// <summary>并行 I/O 线程数</summary>
-    public int Threads { get; init; } = Environment.ProcessorCount;
 }
 
 public sealed record RepairResult

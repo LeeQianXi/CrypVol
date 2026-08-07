@@ -18,8 +18,6 @@ public sealed record ConvertOptions
 
     /// <summary>新 CEK（用于加密新卷）</summary>
     public required CvkCredentials NewCredentials { get; init; }
-
-    public int Threads { get; init; } = Environment.ProcessorCount;
 }
 
 public sealed record ConvertResult

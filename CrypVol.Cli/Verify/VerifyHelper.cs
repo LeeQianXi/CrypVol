@@ -58,7 +58,6 @@ public static class VerifyHelper
             VolumeFiles = volFiles,
             Credentials = creds,
             Quick = args.GetValue(CommandDefinition.Verify.Quick),
-            Threads = args.GetValue(CommandDefinition.Verify.Threads),
             IncludePattern = args.GetValue(CommandDefinition.Verify.Include),
             ExcludePattern = args.GetValue(CommandDefinition.Verify.Exclude)
         }, token);

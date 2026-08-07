@@ -59,8 +59,7 @@ public static class RepairHelper
             Credentials = creds,
             OutputDir = args.GetValue(CommandDefinition.Repair.Output),
             Backup = args.GetValue(CommandDefinition.Repair.Backup),
-            VerifyReport = args.GetValue(CommandDefinition.Repair.VerifyReport),
-            Threads = args.GetValue(CommandDefinition.Repair.Threads)
+            VerifyReport = args.GetValue(CommandDefinition.Repair.VerifyReport)
         }, token);
 
         if (!result.Success)

@@ -113,7 +113,6 @@ public static class PackHelper
             VolumeSizeMb = args.GetValue(CommandDefinition.Pack.VolumeSize),
             EnableCompression = args.GetValue(CommandDefinition.Pack.Compress),
             CompressionLevel = args.GetValue(CommandDefinition.Pack.CompressionLevel),
-            Threads = args.GetValue(CommandDefinition.Pack.Threads),
             KeyOutputDir = args.GetValue(CommandDefinition.Pack.KeyOutputPath)!,
             IntegrityLevel = args.GetValue(CommandDefinition.Pack.Integrity),
             Credentials = creds

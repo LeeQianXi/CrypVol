@@ -147,23 +147,6 @@ public class ProgressReportTests
     }
 }
 
-public class PipelineConfigTests
-{
-    [Fact]
-    public void PipelineConfig_DefaultValues()
-    {
-        var config = new PipelineConfig();
-        Assert.Equal(4, config.ReaderConcurrency);
-        Assert.Equal(Environment.ProcessorCount, config.TransformConcurrency);
-        Assert.Equal(2, config.WriterConcurrency);
-        Assert.Equal(128, config.RawChannelCapacity);
-        Assert.Equal(128, config.ProcessedChannelCapacity);
-        Assert.Equal(4096, config.BlockSize);
-        Assert.Null(config.LogInfo);
-        Assert.Null(config.LogVerbose);
-    }
-}
-
 public class WorkItemTests
 {
     [Fact]
