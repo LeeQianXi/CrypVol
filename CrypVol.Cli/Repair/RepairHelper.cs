@@ -13,7 +13,10 @@ public static class RepairHelper
     {
         var rawInput = args.GetRequiredValue(CommandDefinition.Repair.VolFiles);
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 发现所有卷文件
+        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
         var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
         if (volFiles.Count is 0)
         {
@@ -39,7 +42,10 @@ public static class RepairHelper
                     args.GetValue(CommandDefinition.Repair.Password),
                     args.GetValue(CommandDefinition.Repair.PrivkeyKey),
                     args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass)
-                );
+                )
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader")
+                };
                 creds = await reader.LoadKeyAsync(token);
             }
             catch (Exception ex)
@@ -51,8 +57,10 @@ public static class RepairHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 3. Engine 修复
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose)) engine.Progress = new ConsoleProgress();
+        var engine = new CrypVolEngine
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.RepairAsync(new RepairOptions
         {
             VolumeFiles = volFiles,

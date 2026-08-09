@@ -9,6 +9,7 @@ public static class RekeyHelper
     {
         var cvkFile = args.GetRequiredValue(CommandDefinition.Rekey.CvkFile);
         var toMode = args.GetValue(CommandDefinition.Rekey.ToMode);
+        var loggerFactory = Program.LoggerFactory;
 
         // 1. 加载源 CEK
         CvkCredentials creds;
@@ -19,6 +20,9 @@ public static class RekeyHelper
                     args.GetValue(CommandDefinition.Rekey.Password),
                     args.GetValue(CommandDefinition.Rekey.PrivkeyKey),
                     args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass))
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader")
+                }
                 .LoadKeyAsync(token);
         }
         catch (Exception ex)
@@ -39,7 +43,10 @@ public static class RekeyHelper
             creds.Cek,
             toMode,
             args.GetValue(CommandDefinition.Rekey.NewPassword),
-            args.GetValue(CommandDefinition.Rekey.PublicKey));
+            args.GetValue(CommandDefinition.Rekey.PublicKey))
+        {
+            Logger = loggerFactory.CreateLogger("CvkWriter")
+        };
         await writer.WriteCvkAsync(outDir, prefix, token);
 
         Console.WriteLine($"密钥已重新封装 → {Path.Combine(outDir.FullName, prefix + ".cvk")}");

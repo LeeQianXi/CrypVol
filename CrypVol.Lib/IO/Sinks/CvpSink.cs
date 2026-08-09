@@ -1,47 +1,69 @@
 using System.Text;
 using CrypVol.Lib.Pipeline;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.IO.Sinks;
 
 /// <summary>有序写入 .cvp 卷文件。cek 非 null 时加密文件头。</summary>
 public static class CvpSink
 {
+    public static ILogger? Logger { get; set; }
+
     public static async Task WriteAsync(VolumeContext ctx, byte[]? cek, CancellationToken token)
     {
-        await using var fs = new FileStream(ctx.OutputPath, FileMode.Create, FileAccess.Write,
-            FileShare.None, 4096 * 16, FileOptions.SequentialScan);
-
-        long pos = 0;
-
-        await foreach (var block in ctx.OutputChannel.Reader.ReadAllAsync(token))
+        FileStream? fs = null;
+        try
         {
-            if (block.Work.IsFirstFragment)
+            long pos = 0;
+            var totalBlocks = 0;
+
+            await foreach (var block in ctx.OutputChannel.Reader.ReadAllAsync(token))
             {
-                var header = new FileEntryHeader
+                if (fs is null)
                 {
-                    FileId = Fnv1AHash64(block.Work.RelativePath),
-                    Flags = block.Work.Flags,
-                    FragmentIndex = (uint)block.Work.Sequence,
-                    SizeOrTotal = block.Work.TotalFileSize
-                };
-                header.SetFilePath(block.Work.RelativePath);
+                    fs = new FileStream(ctx.OutputPath, FileMode.Create, FileAccess.Write,
+                        FileShare.None, 4096 * 16, FileOptions.SequentialScan);
+                    Logger?.LogTrace("创建卷: {Path}", ctx.OutputPath);
+                }
 
-                var headerBytes = cek is not null
-                    ? FileEntryHeader.Encrypt(header, cek)
-                    : header.ToBytes();
+                if (block.Work.IsFirstFragment)
+                {
+                    var header = new FileEntryHeader
+                    {
+                        FileId = Fnv1AHash64(block.Work.RelativePath),
+                        Flags = block.Work.Flags,
+                        FragmentIndex = (uint)block.Work.Sequence,
+                        SizeOrTotal = block.Work.TotalFileSize
+                    };
+                    header.SetFilePath(block.Work.RelativePath);
 
+                    var headerBytes = cek is not null
+                        ? FileEntryHeader.Encrypt(header, cek)
+                        : header.ToBytes();
+
+                    fs.Position = pos;
+                    await fs.WriteAsync(headerBytes, token);
+                    pos += headerBytes.Length;
+                    Logger?.LogTrace("卷头: {Path} ({HeaderType})", block.Work.RelativePath,
+                        cek is not null ? "CVPE加密" : "CVPH明文");
+                }
+
+                var len = BitConverter.GetBytes(block.OutputLength);
                 fs.Position = pos;
-                await fs.WriteAsync(headerBytes, token);
-                pos += headerBytes.Length;
+                await fs.WriteAsync(len, token);
+                await fs.WriteAsync(block.Data.AsMemory(0, block.OutputLength), token);
+                totalBlocks++;
+                pos += 4 + block.OutputLength;
+                block.Dispose();
             }
 
-            var len = BitConverter.GetBytes(block.OutputLength);
-            fs.Position = pos;
-            await fs.WriteAsync(len, token);
-            await fs.WriteAsync(block.Data.AsMemory(0, block.OutputLength), token);
-            pos += 4 + block.OutputLength;
-            block.Dispose();
+            Logger?.LogTrace("卷写入完成: {Path} {Blocks}块 {Bytes}字节",
+                ctx.OutputPath, totalBlocks, pos);
+        }
+        finally
+        {
+            if (fs is not null) await fs.DisposeAsync();
         }
     }
 

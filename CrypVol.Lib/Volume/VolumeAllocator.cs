@@ -1,16 +1,22 @@
 using CrypVol.Lib.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Volume;
 
-/// <summary>文件→卷的预分配算法</summary>
+/// <summary>文件→卷的预分配算法。单文件内块大小 = min(totalSize, 4MiB)，1KiB 对齐。</summary>
 public static class VolumeAllocator
 {
+    private const long MaxBlockSize = 4L * 1024 * 1024; // 4 MiB — 减少 WorkItem 数量
+    private const long Alignment = 1024;               // 1 KiB — 避免文件头浪费
+
+    /// <summary>结构化日志（可选）</summary>
+    public static ILogger? Logger { get; set; }
+
     public static (List<WorkItem> items, List<(int Index, long Size)> volumes)
         Allocate(IEnumerable<FileInfo> files, DirectoryInfo sourceDir, long volumeCapacity, int headerSize = 284,
             IntegrityLevel integrityLevel = IntegrityLevel.None, bool enableCompression = false)
     {
         const int maxPathLen = 231 + 256;
-        const long alignment = 4096;
 
         var items = new List<WorkItem>();
         var volSizes = new Dictionary<int, long>();
@@ -56,6 +62,8 @@ public static class VolumeAllocator
                 continue;
             }
 
+            // 单文件内块大小：取 min(文件总大小, 4MiB)，便于单线程流水线减少块数
+            var blockSize = Math.Min((long)totalSize, MaxBlockSize);
             var remaining = totalSize;
             long srcOffset = 0;
             var fragmentIdx = 0;
@@ -69,7 +77,7 @@ public static class VolumeAllocator
                 }
 
                 var dataSpace = volumeCapacity - used - headerSize;
-                var maxBlocks = dataSpace / alignment;
+                var maxBlocks = dataSpace / Alignment;
                 if (maxBlocks == 0)
                 {
                     currentVol++;
@@ -77,8 +85,10 @@ public static class VolumeAllocator
                     continue;
                 }
 
-                var rawToWrite = Math.Min(remaining, maxBlocks * alignment);
-                var physicalLen = (rawToWrite + alignment - 1) / alignment * alignment;
+                // 取三者最小值: 剩余数据、块大小上限、本卷剩余空间（按对齐边界）
+                var spaceLimit = maxBlocks * Alignment;
+                var rawToWrite = Math.Min(blockSize, Math.Min(remaining, spaceLimit));
+                var physicalLen = (rawToWrite + Alignment - 1) / Alignment * Alignment;
 
                 byte flags = fragmentIdx switch
                 {
@@ -118,6 +128,11 @@ public static class VolumeAllocator
         }
 
         var volumes = volSizes.OrderBy(kv => kv.Key).Select(kv => (kv.Key, kv.Value)).ToList();
+        Logger?.LogInformation("分配完成: {FileCount} 文件 → {ItemCount} 块, {VolCount} 卷",
+            items.GroupBy(i => i.RelativePath).Count(), items.Count, volumes.Count);
+        if (Logger?.IsEnabled(LogLevel.Debug) == true)
+            foreach (var (volIdx, size) in volumes)
+                Logger.LogDebug("  卷 {VolIdx}: {Size} 字节", volIdx, size);
         return (items, volumes);
     }
 }

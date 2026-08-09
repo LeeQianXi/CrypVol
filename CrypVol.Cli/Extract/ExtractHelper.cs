@@ -14,8 +14,11 @@ public static class ExtractHelper
         var rawInput = args.GetRequiredValue(CommandDefinition.Extract.VolFiles);
         var outputDir = args.GetValue(CommandDefinition.Extract.Output)!;
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 快速校验 + 解析卷文件
         if (!outputDir.Exists) outputDir.Create();
+        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
         var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
         if (volFiles.Count is 0)
         {
@@ -41,12 +44,14 @@ public static class ExtractHelper
                     args.GetValue(CommandDefinition.Extract.Password),
                     args.GetValue(CommandDefinition.Extract.PrivkeyKey),
                     args.GetValue(CommandDefinition.Extract.PrivkeyKeyPass)
-                );
+                )
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader")
+                };
                 creds = await reader.LoadKeyAsync(token);
             }
             catch (Exception ex)
             {
-                //TODO 加载cvk失败
                 Console.WriteLine(ex.Message);
                 return 1;
             }
@@ -54,8 +59,10 @@ public static class ExtractHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 3. Engine（最昂贵的 I/O+计算）
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose)) engine.Progress = new ConsoleProgress();
+        var engine = new CrypVolEngine
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.ExtractAsync(new ExtractOptions
         {
             VolumeFiles = volFiles,

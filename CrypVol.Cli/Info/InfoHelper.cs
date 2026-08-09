@@ -9,6 +9,7 @@ public static class InfoHelper
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
         var keyFile = args.GetRequiredValue(CommandDefinition.Info.KeyFile);
+        var loggerFactory = Program.LoggerFactory;
 
         try
         {
@@ -16,6 +17,9 @@ public static class InfoHelper
                     args.GetValue(CommandDefinition.Info.Password),
                     args.GetValue(CommandDefinition.Info.PrivkeyKey),
                     args.GetValue(CommandDefinition.Info.PrivkeyKeyPass))
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader")
+                }
                 .LoadKeyAsync(token);
 
             Console.WriteLine(

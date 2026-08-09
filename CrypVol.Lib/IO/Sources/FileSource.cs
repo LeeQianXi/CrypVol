@@ -1,11 +1,14 @@
 using System.Buffers;
 using CrypVol.Lib.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.IO.Sources;
 
 /// <summary>从文件系统读取原始数据块</summary>
 public static class FileSource
 {
+    public static ILogger? Logger { get; set; }
+
     public static async Task<RawBlock?> ReadAsync(WorkItem item, CancellationToken token)
     {
         if (item.Length == 0)
@@ -25,6 +28,8 @@ public static class FileSource
             await using var fs = File.OpenRead(item.SourceFullPath);
             fs.Position = item.SourceOffset;
             var read = await fs.ReadAsync(array.AsMemory(0, item.Length), token);
+            Logger?.LogTrace("文件读: {Path}@{Offset:X} {Bytes}字节",
+                item.RelativePath, item.SourceOffset, read);
             return new RawBlock
             {
                 Work = item,

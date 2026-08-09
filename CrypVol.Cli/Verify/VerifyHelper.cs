@@ -13,7 +13,10 @@ public static class VerifyHelper
     {
         var rawInput = args.GetRequiredValue(CommandDefinition.Verify.VolFiles);
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 发现所有卷文件
+        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
         var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
         if (volFiles.Count is 0)
         {
@@ -39,7 +42,10 @@ public static class VerifyHelper
                     args.GetValue(CommandDefinition.Verify.Password),
                     args.GetValue(CommandDefinition.Verify.PrivkeyKey),
                     args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass)
-                );
+                )
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader")
+                };
                 creds = await reader.LoadKeyAsync(token);
             }
             catch (Exception ex)
@@ -51,8 +57,10 @@ public static class VerifyHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 3. Engine 校验
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose)) engine.Progress = new ConsoleProgress();
+        var engine = new CrypVolEngine
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.VerifyAsync(new VerifyOptions
         {
             VolumeFiles = volFiles,

@@ -15,8 +15,11 @@ public static class ConvertHelper
         var outputDir = args.GetValue(CommandDefinition.Convert.Output)!;
         var prefix = args.GetValue(CommandDefinition.Convert.OutputPrefix) ?? "converted";
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 快速校验 + 解析卷文件
         if (!outputDir.Exists) outputDir.Create();
+        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
         var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
         if (volFiles.Count is 0)
         {
@@ -47,12 +50,14 @@ public static class ConvertHelper
                     args.GetValue(CommandDefinition.Convert.OldPassword),
                     args.GetValue(CommandDefinition.Convert.OldPrivkey),
                     args.GetValue(CommandDefinition.Convert.OldPrivkeyPass)
-                );
+                )
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader(old)")
+                };
                 oldCreds = await reader.LoadKeyAsync(token);
             }
             catch (Exception ex)
             {
-                //TODO 加载cvk失败
                 Console.WriteLine(ex.Message);
                 return 1;
             }
@@ -70,12 +75,14 @@ public static class ConvertHelper
                     args.GetValue(CommandDefinition.Convert.Password),
                     args.GetValue(CommandDefinition.Convert.PrivkeyKey),
                     args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass)
-                );
+                )
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader(new)")
+                };
                 newCreds = await reader.LoadKeyAsync(token);
             }
             catch (Exception ex)
             {
-                //TODO 加载cvk失败
                 Console.WriteLine(ex.Message);
                 return 1;
             }
@@ -83,8 +90,10 @@ public static class ConvertHelper
             newCreds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 4. Engine
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose)) engine.Progress = new ConsoleProgress();
+        var engine = new CrypVolEngine
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.ConvertAsync(new ConvertOptions
         {
             VolumeFiles = volFiles,

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Crypto;
 
@@ -22,6 +23,9 @@ public sealed class CvkReader
     public FileInfo? PrivateKeyFile { get; init; }
     public string? PrivateKeyPass { get; init; }
 
+    /// <summary>结构化日志（可选）</summary>
+    public ILogger? Logger { get; set; }
+
     public static EnvelopeMode ReadMode(string path)
     {
         var d = Convert.FromBase64String(File.ReadAllText(path).Trim());
@@ -34,6 +38,7 @@ public sealed class CvkReader
     {
         if (!CvkFile.Exists) throw new FileNotFoundException("密钥文件不存在", CvkFile.FullName);
         var mode = ReadMode(CvkFile.FullName);
+        Logger?.LogDebug("加载密钥文件: {Path}, 模式={Mode}", CvkFile.Name, mode);
 
         return mode switch
         {
@@ -48,9 +53,12 @@ public sealed class CvkReader
 
     private CvkCredentials LoadPlain()
     {
+        Logger?.LogTrace("读取 PlainKey .cvk");
         var data = OpenCvk();
         using var r = ReadPayload(data);
-        return new CvkCredentials(EncryptionMode.PlainKey, r.ReadBytes(32));
+        var creds = new CvkCredentials(EncryptionMode.PlainKey, r.ReadBytes(32));
+        Logger?.LogTrace("PlainKey CEK 加载成功");
+        return creds;
     }
 
     // ── Password ──
@@ -58,6 +66,7 @@ public sealed class CvkReader
     private CvkCredentials LoadPassword()
     {
         if (string.IsNullOrWhiteSpace(Password)) throw new InvalidOperationException("密钥受密码保护，请提供密码");
+        Logger?.LogDebug("开始 Argon2id 密钥派生...");
         var data = OpenCvk();
         using var r = ReadPayload(data);
         byte[] cek;
@@ -80,6 +89,7 @@ public sealed class CvkReader
             cek = pt;
         }
 
+        Logger?.LogDebug("Password CEK 解密成功");
         return new CvkCredentials(EncryptionMode.Password, cek);
     }
 
@@ -88,6 +98,7 @@ public sealed class CvkReader
     private async Task<CvkCredentials> LoadPublicKeyAsync(CancellationToken ct)
     {
         if (PrivateKeyFile is null) throw new InvalidOperationException("密钥受公钥保护，请提供私钥");
+        Logger?.LogDebug("加载私钥: {Path}", PrivateKeyFile.Name);
         using var rsa = RSA.Create();
         var pem = await File.ReadAllTextAsync(PrivateKeyFile.FullName, ct);
         if (PrivateKeyPass is not null) rsa.ImportFromEncryptedPem(pem, PrivateKeyPass);
@@ -97,6 +108,7 @@ public sealed class CvkReader
         using var r = ReadPayload(data);
         byte[] cek;
         var count = BinaryPrimitives.ReverseEndianness(r.ReadUInt16());
+        Logger?.LogDebug("尝试 {Count} 个接收者槽位匹配私钥", count);
         byte[]? dek = null;
         for (var i = 0; i < count; i++)
         {
@@ -108,7 +120,7 @@ public sealed class CvkReader
                 try { dek = rsa.Decrypt(ed, RSAEncryptionPadding.OaepSHA256); }
                 catch (CryptographicException)
                 {
-                    /* 不匹配，尝试下一个接收者 */
+                    Logger?.LogTrace("接收者槽位 {Index} 不匹配", i);
                 }
         }
 
@@ -123,6 +135,7 @@ public sealed class CvkReader
             cek = pt;
         }
 
+        Logger?.LogDebug("Asymmetric CEK 解密完成");
         return new CvkCredentials(EncryptionMode.Asymmetric, cek);
     }
 
@@ -141,6 +154,6 @@ public sealed class CvkReader
         if (r.ReadByte() != 1) throw new Exception("不支持的版本");
         r.ReadByte();
         _ = BinaryPrimitives.ReverseEndianness(r.ReadInt32());
-        return r; // caller must dispose ms via using
+        return r;
     }
 }

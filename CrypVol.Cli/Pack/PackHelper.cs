@@ -11,6 +11,8 @@ public static class PackHelper
 {
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
+        var loggerFactory = Program.LoggerFactory;
+
         var inputPath = args.GetRequiredValue(CommandDefinition.Pack.InputPath);
         if (!inputPath.Exists)
         {
@@ -61,6 +63,7 @@ public static class PackHelper
         if (args.GetValue(CommandDefinition.Pack.DryRun))
         {
             var cap = 1L * 1024 * 1024 * args.GetValue(CommandDefinition.Pack.VolumeSize);
+            VolumeAllocator.Logger = loggerFactory.CreateLogger("VolumeAllocator");
             var (items, vols) = VolumeAllocator.Allocate(files, sourceFolder, cap);
             Console.WriteLine($"预估: {vols.Count} 卷, {items.Count} 块, {files.Sum(f => f.Length)} 字节");
             return 0;
@@ -79,12 +82,14 @@ public static class PackHelper
                     args.GetValue(CommandDefinition.Pack.Password),
                     args.GetValue(CommandDefinition.Pack.PrivkeyKey),
                     args.GetValue(CommandDefinition.Pack.PrivkeyKeyPass)
-                );
+                )
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader")
+                };
                 creds = await reader.LoadKeyAsync(token);
             }
             catch (Exception ex)
             {
-                //TODO 加载cvk失败
                 Console.WriteLine(ex.Message);
                 return 1;
             }
@@ -96,14 +101,19 @@ public static class PackHelper
                 args.GetValue(CommandDefinition.Pack.Password),
                 args.GetValue(CommandDefinition.Pack.PublicKey),
                 args.GetValue(CommandDefinition.Pack.Comment)
-            );
+            )
+            {
+                Logger = loggerFactory.CreateLogger("CvkWriter")
+            };
             creds = await writer.WriteCvkAsync(
                 args.GetValue(CommandDefinition.Pack.KeyOutputPath) ?? outputDir,
                 prefix, token);
         }
 
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose)) engine.Progress = new ConsoleProgress();
+        var engine = new CrypVolEngine
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.PackAsync(new PackOptions
         {
             SourceFolder = sourceFolder,

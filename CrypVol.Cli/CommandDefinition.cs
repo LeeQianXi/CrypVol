@@ -9,6 +9,7 @@ using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
 using CrypVol.Lib;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli;
 
@@ -21,11 +22,23 @@ public static class CommandDefinition
     //  全局选项
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>启用详细日志输出（全局可用）</summary>
-    public static readonly Option<bool> Verbose = new("--verbose", "-v")
+    /// <summary>日志级别（全局可用）。-v 无参数 = Debug，-v &lt;level&gt; = Trace/Debug/Information/Warning/Error</summary>
+    public static readonly Option<LogLevel> Verbose = new("--verbose", "-v")
     {
-        Description = "输出详细的处理日志（全局可用）",
-        Recursive = true
+        Description =
+            """
+            输出详细日志。可指定级别：
+              -v           → Debug
+              -v Trace     → 最详细（含管道逐块追踪）
+              -v Debug     → 调试信息
+              -v Info      → 信息（默认级别，不带 -v 时生效）
+              -v Warning   → 仅警告和错误
+              -v Error     → 仅错误
+            """,
+        Arity = ArgumentArity.ZeroOrOne,
+        HelpName = "level",
+        Recursive = true,
+        DefaultValueFactory = static _ => LogLevel.Information
     };
 
     // ═══════════════════════════════════════════════════════════════

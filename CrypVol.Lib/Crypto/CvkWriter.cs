@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Crypto;
 
@@ -35,8 +36,12 @@ public sealed class CvkWriter
     public IEnumerable<FileInfo> PublicKeys { get; init; }
     public string? Comment { get; init; }
 
+    /// <summary>结构化日志（可选）</summary>
+    public ILogger? Logger { get; set; }
+
     public async Task<CvkCredentials> WriteCvkAsync(DirectoryInfo folder, string prefix, CancellationToken ct = default)
     {
+        Logger?.LogDebug("生成密钥: 模式={Mode}, 前缀={Prefix}", EncryptionMode, prefix);
         if (EncryptionMode != EncryptionMode.None)
         {
             var secret = new byte[32];
@@ -51,9 +56,22 @@ public sealed class CvkWriter
             }));
             var plPos = ms.Position;
             w.Write(0);
-            if (EncryptionMode == EncryptionMode.PlainKey) w.Write(secret);
-            else if (EncryptionMode == EncryptionMode.Password) WritePassword(w, secret);
-            else WritePublicKey(w, secret);
+            if (EncryptionMode == EncryptionMode.PlainKey)
+            {
+                Logger?.LogTrace("写入 PlainKey CEK");
+                w.Write(secret);
+            }
+            else if (EncryptionMode == EncryptionMode.Password)
+            {
+                Logger?.LogDebug("Argon2id 密钥派生中...");
+                WritePassword(w, secret);
+            }
+            else
+            {
+                Logger?.LogDebug("公钥加密 CEK: {Count} 个接收者", PublicKeys.Count());
+                WritePublicKey(w, secret);
+            }
+
             if (!string.IsNullOrWhiteSpace(Comment))
             {
                 var cb = Encoding.UTF8.GetBytes(Comment);
@@ -65,6 +83,7 @@ public sealed class CvkWriter
             ms.Position = plPos;
             w.Write(BinaryPrimitives.ReverseEndianness((int)(end - plPos - 4)));
             var path = Path.Combine(folder.FullName, $"{prefix}.cvk");
+            Logger?.LogDebug("写入密钥文件: {Path}", path);
             await File.WriteAllTextAsync(path, Convert.ToBase64String(ms.ToArray()), ct);
         }
 
@@ -106,8 +125,13 @@ public sealed class CvkWriter
             {
                 r.ImportFromPem(File.ReadAllText(f.FullName));
                 recipients[Path.GetFileNameWithoutExtension(f.Name)] = r;
+                Logger?.LogTrace("加载公钥: {Name}", f.Name);
             }
-            catch { r.Dispose(); }
+            catch
+            {
+                Logger?.LogWarning("无法加载公钥: {Name}", f.Name);
+                r.Dispose();
+            }
         }
 
         if (recipients.Count == 0) throw new Exception("至少需要一个接收者公钥");

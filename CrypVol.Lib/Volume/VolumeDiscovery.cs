@@ -1,8 +1,12 @@
+using Microsoft.Extensions.Logging;
+
 namespace CrypVol.Lib.Volume;
 
 /// <summary>发现同组所有 .cvp 卷文件</summary>
 public static class VolumeDiscovery
 {
+    public static ILogger? Logger { get; set; }
+
     public static List<FileInfo> Discover(ICollection<FileSystemInfo> inputs)
     {
         var result = new HashSet<FileInfo>();
@@ -21,12 +25,15 @@ public static class VolumeDiscovery
                     result.Add(new FileInfo(f));
             }
 
-        return result.OrderBy(f =>
+        var list = result.OrderBy(f =>
         {
             var name = Path.GetFileNameWithoutExtension(f.Name);
             var parts = name.Split('.');
             return parts.Length > 1 && int.TryParse(parts[^1], out var n) ? n : 0;
         }).ToList();
+
+        Logger?.LogDebug("发现 {Count} 个卷", list.Count);
+        return list;
     }
 
     /// <summary>从 .cvp 文件名推导卷组前缀（archive.1.cvp → archive）</summary>
@@ -47,6 +54,12 @@ public static class VolumeDiscovery
         var first = volFiles.FirstOrDefault(f => f.Name.EndsWith(".cvp", StringComparison.OrdinalIgnoreCase));
         if (first is null) return null;
         var cvk = new FileInfo(Path.Combine(first.DirectoryName!, $"{GetPrefix(first)}.cvk"));
-        return cvk.Exists ? cvk : null;
+        if (cvk.Exists)
+        {
+            Logger?.LogDebug("自动发现密钥: {Path}", cvk.FullName);
+            return cvk;
+        }
+
+        return null;
     }
 }

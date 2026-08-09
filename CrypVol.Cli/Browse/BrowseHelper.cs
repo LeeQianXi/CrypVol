@@ -18,7 +18,10 @@ public static class BrowseHelper
         var longFormat = args.GetValue(CommandDefinition.Browse.LongFormat);
         var outputFile = args.GetValue(CommandDefinition.Browse.Output);
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 解析卷文件 + 密钥加载
+        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
         var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
         if (volFiles.Count is 0)
         {
@@ -43,7 +46,10 @@ public static class BrowseHelper
                     args.GetValue(CommandDefinition.Browse.Password),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKey),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass)
-                );
+                )
+                {
+                    Logger = loggerFactory.CreateLogger("CvkReader")
+                };
                 creds = await reader.LoadKeyAsync(token);
             }
             catch (Exception ex)
@@ -55,7 +61,10 @@ public static class BrowseHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 2. Engine
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolEngine
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.BrowseAsync(new BrowseOptions
         {
             VolumeFiles = volFiles,
@@ -91,7 +100,6 @@ public static class BrowseHelper
         };
     }
 
-    // ── List ──
     private static string FormatList(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
         var sb = new StringBuilder();
@@ -112,7 +120,6 @@ public static class BrowseHelper
         return sb.ToString();
     }
 
-    // ── Table ──
     private static string FormatTable(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
         var sb = new StringBuilder();
@@ -151,7 +158,6 @@ public static class BrowseHelper
         return sb.ToString();
     }
 
-    // ── Json ──
     private static string FormatJson(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
         var jsonFiles = files.Select(f => new
@@ -171,13 +177,9 @@ public static class BrowseHelper
             FileCount = files.Count,
             Files = jsonFiles
         };
-        return JsonSerializer.Serialize(obj, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
+        return JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    // ── Csv ──
     private static string FormatCsv(List<BrowseFileEntry> files, bool longFormat)
     {
         var sb = new StringBuilder();

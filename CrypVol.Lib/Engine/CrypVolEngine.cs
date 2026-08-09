@@ -4,6 +4,7 @@ using CrypVol.Lib.IO.Sources;
 using CrypVol.Lib.Pipeline;
 using CrypVol.Lib.Transforms;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Engine;
 
@@ -14,6 +15,9 @@ namespace CrypVol.Lib.Engine;
 /// </summary>
 public sealed class CrypVolEngine
 {
+    /// <summary>结构化日志（可选）</summary>
+    public ILogger? Logger { get; set; }
+
     /// <summary>进度回调（可选）</summary>
     public IProgress<ProgressReport>? Progress { get; set; }
 
@@ -29,6 +33,8 @@ public sealed class CrypVolEngine
             var capacity = 1L * 1024 * 1024 * opts.VolumeSizeMb;
             var (mode, cek) = opts.Credentials;
             var headerSize = mode is EncryptionMode.None ? FileEntryHeader.HeaderSize : FileEntryHeader.EncryptedHeaderSize;
+
+            VolumeAllocator.Logger = Logger;
             var (items, volumes) = VolumeAllocator.Allocate(
                 opts.SourceFiles,
                 opts.SourceFolder,
@@ -36,19 +42,31 @@ public sealed class CrypVolEngine
                 headerSize,
                 opts.IntegrityLevel,
                 opts.EnableCompression);
+
             if (items.Count == 0)
                 return new PackResult { Error = "无工作项" };
 
             var compressing = mode != EncryptionMode.None && opts.EnableCompression;
-            Report("分配", 0, items.Count,
-                $"共 {volumes.Count} 卷, 加密={(mode != EncryptionMode.None ? "是" : "否")}, 压缩={(compressing ? $"是 (L{opts.CompressionLevel})" : "否")}, 完整性={opts.IntegrityLevel}");
+            Logger?.LogInformation(
+                "Pack 开始: {VolumeCount} 卷, {ItemCount} 块, {TotalBytes} 字节, 加密={Encrypted}, 压缩={Compressed}",
+                volumes.Count, items.Count, opts.SourceFiles.Sum(f => f.Length),
+                mode != EncryptionMode.None ? "是" : "否",
+                compressing ? $"是 (L{opts.CompressionLevel})" : "否");
+
+            Report("分配", 0, items.Count, null);
 
             var encryptHeaders = mode != EncryptionMode.None;
+
+            // 注入 Source/Sink logger
+            FileSource.Logger = Logger;
+            CvpSink.Logger = Logger;
+
             var pipe = new SequentialPipeline(
                 mode is EncryptionMode.None
                     ? new NullTransform(opts.EnableCompression, opts.CompressionLevel)
                     : new PackTransform(cek, opts.EnableCompression, opts.CompressionLevel, opts.IntegrityLevel))
             {
+                Logger = Logger,
                 ReadBlockAsync = (item, ct) => FileSource.ReadAsync(item, ct),
                 WriteVolumeAsync = async (ctx, ct) =>
                 {
@@ -67,16 +85,19 @@ public sealed class CrypVolEngine
 
             await pipe.RunAsync(items, token);
 
+            var totalBytes = opts.SourceFiles.Sum(f => f.Length);
+            Logger?.LogInformation("Pack 完成: {VolumeCount} 卷, {TotalBytes} 字节", volumes.Count, totalBytes);
             return new PackResult
             {
                 Success = true,
                 VolumePaths = volPaths,
                 VolumeCount = volumes.Count,
-                TotalBytes = opts.SourceFiles.Sum(f => f.Length)
+                TotalBytes = totalBytes
             };
         }
         catch (Exception ex)
         {
+            Logger?.LogError(ex, "Pack 失败");
             return new PackResult { Error = ex.Message };
         }
     }
@@ -91,7 +112,13 @@ public sealed class CrypVolEngine
         {
             var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
+
+            VolumeScanner.Logger = Logger;
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null);
+            Logger?.LogInformation("卷扫描完成: {FileCount} 文件, {VolumeCount} 卷, 加密={Encrypted}",
+                scanResult.Files.Count, opts.VolumeFiles.Count,
+                scanResult.PossiblyEncrypted ? "是" : "否");
+
             if (scanResult.PossiblyEncrypted)
                 return new ExtractResult { Error = "卷已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
 
@@ -101,6 +128,7 @@ public sealed class CrypVolEngine
             {
                 Report("不完整文件已跳过", incompleteFiles.Count, incompleteFiles.Count,
                     string.Join(", ", incompleteFiles));
+                Logger?.LogWarning("跳过 {Count} 个不完整文件", incompleteFiles.Count);
                 foreach (var skipped in incompleteFiles)
                     fileFragments.Remove(skipped);
             }
@@ -140,13 +168,20 @@ public sealed class CrypVolEngine
                 isCompressed = (firstFragment[0].Flags & 0x20) != 0;
             }
 
-            Report("提取", 0, fileFragments.Count,
-                $"解密={(mode != EncryptionMode.None ? "是" : "否")}, 解压={isCompressed}, 完整性={integrityLevel}");
+            Logger?.LogInformation("提取开始: {FileCount} 文件, {ItemCount} 块, 解密={Decrypt}, 解压={Decompress}",
+                fileFragments.Count, items.Count,
+                mode != EncryptionMode.None ? "是" : "否", isCompressed);
+
+            Report("提取", 0, fileFragments.Count, null);
+
+            CvpSource.Logger = Logger;
+            FileSink.Logger = Logger;
 
             var pipe = new SequentialPipeline(mode is EncryptionMode.None
                 ? NullTransform.ForExtract(isCompressed)
                 : new ExtractTransform(cek, isCompressed, integrityLevel))
             {
+                Logger = Logger,
                 ReadBlockAsync = (item, ct) => CvpSource.ReadAsync(item, ct),
                 WriteVolumeAsync = (ctx, ct) =>
                 {
@@ -166,6 +201,7 @@ public sealed class CrypVolEngine
             if (!opts.OutputDir.Exists) opts.OutputDir.Create();
             await pipe.RunAsync(items, token);
 
+            Logger?.LogInformation("提取完成: {FileCount} 文件", fileFragments.Count);
             return new ExtractResult
             {
                 Success = true,
@@ -175,6 +211,7 @@ public sealed class CrypVolEngine
         }
         catch (Exception ex)
         {
+            Logger?.LogError(ex, "提取失败");
             return new ExtractResult { Error = ex.Message };
         }
     }
@@ -189,12 +226,21 @@ public sealed class CrypVolEngine
         {
             var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
+
+            VolumeScanner.Logger = Logger;
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null);
+            Logger?.LogInformation("卷扫描完成: {FileCount} 文件, {VolumeCount} 卷, 加密={Encrypted}",
+                scanResult.Files.Count, opts.VolumeFiles.Count,
+                scanResult.PossiblyEncrypted ? "是" : "否");
+
             if (scanResult.PossiblyEncrypted)
                 return new BrowseResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
 
             var fileFragments = scanResult.Files;
             var incompleteSet = new HashSet<string>(FindIncompleteFiles(fileFragments));
+            Logger?.LogInformation("浏览开始: {VolumeCount} 卷, {FileCount} 文件, {IncompleteCount} 不完整",
+                opts.VolumeFiles.Count, fileFragments.Count, incompleteSet.Count);
+
             var files = new List<BrowseFileEntry>();
             foreach (var (path, fragments) in fileFragments)
             {
@@ -214,6 +260,7 @@ public sealed class CrypVolEngine
                 files.Add(entry);
             }
 
+            Logger?.LogInformation("浏览完成: {FileCount} 文件", files.Count);
             return new BrowseResult
             {
                 Success = true,
@@ -223,6 +270,7 @@ public sealed class CrypVolEngine
         }
         catch (Exception ex)
         {
+            Logger?.LogError(ex, "浏览失败");
             return new BrowseResult { Error = ex.Message };
         }
     }
@@ -278,10 +326,16 @@ public sealed class CrypVolEngine
             }
 
             var (newMode, newCek) = opts.NewCredentials;
+            Logger?.LogInformation("密钥轮换开始: {ItemCount} 块, {VolCount} 卷", items.Count, newVolIdx);
+
+            CvpSource.Logger = Logger;
+            CvpSink.Logger = Logger;
+
             var pipe = new SequentialPipeline(newMode is EncryptionMode.None
                 ? new ExtractTransform(cek, isCompressed, integrityLevel)
                 : new ConvertTransform(cek, newCek, integrityLevel))
             {
+                Logger = Logger,
                 ReadBlockAsync = (item, ct) => CvpSource.ReadAsync(item, ct),
                 WriteVolumeAsync = (ctx, ct) =>
                     CvpSink.WriteAsync(ctx, newMode is EncryptionMode.None ? null : newCek, ct)
@@ -293,6 +347,7 @@ public sealed class CrypVolEngine
 
             var volPaths = Enumerable.Range(0, newVolIdx)
                 .Select(i => Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp")).ToList();
+            Logger?.LogInformation("密钥轮换完成: {VolCount} 卷", newVolIdx);
             return new ConvertResult
             {
                 Success = true,
@@ -302,6 +357,7 @@ public sealed class CrypVolEngine
         }
         catch (Exception ex)
         {
+            Logger?.LogError(ex, "密钥轮换失败");
             return new ConvertResult { Error = ex.Message };
         }
     }
@@ -316,7 +372,12 @@ public sealed class CrypVolEngine
         {
             var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
+
+            VolumeScanner.Logger = Logger;
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null);
+            Logger?.LogInformation("卷扫描完成: {FileCount} 文件, {VolumeCount} 卷",
+                scanResult.Files.Count, opts.VolumeFiles.Count);
+
             if (scanResult.PossiblyEncrypted)
                 return new VerifyResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
 
@@ -328,6 +389,8 @@ public sealed class CrypVolEngine
             var corruptedBlocks = 0;
             var corruptedFiles = 0;
             var corruptedEntries = new List<CorruptedBlock>();
+
+            Logger?.LogInformation("校验开始: {FileCount} 文件, Quick={Quick}", fileFragments.Count, opts.Quick);
 
             foreach (var (path, fragments) in fileFragments)
             {
@@ -375,6 +438,12 @@ public sealed class CrypVolEngine
                 }
             }
 
+            Logger?.LogInformation("校验完成: 总计{TotalBlocks}块, 损坏{CorruptedBlocks}块({CorruptedFiles}文件)",
+                totalBlocks, corruptedBlocks, corruptedFiles);
+            if (corruptedBlocks > 0)
+                Logger?.LogWarning("校验发现 {CorruptedBlocks} 个损坏块在 {CorruptedFiles} 个文件中",
+                    corruptedBlocks, corruptedFiles);
+
             return new VerifyResult
             {
                 Success = true,
@@ -387,6 +456,7 @@ public sealed class CrypVolEngine
         }
         catch (Exception ex)
         {
+            Logger?.LogError(ex, "校验失败");
             return new VerifyResult { Error = ex.Message };
         }
     }
@@ -405,6 +475,9 @@ public sealed class CrypVolEngine
                 return new RepairResult { Error = "卷可能已加密但未提供密钥文件，请使用 --key-file 指定 .cvk 文件" };
 
             var fileFragments = scanResult.Files;
+            Logger?.LogInformation("修复开始: {FileCount} 文件, 报告={HasReport}",
+                fileFragments.Count, opts.VerifyReport is not null ? "是" : "扫描检测");
+
             if (fileFragments.Count == 0)
                 return new RepairResult { Error = "未发现可识别的文件条目" };
 
@@ -442,7 +515,7 @@ public sealed class CrypVolEngine
                         using var fs = File.OpenRead(f.CvpFile.FullName);
                         var buf = new byte[f.BlockSize];
                         fs.Position = f.CvpOffset;
-                        if (fs.Read(buf.AsSpan()) < f.BlockSize) goto corrupted;
+                        if (fs.Read(buf.AsSpan()) < f.BlockSize) goto corrupted1;
 
                         var dataLen = f.BlockSize - 4;
                         var expected = BitConverter.ToUInt32(buf, dataLen);
@@ -451,7 +524,7 @@ public sealed class CrypVolEngine
                     }
                     catch { }
 
-                    corrupted:
+                    corrupted1:
                     corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));
                 }
             }
@@ -459,6 +532,7 @@ public sealed class CrypVolEngine
             if (corrupted.Count == 0)
                 return new RepairResult { Success = true, TotalBlocks = 0, RepairedBlocks = 0 };
 
+            Logger?.LogWarning("修复 {Count} 个损坏块", corrupted.Count);
             var byCvp = corrupted.GroupBy(c => c.Cvp.FullName).ToList();
             var repairedVolumes = new List<string>();
 
@@ -494,6 +568,7 @@ public sealed class CrypVolEngine
                 repairedVolumes.Add(dstPath);
             }
 
+            Logger?.LogInformation("修复完成: {Count} 块, {VolCount} 卷", corrupted.Count, repairedVolumes.Count);
             return new RepairResult
             {
                 Success = true,
@@ -504,6 +579,7 @@ public sealed class CrypVolEngine
         }
         catch (Exception ex)
         {
+            Logger?.LogError(ex, "修复失败");
             return new RepairResult { Error = ex.Message };
         }
     }

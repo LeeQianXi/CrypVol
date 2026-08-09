@@ -14,6 +14,8 @@ public static class GenKeyHelper
         var password = args.GetValue(CommandDefinition.GenKey.Password);
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 快速校验
         if (!outputDir.Exists) outputDir.Create();
         if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
@@ -32,7 +34,10 @@ public static class GenKeyHelper
         try
         {
             var writer = new CvkWriter(mode, password, pubKeys,
-                args.GetValue(CommandDefinition.GenKey.Comment));
+                args.GetValue(CommandDefinition.GenKey.Comment))
+            {
+                Logger = loggerFactory.CreateLogger("CvkWriter")
+            };
             await writer.WriteCvkAsync(outputDir, name, token);
             Console.WriteLine($"密钥已生成: {Path.Combine(outputDir.FullName, name + ".cvk")}  ({mode})");
             return 0;
