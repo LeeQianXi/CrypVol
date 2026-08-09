@@ -132,7 +132,6 @@ public sealed class SequentialPipeline
 
                 // 顺序处理，天然有序
                 await volCtx.OutputChannel.Writer.WriteAsync(block, token);
-                volCtx.NextExpectedSeq = block.Work.Sequence + 1;
                 count++;
             }
 

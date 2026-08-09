@@ -16,7 +16,7 @@ public static class PackHelper
         var inputPath = args.GetRequiredValue(CommandDefinition.Pack.InputPath);
         if (!inputPath.Exists)
         {
-            Console.WriteLine("源路径不存在");
+            Console.Error.WriteLine("源路径不存在");
             return 1;
         }
 
@@ -27,7 +27,7 @@ public static class PackHelper
         var prefix = args.GetValue(CommandDefinition.Pack.OutputPrefix);
         if (string.IsNullOrWhiteSpace(prefix))
         {
-            Console.WriteLine("无效前缀");
+            Console.Error.WriteLine("无效前缀");
             return 1;
         }
 
@@ -55,7 +55,7 @@ public static class PackHelper
 
         if (files.Count == 0)
         {
-            Console.WriteLine("无可处理文件");
+            Console.Error.WriteLine("无可处理文件");
             return 1;
         }
 
@@ -63,8 +63,8 @@ public static class PackHelper
         if (args.GetValue(CommandDefinition.Pack.DryRun))
         {
             var cap = 1L * 1024 * 1024 * args.GetValue(CommandDefinition.Pack.VolumeSize);
-            VolumeAllocator.Logger = loggerFactory.CreateLogger("VolumeAllocator");
-            var (items, vols) = VolumeAllocator.Allocate(files, sourceFolder, cap);
+            var logger = loggerFactory.CreateLogger("VolumeAllocator");
+            var (items, vols) = VolumeAllocator.Allocate(files, sourceFolder, cap, logger: logger);
             Console.WriteLine($"预估: {vols.Count} 卷, {items.Count} 块, {files.Sum(f => f.Length)} 字节");
             return 0;
         }
@@ -90,7 +90,7 @@ public static class PackHelper
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.Message);
                 return 1;
             }
         }
@@ -130,7 +130,7 @@ public static class PackHelper
 
         if (!result.Success)
         {
-            Console.WriteLine($"错误: {result.Error}");
+            Console.Error.WriteLine($"错误: {result.Error}");
             return 1;
         }
 

@@ -6,14 +6,13 @@ namespace CrypVol.Lib.IO.Sinks;
 /// <summary>有序写入还原文件</summary>
 public static class FileSink
 {
-    public static ILogger? Logger { get; set; }
-
-    public static async Task WriteAsync(string outputDir, bool overwrite, VolumeContext ctx, CancellationToken token)
+    public static async Task WriteAsync(string outputDir, bool overwrite, VolumeContext ctx,
+        CancellationToken token, ILogger? logger = null)
     {
         var fullPath = ctx.OutputPath;
         if (!overwrite && File.Exists(fullPath))
         {
-            Logger?.LogInformation("文件已存在，跳过: {Path}", fullPath);
+            logger?.LogInformation("文件已存在，跳过: {Path}", fullPath);
             await foreach (var block in ctx.OutputChannel.Reader.ReadAllAsync(token))
                 block.Dispose();
             return;
@@ -33,7 +32,7 @@ public static class FileSink
                 {
                     fs = new FileStream(fullPath, FileMode.Create, FileAccess.Write,
                         FileShare.None, 4096 * 16, FileOptions.SequentialScan);
-                    Logger?.LogTrace("创建文件: {Path}", fullPath);
+                    logger?.LogTrace("创建文件: {Path}", fullPath);
                 }
 
                 fs.Position = pos;
@@ -43,7 +42,7 @@ public static class FileSink
                 block.Dispose();
             }
 
-            Logger?.LogTrace("文件写入完成: {Path} {Bytes}字节", fullPath, totalBytes);
+            logger?.LogTrace("文件写入完成: {Path} {Bytes}字节", fullPath, totalBytes);
         }
         finally
         {

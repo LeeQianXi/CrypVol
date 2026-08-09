@@ -27,7 +27,7 @@ public static class InfoHelper
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"读取失败: {ex.Message}");
+            Console.Error.WriteLine($"读取失败: {ex.Message}");
             return 1;
         }
 

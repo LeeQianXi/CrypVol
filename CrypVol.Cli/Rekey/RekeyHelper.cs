@@ -27,7 +27,7 @@ public static class RekeyHelper
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
+            Console.Error.WriteLine(ex.Message);
             return 1;
         }
 

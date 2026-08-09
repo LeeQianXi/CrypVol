@@ -20,13 +20,13 @@ public static class GenKeyHelper
         if (!outputDir.Exists) outputDir.Create();
         if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
         {
-            Console.WriteLine("Password 模式需要 --password");
+            Console.Error.WriteLine("Password 模式需要 --password");
             return 1;
         }
 
         if (mode == EncryptionMode.Asymmetric && !pubKeys.Any())
         {
-            Console.WriteLine("Asymmetric 模式需要 --public-key");
+            Console.Error.WriteLine("Asymmetric 模式需要 --public-key");
             return 1;
         }
 
@@ -44,7 +44,7 @@ public static class GenKeyHelper
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"错误: {ex.Message}");
+            Console.Error.WriteLine($"错误: {ex.Message}");
             return 1;
         }
     }

@@ -7,10 +7,8 @@ namespace CrypVol.Lib.Volume;
 /// <summary>扫描 .cvp 卷头，构建文件→片段映射。魔数自动识别明文(CVPH)/加密(CVPE)头。filter 非 null 时跳过不匹配的文件。</summary>
 public static class VolumeScanner
 {
-    /// <summary>结构化日志（可选）</summary>
-    public static ILogger? Logger { get; set; }
-
-    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null, GlobMatcher? filter = null)
+    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null,
+        GlobMatcher? filter = null, ILogger? logger = null)
     {
         var files = new Dictionary<string, List<Fragment>>();
         var possiblyEncrypted = false;
@@ -21,7 +19,7 @@ public static class VolumeScanner
 
         foreach (var cvp in volumes)
         {
-            Logger?.LogTrace("扫描卷: {Path}", cvp.Name);
+            logger?.LogTrace("扫描卷: {Path}", cvp.Name);
             if (possiblyEncrypted) break;
             using var fs = File.OpenRead(cvp.FullName);
             long pos = 0;
@@ -33,7 +31,7 @@ public static class VolumeScanner
                 var magic = BitConverter.ToUInt32(magicBuf);
 
                 if (!FileEntryHeader.IsValidMagic(magic))
-                    break; // 预期位置无头部 → 卷损坏或数据错位，停止处理本卷
+                    break;
 
                 var isEncrypted = FileEntryHeader.IsEncryptedMagic(magic);
 
@@ -115,7 +113,7 @@ public static class VolumeScanner
             }
         }
 
-        Logger?.LogInformation("扫描完成: {FileCount} 文件, {VolCount} 卷, 加密={Encrypted}",
+        logger?.LogInformation("扫描完成: {FileCount} 文件, {VolCount} 卷, 加密={Encrypted}",
             files.Count, volumes.Count(), possiblyEncrypted ? "是" : "否");
         return new ScanResult
         {

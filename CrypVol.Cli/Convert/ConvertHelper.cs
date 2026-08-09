@@ -19,11 +19,11 @@ public static class ConvertHelper
 
         // 1. 快速校验 + 解析卷文件
         if (!outputDir.Exists) outputDir.Create();
-        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
-        var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
+        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+            .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.WriteLine("无可处理文件");
+            Console.Error.WriteLine("无可处理文件");
             return 1;
         }
 
@@ -37,7 +37,7 @@ public static class ConvertHelper
         var oldKeyFile = args.GetValue(CommandDefinition.Convert.OldKeyFile);
         if (oldKeyFile is null)
         {
-            oldKeyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            oldKeyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
             if (oldKeyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {oldKeyFile.FullName}");
         }
@@ -58,7 +58,7 @@ public static class ConvertHelper
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.Message);
                 return 1;
             }
         else
@@ -83,7 +83,7 @@ public static class ConvertHelper
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.Message);
                 return 1;
             }
         else
@@ -105,7 +105,7 @@ public static class ConvertHelper
 
         if (!result.Success)
         {
-            Console.WriteLine($"错误: {result.Error}");
+            Console.Error.WriteLine($"错误: {result.Error}");
             return 1;
         }
 

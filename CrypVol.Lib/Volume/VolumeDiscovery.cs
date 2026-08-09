@@ -5,9 +5,7 @@ namespace CrypVol.Lib.Volume;
 /// <summary>发现同组所有 .cvp 卷文件</summary>
 public static class VolumeDiscovery
 {
-    public static ILogger? Logger { get; set; }
-
-    public static List<FileInfo> Discover(ICollection<FileSystemInfo> inputs)
+    public static List<FileInfo> Discover(ICollection<FileSystemInfo> inputs, ILogger? logger = null)
     {
         var result = new HashSet<FileInfo>();
 
@@ -32,11 +30,10 @@ public static class VolumeDiscovery
             return parts.Length > 1 && int.TryParse(parts[^1], out var n) ? n : 0;
         }).ToList();
 
-        Logger?.LogDebug("发现 {Count} 个卷", list.Count);
+        logger?.LogDebug("发现 {Count} 个卷", list.Count);
         return list;
     }
 
-    /// <summary>从 .cvp 文件名推导卷组前缀（archive.1.cvp → archive）</summary>
     private static string GetPrefix(FileInfo fi)
     {
         var name = fi.Name;
@@ -45,18 +42,14 @@ public static class VolumeDiscovery
         return secondLastDot > 0 ? name[..secondLastDot] : Path.GetFileNameWithoutExtension(name);
     }
 
-    /// <summary>
-    ///     在卷文件所在目录自动发现同前缀的 .cvk 密钥文件（archive.1.cvp → archive.cvk）。
-    ///     多个卷组并存时优先使用第一个卷组的前缀；未找到返回 null。
-    /// </summary>
-    public static FileInfo? DiscoverKeyFile(IReadOnlyList<FileInfo> volFiles)
+    public static FileInfo? DiscoverKeyFile(IReadOnlyList<FileInfo> volFiles, ILogger? logger = null)
     {
         var first = volFiles.FirstOrDefault(f => f.Name.EndsWith(".cvp", StringComparison.OrdinalIgnoreCase));
         if (first is null) return null;
         var cvk = new FileInfo(Path.Combine(first.DirectoryName!, $"{GetPrefix(first)}.cvk"));
         if (cvk.Exists)
         {
-            Logger?.LogDebug("自动发现密钥: {Path}", cvk.FullName);
+            logger?.LogDebug("自动发现密钥: {Path}", cvk.FullName);
             return cvk;
         }
 

@@ -22,16 +22,16 @@ public static class CommandDefinition
     //  全局选项
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>日志级别（全局可用）。-v 无参数 = Debug，-v &lt;level&gt; = Trace/Debug/Information/Warning/Error</summary>
+    /// <summary>日志级别（全局可用）。默认 Information；-v &lt;level&gt; 覆盖级别。</summary>
     public static readonly Option<LogLevel> Verbose = new("--verbose", "-v")
     {
         Description =
             """
             输出详细日志。可指定级别：
-              -v           → Debug
-              -v Trace     → 最详细（含管道逐块追踪）
+              （无参数）   → Information（默认级别）
+              -v Info      → 信息
               -v Debug     → 调试信息
-              -v Info      → 信息（默认级别，不带 -v 时生效）
+              -v Trace     → 最详细（含管道逐块追踪）
               -v Warning   → 仅警告和错误
               -v Error     → 仅错误
             """,
@@ -64,8 +64,7 @@ public static class CommandDefinition
             Verify.SubCommand(),
             Repair.SubCommand(),
             Rekey.SubCommand(),
-            Convert.SubCommand(),
-            new DiagramDirective()
+            Convert.SubCommand()
         };
 
         return root;

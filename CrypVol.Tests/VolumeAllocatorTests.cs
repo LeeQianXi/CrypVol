@@ -193,14 +193,16 @@ public class VolumeAllocatorTests
     }
 
     [Fact]
-    public void Allocate_IsFirstFragment_AlwaysTrue()
+    public void Allocate_IsFirstFragment_OnlyFirst()
     {
         using var tmp = new TempDirScope();
         var file = MakeFile(tmp.Dir, "test.bin", 20000);
         var (items, _) = VolumeAllocator.Allocate([file], tmp.Dir, 4096 + 284);
 
-        // Current implementation sets IsFirstFragment=true on ALL fragments
-        Assert.All(items, item => Assert.True(item.IsFirstFragment));
+        Assert.True(items.Count >= 2, "应拆分为多个片段");
+        Assert.True(items[0].IsFirstFragment, "首个片段应标记为 first");
+        for (int i = 1; i < items.Count; i++)
+            Assert.False(items[i].IsFirstFragment, $"片段 {i} 不应标记为 first");
     }
 }
 

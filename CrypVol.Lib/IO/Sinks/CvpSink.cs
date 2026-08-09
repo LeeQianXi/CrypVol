@@ -8,9 +8,8 @@ namespace CrypVol.Lib.IO.Sinks;
 /// <summary>有序写入 .cvp 卷文件。cek 非 null 时加密文件头。</summary>
 public static class CvpSink
 {
-    public static ILogger? Logger { get; set; }
-
-    public static async Task WriteAsync(VolumeContext ctx, byte[]? cek, CancellationToken token)
+    public static async Task WriteAsync(VolumeContext ctx, byte[]? cek, CancellationToken token,
+        ILogger? logger = null)
     {
         FileStream? fs = null;
         try
@@ -24,7 +23,7 @@ public static class CvpSink
                 {
                     fs = new FileStream(ctx.OutputPath, FileMode.Create, FileAccess.Write,
                         FileShare.None, 4096 * 16, FileOptions.SequentialScan);
-                    Logger?.LogTrace("创建卷: {Path}", ctx.OutputPath);
+                    logger?.LogTrace("创建卷: {Path}", ctx.OutputPath);
                 }
 
                 if (block.Work.IsFirstFragment)
@@ -45,7 +44,7 @@ public static class CvpSink
                     fs.Position = pos;
                     await fs.WriteAsync(headerBytes, token);
                     pos += headerBytes.Length;
-                    Logger?.LogTrace("卷头: {Path} ({HeaderType})", block.Work.RelativePath,
+                    logger?.LogTrace("卷头: {Path} ({HeaderType})", block.Work.RelativePath,
                         cek is not null ? "CVPE加密" : "CVPH明文");
                 }
 
@@ -58,7 +57,7 @@ public static class CvpSink
                 block.Dispose();
             }
 
-            Logger?.LogTrace("卷写入完成: {Path} {Blocks}块 {Bytes}字节",
+            logger?.LogTrace("卷写入完成: {Path} {Blocks}块 {Bytes}字节",
                 ctx.OutputPath, totalBlocks, pos);
         }
         finally

@@ -21,8 +21,8 @@ public static class BrowseHelper
         var loggerFactory = Program.LoggerFactory;
 
         // 1. 解析卷文件 + 密钥加载
-        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
-        var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
+        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+            .AsReadOnly();
         if (volFiles.Count is 0)
         {
             Console.Error.WriteLine("无可处理文件");
@@ -33,7 +33,7 @@ public static class BrowseHelper
         var keyFile = args.GetValue(CommandDefinition.Browse.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }

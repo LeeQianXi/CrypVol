@@ -16,11 +16,11 @@ public static class RepairHelper
         var loggerFactory = Program.LoggerFactory;
 
         // 1. 发现所有卷文件
-        VolumeDiscovery.Logger = loggerFactory.CreateLogger("VolumeDiscovery");
-        var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
+        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+            .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.WriteLine("无可处理文件");
+            Console.Error.WriteLine("无可处理文件");
             return 1;
         }
 
@@ -29,7 +29,7 @@ public static class RepairHelper
         var keyFile = args.GetValue(CommandDefinition.Repair.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }
