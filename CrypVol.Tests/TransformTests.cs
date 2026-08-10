@@ -380,7 +380,7 @@ public class TransformTests
     [Fact]
     public void NullTransform_CompressThenDecompress_RoundTrip()
     {
-        var pack = new NullTransform(true, 6);
+        var pack = new NullTransform(true);
         var extract = NullTransform.ForExtract(true);
 
         var input = ArrayPool<byte>.Shared.Rent(4096);

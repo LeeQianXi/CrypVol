@@ -201,7 +201,7 @@ public class VolumeAllocatorTests
 
         Assert.True(items.Count >= 2, "应拆分为多个片段");
         Assert.True(items[0].IsFirstFragment, "首个片段应标记为 first");
-        for (int i = 1; i < items.Count; i++)
+        for (var i = 1; i < items.Count; i++)
             Assert.False(items[i].IsFirstFragment, $"片段 {i} 不应标记为 first");
     }
 }

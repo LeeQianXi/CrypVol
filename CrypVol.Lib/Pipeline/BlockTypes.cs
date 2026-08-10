@@ -56,7 +56,6 @@ public sealed class RawBlock : IDisposable
 
 /// <summary>
 ///     管线中流转的处理后数据块（变换阶段产出，路由阶段消费）。
-///     总长度 = 变换后密文/压缩数据长度。
 /// </summary>
 public sealed class ProcessedBlock : IDisposable
 {
@@ -65,11 +64,8 @@ public sealed class ProcessedBlock : IDisposable
     /// <summary>ArrayPool 租借的缓冲区（含 nonce + ciphertext + tag 等变换后完整数据）</summary>
     public required byte[] Data { get; init; }
 
-    /// <summary>变换后有效数据长度（写入卷时使用此值，而非 WorkItem.Length）</summary>
+    /// <summary>变换后有效数据长度（写入卷时使用此值）</summary>
     public int OutputLength { get; init; }
-
-    /// <summary>变换前原始数据长度（用于 FileEntryHeader.SizeOrTotal）</summary>
-    public int OriginalLength { get; init; }
 
     public void Dispose()
     {

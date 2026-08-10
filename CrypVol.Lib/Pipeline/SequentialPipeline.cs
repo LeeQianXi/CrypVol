@@ -11,25 +11,33 @@ namespace CrypVol.Lib.Pipeline;
 /// </summary>
 public sealed class SequentialPipeline
 {
-    private readonly IBlockTransform _transform;
+    private readonly Channel<ProcessedBlock> _processedChannel =
+        Channel.CreateBounded<ProcessedBlock>(new BoundedChannelOptions(1)
+        {
+            SingleReader = true,
+            SingleWriter = true
+        });
 
     // ── 阶段间 Channel ──
     private readonly Channel<RawBlock> _rawChannel =
-        Channel.CreateBounded<RawBlock>(new BoundedChannelOptions(1) { SingleReader = true, SingleWriter = true });
+        Channel.CreateBounded<RawBlock>(new BoundedChannelOptions(1)
+        {
+            SingleReader = true,
+            SingleWriter = true
+        });
 
-    private readonly Channel<ProcessedBlock> _processedChannel =
-        Channel.CreateBounded<ProcessedBlock>(new BoundedChannelOptions(1) { SingleReader = true, SingleWriter = true });
+    private readonly IBlockTransform _transform;
 
     // ── 卷 ──
     private readonly Dictionary<int, VolumeContext> _volumes = new();
-
-    // ── 日志 ──
-    public ILogger? Logger { get; set; }
 
     public SequentialPipeline(IBlockTransform transform)
     {
         _transform = transform;
     }
+
+    // ── 日志 ──
+    public ILogger? Logger { get; set; }
 
     // ── 可插拔委托 ──
     public Func<WorkItem, CancellationToken, Task<RawBlock?>> ReadBlockAsync { private get; init; } = null!;
@@ -54,14 +62,6 @@ public sealed class SequentialPipeline
     public async Task RunAsync(IReadOnlyList<WorkItem> items, CancellationToken token)
     {
         Logger?.LogInformation("流水线启动: {ItemCount} 项, {VolCount} 卷", items.Count, _volumes.Count);
-
-        // 分配工作项到各卷
-        foreach (var item in items)
-        {
-            if (!_volumes.TryGetValue(item.VolumeIndex, out var ctx))
-                throw new InvalidOperationException($"卷 {item.VolumeIndex} 未注册");
-            ctx.Items.Add(item);
-        }
 
         // ── 阶段 0: Read 线程 ──
         var readTask = Task.Run(async () =>
@@ -100,8 +100,7 @@ public sealed class SequentialPipeline
                     {
                         Work = raw.Work,
                         Data = output,
-                        OutputLength = outputLen,
-                        OriginalLength = raw.DataLength
+                        OutputLength = outputLen
                     };
 
                     raw.Dispose();
@@ -142,14 +141,15 @@ public sealed class SequentialPipeline
                 ctx.OutputChannel.Writer.Complete();
         }, token);
 
-        // 等待前三阶段结束
-        await Task.WhenAll(readTask, transformTask, routeTask);
-        Logger?.LogTrace("流水线处理阶段结束");
+        // 等待前三阶段结束（同时 Write 并行运行）
+        // WriteVolumeAsync 在 Write 委托内部消费 OutputChannel ——
+        // 它必须与 Route 并行运行以避免死锁（OutputChannel 容量=1）
+        var writeTasks = _volumes.Values
+            .Select(ctx => Task.Run(() => WriteVolumeAsync(ctx, token), token))
+            .ToList();
 
-        // ── 阶段 3: Write 线程 ──
-        // 逐卷写入磁盘（每个卷一个独立 Task，但只同时处理一个）
-        foreach (var ctx in _volumes.Values)
-            await WriteVolumeAsync(ctx, token);
+        await Task.WhenAll([readTask, transformTask, routeTask, .. writeTasks]);
+        Logger?.LogTrace("流水线处理阶段结束");
 
         Logger?.LogInformation("流水线完成: {VolCount} 卷", _volumes.Count);
     }

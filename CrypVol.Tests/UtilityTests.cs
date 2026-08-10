@@ -1,6 +1,5 @@
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Pipeline;
 using CrypVol.Lib.Utility;
 using Xunit;
@@ -115,35 +114,6 @@ public class EnvelopeModeTests
         Assert.Equal(0, (byte)EnvelopeMode.Plain);
         Assert.Equal(1, (byte)EnvelopeMode.Password);
         Assert.Equal(2, (byte)EnvelopeMode.PublicKey);
-    }
-}
-
-public class ProgressReportTests
-{
-    [Fact]
-    public void ProgressReport_DefaultValues()
-    {
-        var report = new ProgressReport();
-        Assert.Equal("", report.Phase);
-        Assert.Equal(0, report.Completed);
-        Assert.Equal(0, report.Total);
-        Assert.Null(report.Detail);
-    }
-
-    [Fact]
-    public void ProgressReport_SetsProperties()
-    {
-        var report = new ProgressReport
-        {
-            Phase = "Write",
-            Completed = 5,
-            Total = 10,
-            Detail = "file.txt"
-        };
-        Assert.Equal("Write", report.Phase);
-        Assert.Equal(5, report.Completed);
-        Assert.Equal(10, report.Total);
-        Assert.Equal("file.txt", report.Detail);
     }
 }
 

@@ -177,7 +177,10 @@ public static class BrowseHelper
             FileCount = files.Count,
             Files = jsonFiles
         };
-        return JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(obj, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
     }
 
     private static string FormatCsv(List<BrowseFileEntry> files, bool longFormat)

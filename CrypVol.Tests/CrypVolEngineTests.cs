@@ -67,7 +67,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "hello.txt"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -79,7 +79,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -108,7 +108,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "x.txt")), new FileInfo(Path.Combine(_workDir.FullName, "y.txt"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -118,7 +118,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -151,7 +151,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "secret.txt"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = credentials,
+            Credentials = credentials
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -161,7 +161,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
-            Credentials = credentials,
+            Credentials = credentials
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -190,7 +190,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "data.txt"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = credentials,
+            Credentials = credentials
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -201,7 +201,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
-            Credentials = new CvkCredentials(EncryptionMode.PlainKey, wrongCek),
+            Credentials = new CvkCredentials(EncryptionMode.PlainKey, wrongCek)
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -233,7 +233,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "protected.txt"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = credentials,
+            Credentials = credentials
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -246,7 +246,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
-            Credentials = loaded,
+            Credentials = loaded
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -276,7 +276,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "sub/file2.txt"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -322,7 +322,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "data.bin"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = oldCredentials,
+            Credentials = oldCredentials
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -337,7 +337,7 @@ public class CrypVolEngineTests : IDisposable
             OutputDir = convertDir,
             OutputPrefix = "converted",
             OldCredentials = oldCredentials,
-            NewCredentials = newCredentials,
+            NewCredentials = newCredentials
         };
 
         var convertResult = await engine.ConvertAsync(convertOpts);
@@ -348,7 +348,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = convertResult.VolumePaths.Select(p => new FileInfo(p)).ToList(),
             OutputDir = restoreDir,
-            Credentials = newCredentials,
+            Credentials = newCredentials
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -379,7 +379,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "skip.log"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -390,7 +390,7 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            IncludePattern = "keep.txt",
+            IncludePattern = "keep.txt"
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -417,7 +417,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "exclude.log"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -428,7 +428,7 @@ public class CrypVolEngineTests : IDisposable
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
             Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-            ExcludePattern = "*.log",
+            ExcludePattern = "*.log"
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -463,7 +463,7 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
-            VolumeSizeMb = 1,
+            VolumeSizeMb = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -473,7 +473,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
-            Credentials = credentials,
+            Credentials = credentials
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -482,39 +482,6 @@ public class CrypVolEngineTests : IDisposable
         var restored = Path.Combine(restoreDir.FullName, "big.dat");
         Assert.True(File.Exists(restored));
         Assert.Equal(data, await File.ReadAllBytesAsync(restored));
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  Progress Reporting
-    // ═══════════════════════════════════════════════════════
-
-    [Fact]
-    public async Task Pack_WithProgress_ReportsProgress()
-    {
-        MakeFile("prog.txt", "Progress test content");
-        var outDir = _workDir.CreateSubdirectory("out");
-
-        var reports = new List<ProgressReport>();
-        var engine = new CrypVolEngine
-        {
-            Progress = new Progress<ProgressReport>(r => reports.Add(r))
-        };
-
-        var packOpts = new PackOptions
-        {
-            SourceFolder = _workDir,
-            SourceFiles = new[]
-            {
-                new FileInfo(Path.Combine(_workDir.FullName, "prog.txt"))
-            }.ToList(),
-            OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
-        };
-
-        var result = await engine.PackAsync(packOpts);
-        Assert.True(result.Success, result.Error);
-        Assert.NotEmpty(reports);
-        Assert.Contains(reports, r => r.Phase == "分配");
     }
 
     // ═══════════════════════════════════════════════════════
@@ -540,7 +507,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "binary.bin"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var packResult = await engine.PackAsync(packOpts);
@@ -550,7 +517,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = CvpFiles(packResult),
             OutputDir = restoreDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var extractResult = await engine.ExtractAsync(extractOpts);
@@ -578,7 +545,7 @@ public class CrypVolEngineTests : IDisposable
                 new FileInfo(Path.Combine(_workDir.FullName, "size.txt"))
             }.ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         await engine.PackAsync(packOpts);
@@ -615,7 +582,7 @@ public class CrypVolEngineTests : IDisposable
             SourceFolder = _workDir,
             SourceFiles = Array.Empty<FileInfo>().ToList(),
             OutputDir = outDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var result = await engine.PackAsync(packOpts);
@@ -633,7 +600,7 @@ public class CrypVolEngineTests : IDisposable
         {
             VolumeFiles = Array.Empty<FileInfo>().AsReadOnly(),
             OutputDir = restoreDir,
-            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
         };
 
         var result = await engine.ExtractAsync(extractOpts);

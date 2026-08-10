@@ -60,7 +60,7 @@ public static class VolumeAllocator
                 continue;
             }
 
-            var blockSize = Math.Min((long)totalSize, MaxBlockSize);
+            var blockSize = Math.Min(totalSize, MaxBlockSize);
             var remaining = totalSize;
             long srcOffset = 0;
             var fragmentIdx = 0;
