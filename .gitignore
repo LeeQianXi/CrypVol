@@ -10,6 +10,7 @@ riderModule.iml
 
 # IDE - VS Code
 .vscode/
+.codex/
 
 # IDE - Visual Studio
 *.user
@@ -36,3 +37,5 @@ Thumbs.db
 *.cvk
 *.cvp
 !TestData/**
+
+graphify-out

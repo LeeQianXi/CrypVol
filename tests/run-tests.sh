@@ -6,11 +6,21 @@ RED='\033[31m'; GREEN='\033[32m'; CYAN='\033[36m'; YELLOW='\033[33m'; NC='\033[0
 PASS=0; FAIL=0; SKIP=0
 FAILED=()
 
-CRYPVOL="CrypVol"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLI_DLL="$ROOT_DIR/CrypVol.Cli/bin/Release/net10.0/CrypVol.dll"
 TMP="/tmp/crypvol-test-$$"
 mkdir -p "$TMP"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
+
+# 可通过 CRYPVOL_BIN 覆盖为已发布的可执行文件；默认构建并运行当前工作树的 CLI。
+if [ -n "${CRYPVOL_BIN:-}" ]; then
+    CRYPVOL=("$CRYPVOL_BIN")
+else
+    echo "构建 Release CLI..."
+    dotnet build "$ROOT_DIR/CrypVol.Cli/CrypVol.Cli.csproj" -c Release --nologo || exit 1
+    CRYPVOL=(dotnet "$CLI_DLL")
+fi
 
 # ── helpers ──
 
@@ -46,7 +56,7 @@ check_out() {
 
 check_fail() {
     local name="$1"; shift
-    "$@" 2>/dev/null
+    "$@" >/dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo -e "  ${GREEN}✔${NC} $name"
         PASS=$((PASS+1))
@@ -58,7 +68,7 @@ check_fail() {
 
 skip() { echo -e "  ${YELLOW}⊘${NC} $1 (跳过)"; SKIP=$((SKIP+1)); }
 
-run() { $CRYPVOL "$@" 2>&1; }
+run() { "${CRYPVOL[@]}" "$@" 2>&1; }
 sha_all() { find "$1" -type f -exec sha256sum {} \; | sort -k2 | awk '{print $1}'; }
 
 mk_files() {
@@ -169,9 +179,6 @@ mkdir -p "$TMP/pack-ko/input" "$TMP/pack-ko/out" "$TMP/pack-ko/keys"
 echo "x" > "$TMP/pack-ko/input/a.txt"
 check     "--key-output"         run pack "$TMP/pack-ko/input" -m PlainKey -o "$TMP/pack-ko/out" --key-output "$TMP/pack-ko/keys"
 
-# -t 线程
-check     "pack -t 2"            run pack "$TMP/pack-filter/input" -m None -o "$TMP/_threads" -t 2
-
 # ═══════════════════════════════════════
 section "3. extract — 还原验证"
 # ═══════════════════════════════════════
@@ -262,6 +269,9 @@ check_fail "Asymmetric缺公钥" run rekey "$TMP/k-plain.cvk" --to-mode Asymmetr
 
 if [ -f "$TMP/pub.pem" ]; then
     check "Plain→Asymmetric"  run rekey "$TMP/k-plain.cvk" --to-mode Asymmetric --public-key "$TMP/pub.pem" -o "$TMP/k-ra.cvk"
+    check "Asymmetric保留接收者" run rekey "$TMP/k-ra.cvk" --privkey-key "$TMP/priv.pem" \
+        --to-mode Asymmetric -o "$TMP/k-ra-retained.cvk"
+    check_out "保留接收者后可解封" "公钥保护" run info "$TMP/k-ra-retained.cvk" --privkey-key "$TMP/priv.pem"
 fi
 
 # rekey 后验证 extract: 对 pack 的密钥做 rekey 后用新密码提取
@@ -284,6 +294,8 @@ run pack "$CV_DIR/input" -m Password -p "cpwd" -o "$CV_DIR/output" --prefix cv >
 check     "convert pwd→plain"  run convert "$CV_DIR/output" \
     -k "$CV_DIR/output/cv.cvk" --old-password "cpwd" \
     --key-file "$TMP/k-plain.cvk" -o "$CV_DIR/conv"
+check_fail "convert 缺目标CVK" run convert "$CV_DIR/output" \
+    -k "$CV_DIR/output/cv.cvk" --old-password "cpwd" -o "$TMP/conv-without-key"
 # After convert, the old cvk is still needed for the new volumes since we used --key-file (same CEK)
 verify_extract "convert后extract" "$CV_DIR/conv" "$CV_DIR/restored" "$CV_DIR/input" \
     "-k $TMP/k-plain.cvk"

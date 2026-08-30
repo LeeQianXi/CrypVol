@@ -29,7 +29,8 @@ public unsafe struct FileEntryHeader()
     // bits 0-1:   fragment type (FileEntryHeaderFlagsEnum)
     // bit 2:      HasExtendedHeader
     // bits 3-4:   IntegrityLevel (0=None, 1=Block, 2=File, 3=Volume)
-    // bits 5-7:   reserved
+    // bit 5:      Compressed (GZip)
+    // bits 6-7:   reserved
 
     private const int IntegrityShift = 3;
     private const byte IntegrityMask = 0b_0001_1000;
@@ -135,5 +136,6 @@ public enum FileEntryHeaderFlagsEnum : byte
 
     /// 跨卷尾段（收尾）
     CrossTail = 0b_0000_0011,
-    HasExtendedHeader = 0b_0000_0100
+    HasExtendedHeader = 0b_0000_0100,
+    Compressed = 0b_0010_0000
 }

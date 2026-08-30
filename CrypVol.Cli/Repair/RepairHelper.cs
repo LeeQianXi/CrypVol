@@ -1,8 +1,8 @@
 using System.CommandLine;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Engine;
-using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Helper;
+using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
 
 namespace CrypVol.Cli.Repair;
@@ -13,11 +13,14 @@ public static class RepairHelper
     {
         var rawInput = args.GetRequiredValue(CommandDefinition.Repair.VolFiles);
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 发现所有卷文件
-        var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
+        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+            .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.WriteLine("无可处理文件");
+            Console.Error.WriteLine("无可处理文件");
             return 1;
         }
 
@@ -26,7 +29,7 @@ public static class RepairHelper
         var keyFile = args.GetValue(CommandDefinition.Repair.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }
@@ -34,13 +37,11 @@ public static class RepairHelper
         if (keyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Repair.Password),
                     args.GetValue(CommandDefinition.Repair.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass)
-                );
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {
@@ -51,16 +52,17 @@ public static class RepairHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 3. Engine 修复
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose)) engine.Progress = new ConsoleProgress();
+        var engine = new CrypVolHelper
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.RepairAsync(new RepairOptions
         {
             VolumeFiles = volFiles,
             Credentials = creds,
             OutputDir = args.GetValue(CommandDefinition.Repair.Output),
             Backup = args.GetValue(CommandDefinition.Repair.Backup),
-            VerifyReport = args.GetValue(CommandDefinition.Repair.VerifyReport),
-            Threads = args.GetValue(CommandDefinition.Repair.Threads)
+            VerifyReport = args.GetValue(CommandDefinition.Repair.VerifyReport)
         }, token);
 
         if (!result.Success)

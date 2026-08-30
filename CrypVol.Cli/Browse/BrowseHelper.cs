@@ -3,8 +3,8 @@ using System.Text;
 using System.Text.Json;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Engine;
-using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Helper;
+using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
 
 namespace CrypVol.Cli.Browse;
@@ -18,8 +18,11 @@ public static class BrowseHelper
         var longFormat = args.GetValue(CommandDefinition.Browse.LongFormat);
         var outputFile = args.GetValue(CommandDefinition.Browse.Output);
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 解析卷文件 + 密钥加载
-        var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
+        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+            .AsReadOnly();
         if (volFiles.Count is 0)
         {
             Console.Error.WriteLine("无可处理文件");
@@ -30,7 +33,7 @@ public static class BrowseHelper
         var keyFile = args.GetValue(CommandDefinition.Browse.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }
@@ -38,13 +41,11 @@ public static class BrowseHelper
         if (keyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Browse.Password),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass)
-                );
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {
@@ -55,13 +56,16 @@ public static class BrowseHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 2. Engine
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.BrowseAsync(new BrowseOptions
         {
             VolumeFiles = volFiles,
             Credentials = creds,
-            IncludePattern = args.GetValue(CommandDefinition.Browse.Include) ?? string.Empty,
-            ExcludePattern = args.GetValue(CommandDefinition.Browse.Exclude) ?? string.Empty
+            IncludePattern = args.GetValue(CommandDefinition.Browse.Include),
+            ExcludePattern = args.GetValue(CommandDefinition.Browse.Exclude)
         }, token);
         if (!result.Success)
         {
@@ -73,7 +77,16 @@ public static class BrowseHelper
         var output = Format(result.Files, result.VolumeCount, fmt, longFormat);
 
         if (outputFile is not null)
-            await File.WriteAllTextAsync(outputFile.FullName, output, token);
+            try
+            {
+                outputFile.Directory?.Create();
+                await File.WriteAllTextAsync(outputFile.FullName, output, token);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"无法写入输出文件：{ex.Message}");
+                return 1;
+            }
         else
             Console.Write(output);
 
@@ -91,7 +104,6 @@ public static class BrowseHelper
         };
     }
 
-    // ── List ──
     private static string FormatList(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
         var sb = new StringBuilder();
@@ -112,7 +124,6 @@ public static class BrowseHelper
         return sb.ToString();
     }
 
-    // ── Table ──
     private static string FormatTable(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
         var sb = new StringBuilder();
@@ -151,7 +162,6 @@ public static class BrowseHelper
         return sb.ToString();
     }
 
-    // ── Json ──
     private static string FormatJson(List<BrowseFileEntry> files, int volumeCount, bool longFormat)
     {
         var jsonFiles = files.Select(f => new
@@ -177,7 +187,6 @@ public static class BrowseHelper
         });
     }
 
-    // ── Csv ──
     private static string FormatCsv(List<BrowseFileEntry> files, bool longFormat)
     {
         var sb = new StringBuilder();

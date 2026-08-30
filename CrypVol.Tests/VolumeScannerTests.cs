@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using CrypVol.Lib.Helper;
+using CrypVol.Lib.Utility;
 using CrypVol.Lib.Volume;
 using Xunit;
 
@@ -91,7 +93,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -118,10 +123,7 @@ public class VolumeScannerTests
                 fs.Write(hb);
                 var len2 = BitConverter.GetBytes(2);
                 fs.Write(len2);
-                fs.Write(new byte[]
-                {
-                    9, 9
-                });
+                fs.Write("\t\t"u8);
             }
 
             var result = VolumeScanner.Scan([cvp]).Files;
@@ -133,7 +135,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -154,7 +159,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -175,7 +183,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -233,7 +244,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -274,7 +288,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -298,5 +315,149 @@ public class VolumeScannerTests
             try { dir.Delete(true); }
             catch { }
         }
+    }
+
+    [Fact]
+    public void Scan_WithFilter_SkipsBlockData_CorrectOffsetForNextFile()
+    {
+        var dir = new DirectoryInfo(TempDir());
+        try
+        {
+            dir.Create();
+            var path = Path.Combine(dir.FullName, "vol.0.cvp");
+            using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write))
+            {
+                // file_a: 100KB
+                var hdrA = new FileEntryHeader
+                {
+                    FileId = 1,
+                    Flags = 0,
+                    FragmentIndex = 0,
+                    SizeOrTotal = 100_000
+                };
+                hdrA.SetFilePath("skip_me.bin");
+                fs.Write(hdrA.ToBytes());
+                fs.Write(BitConverter.GetBytes(100_000));
+                fs.Write(new byte[100_000]);
+
+                // file_b: 50 bytes of 0x42
+                var hdrB = new FileEntryHeader
+                {
+                    FileId = 2,
+                    Flags = 0,
+                    FragmentIndex = 0,
+                    SizeOrTotal = 50
+                };
+                hdrB.SetFilePath("keep_me.bin");
+                fs.Write(hdrB.ToBytes());
+                fs.Write(BitConverter.GetBytes(50));
+                fs.Write(Enumerable.Repeat((byte)0x42, 50).ToArray());
+            }
+
+            var filter = new GlobMatcher();
+            filter.AddInclude("keep_me.bin");
+
+            var result = VolumeScanner.Scan([new FileInfo(path)], filter: filter);
+
+            Assert.True(result.Files.ContainsKey("keep_me.bin"));
+            Assert.False(result.Files.ContainsKey("skip_me.bin"));
+
+            var f = result.Files["keep_me.bin"][0];
+            // file_a: 256 + 4 + 100000 = 100260
+            // file_b data offset: 100260 + 256 + 4 = 100520
+            Assert.Equal(100260 + 256 + 4, f.CvpOffset);
+            Assert.Equal(50, f.BlockSize);
+
+            // Read data from cvp to verify it's 0x42, not 0x00 (file_a's data)
+            var actual = new byte[50];
+            using (var fs = File.OpenRead(path))
+            {
+                fs.Position = f.CvpOffset;
+                fs.ReadExactly(actual);
+            }
+
+            Assert.All(actual, b => Assert.Equal((byte)0x42, b));
+        }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
+    }
+
+    // ── FindIncompleteFiles ──
+
+    [Fact]
+    public void FindIncompleteFiles_SingleFullFragment_Complete()
+    {
+        var cvp = new FileInfo("/tmp/test.cvp");
+        var fragments = new Dictionary<string, List<VolumeScanner.Fragment>>
+        {
+            ["file.txt"] = [new VolumeScanner.Fragment(cvp, 260, 100, 100, 0, true, 0)]
+        };
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
+        Assert.Empty(incomplete);
+    }
+
+    [Fact]
+    public void FindIncompleteFiles_SingleFragment_NotFull_Incomplete()
+    {
+        var cvp = new FileInfo("/tmp/test.cvp");
+        // CrossHead without CrossTail — incomplete
+        var fragments = new Dictionary<string, List<VolumeScanner.Fragment>>
+        {
+            ["file.txt"] = [new VolumeScanner.Fragment(cvp, 260, 100, 100, 1, true, 0)]
+        };
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
+        Assert.Single(incomplete);
+        Assert.Equal("file.txt", incomplete[0]);
+    }
+
+    [Fact]
+    public void FindIncompleteFiles_CrossHeadWithCrossTail_Complete()
+    {
+        var cvp = new FileInfo("/tmp/test.cvp");
+        var fragments = new Dictionary<string, List<VolumeScanner.Fragment>>
+        {
+            ["bigfile.bin"] =
+            [
+                new VolumeScanner.Fragment(cvp, 260, 1000, 2500, 1, true, 0), // CrossHead, IsFirst
+                new VolumeScanner.Fragment(cvp, 1264, 1000, 2500, 2, false, 0), // CrossMid
+                new VolumeScanner.Fragment(cvp, 2268, 500, 2500, 3, false, 0) // CrossTail
+            ]
+        };
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
+        Assert.Empty(incomplete);
+    }
+
+    [Fact]
+    public void FindIncompleteFiles_CrossHeadWithoutCrossTail_Incomplete()
+    {
+        var cvp = new FileInfo("/tmp/test.cvp");
+        // CrossHead + CrossMid but no CrossTail
+        var fragments = new Dictionary<string, List<VolumeScanner.Fragment>>
+        {
+            ["bigfile.bin"] =
+            [
+                new VolumeScanner.Fragment(cvp, 260, 1000, 2500, 1, true, 0),
+                new VolumeScanner.Fragment(cvp, 1264, 1000, 2500, 2, false, 0)
+            ]
+        };
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
+        Assert.Single(incomplete);
+    }
+
+    [Fact]
+    public void FindIncompleteFiles_MultipleFiles_MixedCompletion()
+    {
+        var cvp = new FileInfo("/tmp/test.cvp");
+        var fragments = new Dictionary<string, List<VolumeScanner.Fragment>>
+        {
+            ["complete.txt"] = [new VolumeScanner.Fragment(cvp, 260, 100, 100, 0, true, 0)],
+            ["incomplete.bin"] = [new VolumeScanner.Fragment(cvp, 520, 50, 200, 1, true, 0)] // CrossHead alone
+        };
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
+        Assert.Single(incomplete);
+        Assert.Equal("incomplete.bin", incomplete[0]);
     }
 }

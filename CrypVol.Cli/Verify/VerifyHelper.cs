@@ -1,8 +1,8 @@
 using System.CommandLine;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Engine;
-using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Helper;
+using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
 
 namespace CrypVol.Cli.Verify;
@@ -13,11 +13,14 @@ public static class VerifyHelper
     {
         var rawInput = args.GetRequiredValue(CommandDefinition.Verify.VolFiles);
 
+        var loggerFactory = Program.LoggerFactory;
+
         // 1. 发现所有卷文件
-        var volFiles = VolumeDiscovery.Discover(rawInput).ToList().AsReadOnly();
+        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+            .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.WriteLine("无可处理文件");
+            Console.Error.WriteLine("无可处理文件");
             return 2;
         }
 
@@ -26,7 +29,7 @@ public static class VerifyHelper
         var keyFile = args.GetValue(CommandDefinition.Verify.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles);
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
             if (keyFile is not null)
                 Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
         }
@@ -34,13 +37,11 @@ public static class VerifyHelper
         if (keyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Verify.Password),
                     args.GetValue(CommandDefinition.Verify.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass)
-                );
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {
@@ -51,16 +52,17 @@ public static class VerifyHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 3. Engine 校验
-        var engine = new CrypVolEngine();
-        if (args.GetValue(CommandDefinition.Verbose)) engine.Progress = new ConsoleProgress();
+        var engine = new CrypVolHelper
+        {
+            Logger = loggerFactory.CreateLogger("CrypVol")
+        };
         var result = await engine.VerifyAsync(new VerifyOptions
         {
             VolumeFiles = volFiles,
             Credentials = creds,
             Quick = args.GetValue(CommandDefinition.Verify.Quick),
-            Threads = args.GetValue(CommandDefinition.Verify.Threads),
-            IncludePattern = args.GetValue(CommandDefinition.Verify.Include) ?? string.Empty,
-            ExcludePattern = args.GetValue(CommandDefinition.Verify.Exclude) ?? string.Empty
+            IncludePattern = args.GetValue(CommandDefinition.Verify.Include),
+            ExcludePattern = args.GetValue(CommandDefinition.Verify.Exclude)
         }, token);
 
         if (!result.Success)

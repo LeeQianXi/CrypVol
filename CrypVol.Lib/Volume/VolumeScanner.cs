@@ -1,12 +1,15 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using CrypVol.Lib.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Volume;
 
-/// <summary>扫描 .cvp 卷头，构建文件→片段映射。魔数自动识别明文(CVPH)/加密(CVPE)头。</summary>
+/// <summary>扫描 .cvp 卷头，构建文件→片段映射。魔数自动识别明文(CVPH)/加密(CVPE)头。filter 非 null 时跳过不匹配的文件。</summary>
 public static class VolumeScanner
 {
-    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null)
+    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null,
+        GlobMatcher? filter = null, ILogger? logger = null)
     {
         var files = new Dictionary<string, List<Fragment>>();
         var possiblyEncrypted = false;
@@ -17,19 +20,19 @@ public static class VolumeScanner
 
         foreach (var cvp in volumes)
         {
+            logger?.LogTrace("扫描卷: {Path}", cvp.Name);
             if (possiblyEncrypted) break;
             using var fs = File.OpenRead(cvp.FullName);
             long pos = 0;
 
             while (pos + 4 <= fs.Length)
             {
-                // 在当前位置检查魔数——必须是合法头部，否则卷损坏
                 fs.Position = pos;
                 if (fs.Read(magicBuf) < 4) break;
                 var magic = BitConverter.ToUInt32(magicBuf);
 
                 if (!FileEntryHeader.IsValidMagic(magic))
-                    break; // 预期位置无头部 → 卷损坏或数据错位，停止处理本卷
+                    break;
 
                 var isEncrypted = FileEntryHeader.IsEncryptedMagic(magic);
 
@@ -49,7 +52,7 @@ public static class VolumeScanner
                     if (fs.Read(encBuf) < FileEntryHeader.EncryptedHeaderSize) break;
 
                     try { hdr = FileEntryHeader.Decrypt(encBuf, cek); }
-                    catch { break; } // 解密失败 → 密钥错误，停止
+                    catch { break; }
 
                     headerLen = FileEntryHeader.EncryptedHeaderSize;
                 }
@@ -68,18 +71,33 @@ public static class VolumeScanner
 
                 pos += headerLen;
 
+                var includeFile = filter is null || filter.IsMatch(relPath);
+                if (!includeFile)
+                {
+                    while (pos + 4 <= fs.Length)
+                    {
+                        fs.Position = pos;
+                        if (fs.Read(peekBuf) < 4) break;
+                        if (FileEntryHeader.IsValidMagic(BitConverter.ToUInt32(peekBuf))) break;
+                        var skipLen = BitConverter.ToInt32(peekBuf);
+                        if (skipLen < 0) break;
+                        pos += 4 + skipLen;
+                    }
+
+                    continue;
+                }
+
                 var flags = (FileEntryHeaderFlagsEnum)hdr.Flags;
                 var isFirst = !flags.HasFlag(FileEntryHeaderFlagsEnum.CrossMid)
                               && !flags.HasFlag(FileEntryHeaderFlagsEnum.CrossTail);
 
-                // 读取数据块：[4B blockLen][N bytes data]... 直到遇到下一个头部或 EOF
                 while (pos + 4 <= fs.Length)
                 {
                     fs.Position = pos;
                     if (fs.Read(peekBuf) < 4) break;
 
                     var nextMagic = BitConverter.ToUInt32(peekBuf);
-                    if (FileEntryHeader.IsValidMagic(nextMagic)) break; // 下一个条目头部
+                    if (FileEntryHeader.IsValidMagic(nextMagic)) break;
 
                     var blockLen = BitConverter.ToInt32(peekBuf);
                     if (blockLen < 0) break;
@@ -96,6 +114,8 @@ public static class VolumeScanner
             }
         }
 
+        logger?.LogInformation("扫描完成: {FileCount} 文件, {VolCount} 卷, 加密={Encrypted}",
+            files.Count, volumes.Count(), possiblyEncrypted ? "是" : "否");
         return new ScanResult
         {
             Files = files,

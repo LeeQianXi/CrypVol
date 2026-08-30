@@ -9,21 +9,21 @@ public static class InfoHelper
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
         var keyFile = args.GetRequiredValue(CommandDefinition.Info.KeyFile);
+        var loggerFactory = Program.LoggerFactory;
 
         try
         {
-            var c = await new CvkReader(keyFile,
-                    args.GetValue(CommandDefinition.Info.Password),
-                    args.GetValue(CommandDefinition.Info.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Info.PrivkeyKeyPass))
-                .LoadKeyAsync(token);
+            var c = await CvkLoader.LoadAsync(keyFile,
+                args.GetValue(CommandDefinition.Info.Password),
+                args.GetValue(CommandDefinition.Info.PrivkeyKey),
+                args.GetValue(CommandDefinition.Info.PrivkeyKeyPass), token);
 
             Console.WriteLine(
                 $"{keyFile.Name}: {ModeLabel(c.EncryptionMode)} (验证通过, CEK: {System.Convert.ToHexString(c.Cek)[..8]}...)");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"读取失败: {ex.Message}");
+            Console.Error.WriteLine($"读取失败: {ex.Message}");
             return 1;
         }
 

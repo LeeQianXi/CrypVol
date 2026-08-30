@@ -9,6 +9,7 @@ using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
 using CrypVol.Lib;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli;
 
@@ -21,11 +22,23 @@ public static class CommandDefinition
     //  全局选项
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>启用详细日志输出（全局可用）</summary>
-    public static readonly Option<bool> Verbose = new("--verbose", "-v")
+    /// <summary>日志级别（全局可用）。默认 Information；-v &lt;level&gt; 覆盖级别。</summary>
+    public static readonly Option<LogLevel> Verbose = new("--verbose", "-v")
     {
-        Description = "输出详细的处理日志（全局可用）",
-        Recursive = true
+        Description =
+            """
+            输出详细日志。可指定级别：
+              （无参数）   → Information（默认级别）
+              -v Info      → 信息
+              -v Debug     → 调试信息
+              -v Trace     → 最详细（含管道逐块追踪）
+              -v Warning   → 仅警告和错误
+              -v Error     → 仅错误
+            """,
+        Arity = ArgumentArity.ZeroOrOne,
+        HelpName = "level",
+        Recursive = true,
+        DefaultValueFactory = static _ => LogLevel.Information
     };
 
     // ═══════════════════════════════════════════════════════════════
@@ -38,7 +51,7 @@ public static class CommandDefinition
             """
             CrypVol —— 加密分卷归档工具 (Cryptographic Volume Package)
 
-            将文件或目录打包为带加密保护的 .cvp 数据卷，支持分卷存储、压缩、
+            将文件或目录打包为带加密保护的 .cvp 数据卷，支持分卷存储、
             多层密钥保护，并可从卷中提取、浏览、校验数据。
             """)
         {
@@ -51,8 +64,7 @@ public static class CommandDefinition
             Verify.SubCommand(),
             Repair.SubCommand(),
             Rekey.SubCommand(),
-            Convert.SubCommand(),
-            new DiagramDirective()
+            Convert.SubCommand()
         };
 
         return root;
@@ -71,6 +83,7 @@ public static class CommandDefinition
         public static readonly Option<DirectoryInfo> OutputPath;
         public static readonly Option<string> OutputPrefix;
         public static readonly Option<uint> VolumeSize;
+        public static readonly Option<uint> ChunkSize;
         public static readonly Option<FileInfo> KeyFile;
         public static readonly Option<EncryptionMode> Mode;
         public static readonly Option<string> Password;
@@ -79,7 +92,6 @@ public static class CommandDefinition
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<bool> Compress;
         public static readonly Option<int> CompressionLevel;
-        public static readonly Option<int> Threads;
         public static readonly Option<DirectoryInfo> KeyOutputPath;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
@@ -138,9 +150,16 @@ public static class CommandDefinition
             // ── 卷选项 ──
             VolumeSize = new Option<uint>("--volume-size", "-s")
             {
-                Description = "单个数据卷的大小上限（单位：MiB）。超出该大小的数据将自动切分为多个卷",
+                Description = "生成时的近似卷切分目标（单位：MiB）。卷格式与读取流程不依赖此值",
                 HelpName = "mib",
                 DefaultValueFactory = static _ => 1024u
+            };
+
+            ChunkSize = new Option<uint>("--chunk-size")
+            {
+                Description = "单次读取与处理的数据块大小（单位：MiB，范围 1–64）。较大值通常压缩率更高，但占用更多内存",
+                HelpName = "mib",
+                DefaultValueFactory = static _ => 16u
             };
 
             // ── 加密选项：两种模式互斥 ──
@@ -222,18 +241,6 @@ public static class CommandDefinition
                 DefaultValueFactory = static _ => 6
             }.AcceptOnlyFromAmong("0", "1", "2", "3", "4", "5", "6", "7", "8", "9");
 
-            // ── 处理选项 ──
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description =
-                    """
-                    并行处理线程数。影响压缩和加密阶段的并发度。
-                    设为 1 禁用并行；设为 0 表示自动（使用全部 CPU 核心）。
-                    """,
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             // ── 密钥输出 ──
             KeyOutputPath = new Option<DirectoryInfo>("--key-output")
             {
@@ -245,7 +252,7 @@ public static class CommandDefinition
             // ── 过滤选项 ──
             Include = new Option<string>("--include")
             {
-                Description = "仅打包匹配 Glob 模式的文件。可多次指定以添加多个模式",
+                Description = "仅打包匹配该 Glob 模式的文件",
                 HelpName = "pattern"
             };
 
@@ -260,14 +267,12 @@ public static class CommandDefinition
             {
                 Description =
                     """
-                    嵌入数据完整性校验信息：
+                    块级数据完整性校验：
 
-                    None   —— 不嵌入校验数据（体积最小，但无法检测数据损坏）
-                    Block  —— 每个 4KB 数据块附带 CRC32（默认）
-                    File   —— 块级校验 + 每个文件附带 SHA256
-                    Volume —— 上述全部 + 卷末尾附带整卷 SHA256（最高安全性）
+                    None  —— 不嵌入校验数据
+                    Block —— 每个数据块附带 CRC32（默认），可检测磁盘静默损坏
                     """,
-                DefaultValueFactory = static _ => IntegrityLevel.File
+                DefaultValueFactory = static _ => IntegrityLevel.Block
             };
 
             // ── 预览 ──
@@ -275,10 +280,8 @@ public static class CommandDefinition
             {
                 Description =
                     """
-                    预估模式：不实际写入任何数据，仅计算并输出：
-                      - 预计生成的卷文件数量及大小
-                      - 每个卷的文件列表
-                      - .cvk 密钥文件的加密模式
+                    预估模式：不写入数据或密钥文件，仅按原始大小和块大小给出近似卷数与块数。
+                    压缩、加密和动态卷路由会使实际结果不同。
                     """
             };
 
@@ -296,13 +299,10 @@ public static class CommandDefinition
                 """
                 将文件或目录打包为加密卷 (.cvp) 并生成对应的密钥文件 (.cvk)。
 
-                打包流程：扫描源路径 → 应用 Glob 过滤 → 预分配数据到各卷
-                → 并行读取原始数据 → 压缩/加密处理 → 按卷写入磁盘。
-
                 示例：
-                  crypvol pack ./docs -m Password -p "secret123" -c
+                  crypvol pack ./docs -m Password -p "secret123"
                   crypvol pack ./photos -s 2048 --include "**/*.jpg"
-                  crypvol pack ./data -m Asymmetric --public-key alice.pem --public-key bob.pem
+                  crypvol pack ./data -m Asymmetric --public-key alice.pem
                   crypvol pack ./archive --dry-run
                 """)
             {
@@ -310,6 +310,7 @@ public static class CommandDefinition
                 OutputPath,
                 OutputPrefix,
                 VolumeSize,
+                ChunkSize,
                 KeyFile,
                 Mode,
                 Password,
@@ -318,7 +319,6 @@ public static class CommandDefinition
                 PrivkeyKeyPass,
                 Compress,
                 CompressionLevel,
-                Threads,
                 KeyOutputPath,
                 Include,
                 Exclude,
@@ -344,7 +344,6 @@ public static class CommandDefinition
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<int> Threads;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
         public static readonly Option<bool> Overwrite;
@@ -402,13 +401,6 @@ public static class CommandDefinition
                 HelpName = "passphrase"
             };
 
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行解压/解密线程数。0 表示自动",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             Include = new Option<string>("--include")
             {
                 Description = "仅提取匹配 Glob 模式的文件",
@@ -431,23 +423,20 @@ public static class CommandDefinition
         {
             var cmd = new Command("extract",
                 """
-                从加密卷 (.cvp) 中还原文件。
+                从数据卷 (.cvp) 中还原文件。
 
-                自动发现同组的所有卷文件，无需逐个指定。
-                支持按文件名 Glob 过滤、覆盖控制、Unix 权限还原。
+                只需提供任意一个卷文件，程序自动发现同组所有卷。
+                支持 Glob 过滤和覆盖控制。
 
                 示例：
                   crypvol extract ./archive.1.cvp
-                    自动发现同目录下 archive.2.cvp, archive.3.cvp...，一并还原
+                    自动发现同组卷并还原到当前目录
 
                   crypvol extract ./data.1.cvp -p "secret123" -o ./restored --overwrite
-                    用密码解密 .cvk，提取到 ./restored，覆盖已存在文件
+                    用密码解密，提取到指定目录，覆盖已存在文件
 
                   crypvol extract ./vol.1.cvp --privkey-key ./mykey.pem --include "**/*.docx"
-                    用 RSA 私钥解密，仅提取 Word 文档
-
-                  crypvol extract ./vol.1.cvp --dry-run
-                    预览将还原的文件，不实际写入
+                    用私钥解密，仅提取 Word 文档
                 """)
             {
                 VolFiles,
@@ -456,7 +445,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Include,
                 Exclude,
                 Overwrite
@@ -498,7 +486,14 @@ public static class CommandDefinition
 
             LongFormat = new Option<bool>("--long", "-l")
             {
-                Description = "长格式输出：显示文件大小、修改时间、文件权限、卷号等详细信息"
+                Description =
+                    """
+                    详细信息模式：
+                    Table  —— 增加跨卷链列
+                    List   —— 显示文件大小、片段数、卷号
+                    Json   —— 增加 CrossVolume、VolumeSpan 字段
+                    Csv    —— 增加 CrossVolume、VolumeSpan 列
+                    """
             };
 
             KeyFile = new Option<FileInfo>("--key-file", "-k")
@@ -555,23 +550,23 @@ public static class CommandDefinition
         {
             var cmd = new Command("browse",
                 """
-                列出加密卷 (.cvp) 中的文件清单，无需完整解包。
+                列出数据卷 (.cvp) 中的文件清单，无需完整解包。
 
-                即使卷内容已加密，也可以浏览文件名和目录结构（PlainKey 模式下无需密钥）。
-                支持多种输出格式和排序方式。
+                支持四种输出格式：List（简洁列表）、Table（对齐表格）、Json、Csv。
+                加密卷需提供密钥文件才能读取元数据。
 
                 示例：
                   crypvol browse ./archive.1.cvp
-                    以表格形式列出所有文件
+                    默认列表格式
 
-                  crypvol browse ./archive.1.cvp --long --sort Size --reverse
-                    按文件大小从大到小列出（长格式）
+                  crypvol browse ./archive.1.cvp -f Table -l
+                    表格格式 + 跨卷详情
 
-                  crypvol browse ./archive.1.cvp -o filelist.csv -f Csv
-                    导出为 CSV 文件
+                  crypvol browse ./archive.1.cvp -f Json -o files.json
+                    导出为 JSON 文件
 
-                  crypvol browse ./archive.1.cvp --show-fragments --include "**/bigfile.*"
-                    查看大文件跨卷分段的详情
+                  crypvol browse ./archive.1.cvp --include "**/*.jpg"
+                    仅列出匹配的文件
                 """)
             {
                 VolFiles,
@@ -632,20 +627,15 @@ public static class CommandDefinition
         {
             var cmd = new Command("info",
                 """
-                显示密钥文件 (.cvk) 的元数据信息。
-
-                输出内容包括：文件格式版本、密钥保护模式、Argon2id 参数（Password模式）、
-                接收者列表及 KeyID（Asymmetric 模式）、CEK 指纹（需提供解密凭据）等。
+                验证并显示密钥文件 (.cvk) 的保护模式与 CEK 指纹。
+                Password 或 Asymmetric 模式必须提供相应解封凭据。
 
                 示例：
                   crypvol info ./archive.cvk
-                    查看 .cvk 的基本元数据（模式、版本等）
-
-                  crypvol info ./archive.cvk -f Json
-                    以 JSON 格式输出元数据
+                    验证明文密钥文件
 
                   crypvol info ./archive.cvk -p "secret123"
-                    验证密码并展示 CEK 指纹等完整信息
+                    验证密码并展示 CEK 指纹
                 """)
             {
                 KeyFile,
@@ -670,7 +660,6 @@ public static class CommandDefinition
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<int> Threads;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
         public static readonly Option<bool> Quick;
@@ -712,13 +701,6 @@ public static class CommandDefinition
                 HelpName = "passphrase"
             };
 
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行校验线程数。0 表示自动",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             Include = new Option<string>("--include")
             {
                 Description = "仅校验匹配 Glob 模式的文件",
@@ -757,8 +739,8 @@ public static class CommandDefinition
                 """
                 校验数据卷 (.cvp) 的完整性和数据一致性。
 
-                逐块验证 CRC32 / SHA256 校验值（取决于打包时的 --integrity 设置），
-                报告任何数据损坏或不一致。可生成损坏报告供 repair 命令使用。
+                逐块验证 CRC32 校验值，报告数据损坏或缺失。
+                可生成损坏报告供 repair 命令使用。
 
                 退出码：0 = 完整无损坏，1 = 检测到损坏，2 = 无法读取/致命错误
 
@@ -770,7 +752,7 @@ public static class CommandDefinition
                     快速检查卷头结构完整性
 
                   crypvol verify ./archive.1.cvp -r damage-report.txt
-                    校验并生成详细损坏报告
+                    校验并生成损坏报告
                 """)
             {
                 VolFiles,
@@ -778,7 +760,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Include,
                 Exclude,
                 Quick,
@@ -802,7 +783,6 @@ public static class CommandDefinition
         public static readonly Option<string> Password;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<int> Threads;
         public static readonly Option<bool> Backup;
         public static readonly Option<FileInfo> VerifyReport;
 
@@ -858,13 +838,6 @@ public static class CommandDefinition
                 HelpName = "passphrase"
             };
 
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行处理线程数",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
-            };
-
             Backup = new Option<bool>("--backup", "-b")
             {
                 Description =
@@ -889,15 +862,10 @@ public static class CommandDefinition
         {
             var cmd = new Command("repair",
                 """
-                尝试修复损坏的 .cvp 数据卷。
+                修复损坏的 .cvp 数据卷。
 
-                通过冗余校验信息（CRC32 / SHA256）定位损坏区域，并尝试
-                尽可能恢复数据。无法恢复的损坏区域将被标记或零填充。
-
-                修复原理：
-                  1. 扫描卷结构，定位可识别的文件和段头
-                  2. 逐块校验数据完整性
-                  3. 无法恢复的块标记为损坏（后续 extract --rescue 会跳过）
+                定位并零填充无法恢复的损坏块，写入有效 CRC32 以保持卷结构完整。
+                建议配合 --backup 在修复前备份原始文件。
 
                 示例：
                   crypvol repair ./archive.1.cvp --backup
@@ -916,7 +884,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Backup,
                 VerifyReport
             };
@@ -1058,7 +1025,6 @@ public static class CommandDefinition
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
 
-        public static readonly Option<int> Threads;
         public static readonly Option<bool> Backup;
 
 
@@ -1069,7 +1035,7 @@ public static class CommandDefinition
                 Description =
                     """
                     一个或多个 .cvp 数据卷文件。
-                    只需提供需要转换的卷（不必是全部卷），程序自动发现同组文件。
+                    程序会发现当前目录中可见的同前缀卷；转换完整跨卷文件时应提供完整卷组。
                     """,
                 Arity = ArgumentArity.OneOrMore
             }.AcceptExistingOnly();
@@ -1116,32 +1082,28 @@ public static class CommandDefinition
 
             OutputPrefix = new Option<string>("--output-prefix", "--prefix")
             {
-                Description = "新卷文件的文件名前缀。未指定时沿用原前缀",
+                Description = "新卷文件的文件名前缀。未指定时使用 converted",
                 HelpName = "name"
             };
-
-            // 目标密钥：两种模式互斥
-            //   A) 指定 --key-file → 复用已有 .cvk 的 CEK（--mode/--password/--public-key 忽略）
-            //   B) 不指定       → 生成新 CEK + 新 .cvk（--mode 等必需）
 
             KeyFile = new Option<FileInfo>("--key-file")
             {
                 Description =
                     """
-                    指定目标 .cvk 密钥文件，直接使用其 CEK 作为新加密密钥。
-                    提供此选项时，--mode / --password / --public-key 均被忽略。
+                    目标 .cvk 密钥文件。其 CEK 将作为新加密密钥。
+                    此命令仅支持重加密到已有 CVK，必须提供该参数。
                     """,
                 HelpName = "cvk-file"
             }.AcceptExistingOnly();
             Password = new Option<string>("--password", "-p")
             {
-                Description = "新密钥的加密密码（Password 模式）",
+                Description = "解封目标 --key-file 的密码（目标 CVK 为 Password 模式时必需）",
                 HelpName = "passphrase"
             };
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "当前 .cvk 的解密私钥（当前为 Asymmetric 模式时必需）",
+                Description = "解封目标 --key-file 的私钥（目标 CVK 为 Asymmetric 模式时必需）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -1149,13 +1111,6 @@ public static class CommandDefinition
             {
                 Description = "当前私钥文件的密码",
                 HelpName = "passphrase"
-            };
-
-            Threads = new Option<int>("--threads", "-t")
-            {
-                Description = "并行处理线程数",
-                HelpName = "count",
-                DefaultValueFactory = static _ => Environment.ProcessorCount
             };
 
             Backup = new Option<bool>("--backup", "-b")
@@ -1168,23 +1123,15 @@ public static class CommandDefinition
         {
             var cmd = new Command("convert",
                 """
-                块级密钥轮换：用旧 CEK 解密每个数据块，用新 CEK 重新加密。
+                块级重加密：用旧 CEK 解密每个数据块，再用目标现有 CVK 的 CEK 重新加密。
 
-                不解压、不还原文件，仅替换加密层。每个卷独立转换，
-                可只转换部分卷，无需所有卷在场。
-
-                目标密钥来源二选一：
-                  --key-file <cvk>  复用已有 .cvk 的 CEK
-                  --mode/--password  生成新 CEK + 新 .cvk
+                不解压、不还原文件，也不创建新的 CVK。读取流程不依赖生成时卷大小。
 
                 典型场景：密钥轮换、为不同节点分发不同密钥域的数据。
 
                 示例：
-                  crypvol convert ./archive.1.cvp -k ./old.cvk -o ./new
-                    转换指定卷，使用新的 CEK
-
-                  crypvol convert ./archive.1.cvp -k ./old.cvk -m Password -p "newpass" -o ./new
-                    转换并用密码保护新 CEK
+                  crypvol convert ./archive.1.cvp --old-key-file ./old.cvk --key-file ./new.cvk -o ./new
+                    使用已有 new.cvk 的 CEK 重加密卷
                 """)
             {
                 VolFiles,
@@ -1198,7 +1145,6 @@ public static class CommandDefinition
                 Password,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Threads,
                 Backup
             };
 

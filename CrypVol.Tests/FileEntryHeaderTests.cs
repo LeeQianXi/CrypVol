@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using CrypVol.Lib;
 using CrypVol.Lib.Volume;
 using Xunit;
 
@@ -297,5 +298,34 @@ public class FileEntryHeaderTests
         encrypted[100] ^= 0xFF;
 
         Assert.ThrowsAny<Exception>(() => FileEntryHeader.Decrypt(encrypted, cek));
+    }
+
+    // ── Compression flag (bit 5 = 0x20) ──
+
+    [Fact]
+    public void Flags_CompressedBit_SetAndDetect()
+    {
+        var hdr = new FileEntryHeader
+        {
+            Flags = 0
+        };
+        Assert.False((hdr.Flags & 0x20) != 0);
+
+        hdr.Flags = 0x20;
+        Assert.True((hdr.Flags & 0x20) != 0);
+    }
+
+    [Fact]
+    public void Flags_CompressedBit_DoesNotOverlap_OtherBits()
+    {
+        // Compressed bit (5) / Integrity (3-4) / FragmentType (0-1) / ExtendedHeader (2)
+        var hdr = new FileEntryHeader();
+        hdr.SetIntegrityLevel(IntegrityLevel.Block); // bits 3-4 = 01
+        hdr.Flags = (byte)(hdr.Flags | 3 | 4 | 0x20); // CrossTail + Extended + Compressed
+
+        Assert.Equal(IntegrityLevel.Block, hdr.GetIntegrityLevel());
+        Assert.True((hdr.Flags & 3) == 3); // CrossTail preserved
+        Assert.True((hdr.Flags & 4) != 0); // ExtendedHeader preserved
+        Assert.True((hdr.Flags & 0x20) != 0); // Compressed flag set
     }
 }

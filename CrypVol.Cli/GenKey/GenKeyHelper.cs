@@ -15,31 +15,45 @@ public static class GenKeyHelper
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
 
         // 1. 快速校验
-        if (!outputDir.Exists) outputDir.Create();
+        if (mode == EncryptionMode.None)
+        {
+            Console.Error.WriteLine("genkey 不支持 None 模式");
+            return 1;
+        }
+        if (string.IsNullOrWhiteSpace(name) || name.EndsWith(".cvk", StringComparison.OrdinalIgnoreCase)
+            || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains(Path.DirectorySeparatorChar)
+            || name.Contains(Path.AltDirectorySeparatorChar))
+        {
+            Console.Error.WriteLine("密钥名称应为不含扩展名的合法文件名");
+            return 1;
+        }
         if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
         {
-            Console.WriteLine("Password 模式需要 --password");
+            Console.Error.WriteLine("Password 模式需要 --password");
             return 1;
         }
 
         if (mode == EncryptionMode.Asymmetric && !pubKeys.Any())
         {
-            Console.WriteLine("Asymmetric 模式需要 --public-key");
+            Console.Error.WriteLine("Asymmetric 模式需要 --public-key");
             return 1;
         }
 
         // 2. 生成密钥
         try
         {
-            var writer = new CvkWriter(mode, password, pubKeys,
-                args.GetValue(CommandDefinition.GenKey.Comment));
-            await writer.WriteCvkAsync(outputDir, name, token);
+            outputDir.Create();
+            var cvk = CvkDocument.CreateNew(mode);
+            cvk.Password = password;
+            cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
+            foreach (var publicKey in pubKeys) cvk.AddPublicKey(publicKey);
+            await cvk.WriteAsync(new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), token);
             Console.WriteLine($"密钥已生成: {Path.Combine(outputDir.FullName, name + ".cvk")}  ({mode})");
             return 0;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"错误: {ex.Message}");
+            Console.Error.WriteLine($"错误: {ex.Message}");
             return 1;
         }
     }

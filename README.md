@@ -1,31 +1,26 @@
-# CrypVol — 加密分卷归档工具
+# CrypVol
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-11.3-8B5CF6)](https://avaloniaui.net/)
-[![License](https://img.shields.io/badge/license-LGPLv2.1-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-LGPL--3.0-blue)](LICENSE)
 
-**CrypVol**（Cryptographic Volume Package）是一个跨平台的加密分卷打包 / 还原工具，支持将任意文件或目录打包为带加密保护的 `.cvp` 数据卷，并提供配套的 `.cvk` 密钥文件管理。
+CrypVol（Cryptographic Volume Package）是一个跨平台的加密分卷归档工具。它将文件流式拆为数据块，按需写入 `.cvp` 数据卷，并以 `.cvk` 保存或封装内容加密密钥（CEK）。提供命令行工具和 Avalonia 桌面应用。
 
-## ✨ 特性
+项目的设计目标是可自举、可流式处理大文件，而不是追求严格等长的物理分卷：读取和恢复不依赖生成时指定的卷大小。
 
-- 🔐 **多层加密支持** — PlainKey / 密码（Argon2id + AES-GCM）/ 非对称（RSA/ECC）三种模式
-- 📦 **分卷存储** — 自动将大数据切分为指定大小的卷（`.cvp`），便于传输和存储
-- 🗜️ **GZip 压缩** — 可选数据压缩，减少存储空间
-- 🛡️ **完整性校验** — 可选的块级 CRC32 校验，检测磁盘静默损坏，支持校验和修复
-- ⚡ **并行处理** — 多线程并行压缩 / 加密 / 校验，充分利用多核 CPU
-- 🔄 **密钥轮换** — 支持在线重包装密钥信封（rekey）和块级密钥轮换（convert）
-- 🖥️ **GUI + CLI** — 基于 Avalonia 的跨平台桌面界面 + 功能完整的命令行工具
-- 🌐 **跨平台** — Windows / macOS / Linux 全平台支持
-- 🔍 **内容浏览** — 无需完整解压即可浏览卷内文件列表
-- 📋 **灵活过滤** — 支持 Glob 模式的文件包含 / 排除规则
+## 特性
 
-## 📥 安装
+- 流式分块读写：无需将大文件整体读入内存。
+- 可拼接流水线：来源、独立处理器和接收端以有界 Channel 连接；支持压缩、加密、解密、解压等阶段组合。
+- 多卷归档：文件可跨卷，输入任意一个卷即可自动发现同目录、同前缀的卷组。
+- 密钥信封：支持明文 CEK、密码保护 CEK（Argon2id + AES-256-GCM）及 RSA 公钥接收者。
+- 可编辑 CVK：可保留已有公钥接收者槽位，在没有原 PEM 文件时仍可重封装或删除接收者。
+- 可恢复性工具：浏览、校验、修复、密钥重封装与块级重加密。
+- 元数据与内容分离：CVK 负责密钥管理；引擎只接收轻量的 `CvkCredentials`（模式 + CEK）。
 
-### 下载预编译版本
+## 安装与构建
 
-前往 [Releases](https://github.com/LeeQianXi/CrypVol/releases) 页面下载对应平台的二进制包。
-
-### 从源码构建
+可从 [Releases](https://github.com/LeeQianXi/CrypVol/releases) 下载预编译版本，或从源码构建：
 
 ```bash
 git clone https://github.com/LeeQianXi/CrypVol.git
@@ -33,188 +28,187 @@ cd CrypVol
 dotnet build -c Release
 ```
 
-## 🚀 快速开始
-
-### 密钥管理
+开发环境需要 .NET SDK 10。CLI 项目为 `CrypVol.Cli`；构建后可通过 `dotnet run --project CrypVol.Cli -- <命令>` 使用。以下示例以已安装到 PATH 的 `crypvol` 表示。
 
 ```bash
-# 生成明文密钥
-CrypVol genkey -o ./keys -n mykey
-
-# 生成密码保护的密钥
-CrypVol genkey -o ./keys -n mykey -m Password -p "your-password"
-
-# 生成非对称密钥
-CrypVol genkey -o ./keys -n mykey -m Asymmetric --public-key alice.pem
+crypvol --help
+crypvol pack --help
 ```
 
-### 打包
+## 概念
+
+### CVP 数据卷
+
+数据卷命名为 `<前缀>.<卷号>.cvp`。每个文件按数据块写入；当块跨越近似卷容量时，后续块会写入下一个卷，并由片段标志关联。卷头会标记数据是否压缩、是否加密和完整性等级。
+
+`--volume-size` 是**近似切分目标**，并非严格的文件大小上限。压缩后的长度、文件头和块边界都会使最终卷大小与该值略有差异；恢复、浏览和校验只解析卷内结构，不需要知道该参数。
+
+`--chunk-size` 决定单次读取和处理的数据块大小（1–64 MiB，默认 16 MiB）：较大块通常有利于压缩率和吞吐，但会提高峰值内存。它也是调整大文件处理内存/性能平衡的主要开关。
+
+### CVK 密钥文件
+
+`.cvk` 是 Base64 编码的 `KEY0` v1 密钥信封，保存 32 字节 CEK 的封装结果与可选注释。CVK 管理在引擎外由 `CvkDocument` 完成：加载后可修改保护模式、密码、公钥接收者和注释，再重新构建保存。
+
+| 模式 | CEK 的保存方式 | 使用时所需凭据 |
+| --- | --- | --- |
+| `None` | 不加密数据，也不生成 CVK | 无 |
+| `PlainKey` | CEK 直接写入 CVK | CVK 文件本身 |
+| `Password` | 使用 Argon2id 派生密钥后，以 AES-256-GCM 封装 CEK | CVK + 密码 |
+| `Asymmetric` | 随机 DEK 由一个或多个 RSA 公钥封装，DEK 再以 AES-256-GCM 封装 CEK | CVK + 任一匹配私钥 |
+
+`PlainKey` 仅适用于你能够安全存放 `.cvk` 文件的场景。密码、私钥和明文 CVK 都应视为敏感信息，不要提交到版本库或随数据卷一同公开分发。
+
+## 快速开始
+
+### 1. 打包
 
 ```bash
-# 基本打包（自动生成密钥）
-CrypVol pack /path/to/data -m Password -p "your-password" -o /output
+# 生成密码保护的 CVK，并打包目录
+crypvol pack ./data -o ./archive --prefix backup \
+  --mode Password --password "correct-horse-battery-staple"
 
-# 复用已有密钥
-CrypVol pack /path/to/data --key-file ./keys/mykey.cvk -p "your-password" -o /output
+# 生成 RSA 公钥保护的 CVK
+crypvol pack ./data -o ./archive --prefix backup \
+  --mode Asymmetric --public-key ./keys/alice.pem
 
-# 压缩 + 分卷 (512MB) + 完整性校验
-CrypVol pack /path/to/data -m Password -p "your-password" -s 512 -c --integrity Block
+# 使用已有 CVK；Password / Asymmetric CVK 需提供解封凭据
+crypvol pack ./data -o ./archive --prefix backup \
+  --key-file ./keys/backup.cvk --password "correct-horse-battery-staple"
 
-# 仅包含特定文件类型，预览不写入
-CrypVol pack /path/to/data --include "**/*.jpg" --dry-run
+# 流式块大小 32 MiB、近似卷目标 512 MiB、启用压缩
+crypvol pack ./data -o ./archive --prefix backup \
+  --chunk-size 32 --volume-size 512 --compress --compression-level 6
 ```
 
-### 还原
+未指定 `--key-file` 时，`pack` 按 `--mode` 创建新 CEK 和 CVK；指定 `--key-file` 时复用其中的 CEK，`--mode`、`--public-key` 和 `--comment` 不参与新 CVK 的创建。`--dry-run` 只根据原始大小和块大小给出近似卷数/块数，不写入数据或密钥文件。
+
+### 2. 提取、浏览与校验
 
 ```bash
-# 用密码还原
-CrypVol extract ./output/data.1.cvp -p "your-password" -o /restore
+# 提取：提供任意一个卷即可自动发现卷组和同名 CVK
+crypvol extract ./archive/backup.0.cvp -o ./restored \
+  --password "correct-horse-battery-staple"
 
-# 用私钥还原（非对称模式）
-CrypVol extract ./output/data.1.cvp --privkey-key ./alice.key -o /restore
+# 只提取匹配文件；默认遇到已存在文件会跳过
+crypvol extract ./archive/backup.0.cvp -o ./restored \
+  --include "**/*.pdf" --overwrite
 
-# 过滤 + 覆盖已存在文件
-CrypVol extract ./output/data.1.cvp --include "**/*.docx" -o /restore --overwrite
+# 不提取地浏览目录；可写出 Json/Csv/Table/List
+crypvol browse ./archive/backup.0.cvp --format Json --output files.json
+
+# 逐块校验；--quick 只检查头和结构
+crypvol verify ./archive/backup.0.cvp --repair-report damage-report.txt
 ```
 
-### 浏览
+加密卷会自动尝试发现同目录、同前缀的 `.cvk`。若无法发现或需指定其他位置，请传入 `--key-file`；Password 模式配合 `--password`，Asymmetric 模式配合 `--privkey-key`，加密私钥另可使用 `--key-pass`。
+
+### 3. 修复
 
 ```bash
-# 列出卷内文件
-CrypVol browse ./output/data.1.cvp
-
-# 长格式（含文件大小、跨卷分段）
-CrypVol browse ./output/data.1.cvp -l
-
-# 过滤
-CrypVol browse ./output/data.1.cvp --include "**/*.jpg"
+# 基于校验报告定位损坏区域，先创建 .bak 备份
+crypvol repair ./archive/backup.0.cvp -o ./repaired \
+  --verify-report damage-report.txt --backup
 ```
 
-### 校验 & 修复
+修复会对无法恢复的损坏块进行零填充，并写入有效 CRC32 以维持卷结构；它不是原始数据恢复。请先备份并先用 `verify` 生成报告。
+
+### 4. 管理与轮换密钥
 
 ```bash
-# 校验卷完整性
-CrypVol verify ./output/data.1.cvp
+# 单独创建 CVK
+crypvol genkey --output ./keys --name backup --mode Password \
+  --password "new-password"
 
-# 快速模式（仅检查卷头结构）
-CrypVol verify ./output/data.1.cvp --quick
+# 查看并验证 CVK（密码或公钥模式须提供对应凭据）
+crypvol info ./keys/backup.cvk --password "new-password"
 
-# 生成损坏报告
-CrypVol verify ./output/data.1.cvp --repair-report damage.txt
+# 重新封装同一个 CEK；保留注释与现有的 RSA 接收者槽位
+crypvol rekey ./keys/backup.cvk --to-mode Password \
+  --password "old-password" --new-password "better-password" --backup
 
-# 扫描并修复损坏块（零填充 + 有效 CRC32）
-CrypVol repair ./output/data.1.cvp -k ./keys/mykey.cvk -o ./fixed
+# 变更为 RSA 模式，同时保留已存在接收者并增加一个新接收者
+crypvol rekey ./keys/backup.cvk --to-mode Asymmetric \
+  --password "better-password" --public-key ./keys/bob.pem
 
-# 从损坏报告精确修复（跳过扫描）
-CrypVol repair ./output/data.1.cvp -k ./keys/mykey.cvk -o ./fixed --verify-report damage.txt
-
-# 修复前创建 .bak 备份
-CrypVol repair ./output/data.1.cvp -k ./keys/mykey.cvk -o ./fixed --backup
+# 对卷中每个块重加密到一个已存在的目标 CVK
+crypvol convert ./archive/backup.0.cvp \
+  --old-key-file ./keys/old.cvk --old-password "old-password" \
+  --key-file ./keys/new.cvk --password "new-password" \
+  --output ./rotated --prefix backup-v2
 ```
 
-### 密钥操作
+`rekey` 改变的是 CVK 对**同一 CEK**的保护方式，不会改写 `.cvp` 数据卷。它会先完成参数和构建校验；可选备份不会覆盖已有 `.bak`，写入使用同目录临时文件再替换目标。
+
+`convert` 改变的是卷内数据块的加密密钥：使用旧 CEK 解密、使用新 CEK 加密。它**只支持重加密到现有目标 CVK**，因此 `--key-file` 必须指定已有目标 CVK；该命令不会创建新的 CVK。
+
+## 命令概览
+
+| 命令 | 用途 |
+| --- | --- |
+| `genkey` | 创建独立的 CVK |
+| `pack` | 将文件或目录流式打包为 CVP 卷 |
+| `extract` | 从卷组恢复文件 |
+| `browse` | 不提取地列出卷内文件 |
+| `info` | 加载并验证 CVK，显示保护模式和 CEK 指纹 |
+| `verify` | 校验卷结构和块级 CRC32，可生成修复报告 |
+| `repair` | 按报告或扫描结果对损坏块进行零填充修复 |
+| `rekey` | 修改既有 CVK 对同一 CEK 的保护方式 |
+| `convert` | 使用既有目标 CVK 的 CEK 重加密数据卷 |
+
+所有命令均支持 `--verbose` / `-v` 控制日志级别，例如 `-v Debug` 或 `-v Trace`。完整参数以运行时帮助为准：`crypvol <command> --help`。
+
+## 测试
+
+单元测试与端到端 CLI 回归测试分别覆盖库行为和实际命令参数路径：
 
 ```bash
-# 查看密钥元数据
-CrypVol info ./keys/mykey.cvk
+# xUnit 单元测试
+dotnet test CrypVol.Tests/CrypVol.Tests.csproj
 
-# 查看密码保护的密钥（提供密码可看到 CEK 指纹）
-CrypVol info ./keys/mykey.cvk -p "your-password"
-
-# 重包装密钥信封（CEK 不变，更换保护方式）
-CrypVol rekey ./keys/mykey.cvk --to-mode Password --new-password "better-password" -b
-
-# 块级密钥轮换（.A 用旧 CEK 解 → 新 CEK 加密）
-CrypVol convert ./output/data.1.cvp -k ./keys/old.cvk -p "oldpass" \
-    --key-file ./keys/new.cvk -o ./converted
+# Bash 端到端测试：自动构建 Release CLI；需要 Bash、.NET SDK 和 openssl
+bash tests/run-tests.sh
 ```
 
-## 📖 加密模式
+脚本也可用 `CRYPVOL_BIN` 指向已发布的 CLI 可执行文件：`CRYPVOL_BIN=/path/to/CrypVol bash tests/run-tests.sh`。
 
-| 模式 | 说明 | 密钥存储 |
-|------|------|----------|
-| `None` | 数据明文或仅 GZip 压缩，不生成 `.cvk` | — |
-| `PlainKey` | CEK 明文存储在 `.cvk` 中 | `.cvk` 文件即密钥 |
-| `Password` | CEK 经 Argon2id + AES-GCM 加密 | 需要密码解密 `.cvk` |
-| `Asymmetric` | CEK 经 RSA/ECC 公钥加密 | 需要对应私钥解密 `.cvk` |
+## 处理引擎
 
-## 🛡️ 完整性校验
+核心引擎是一次性构建、构建后锁定的有界流水线：
 
-| 级别 | 说明 | 开销 |
-|------|------|------|
-| `None` | 不嵌入校验数据 | 0 |
-| `Block` | 每个数据块附带 CRC32 校验值 | +4 字节 / 块 (~0.1%) |
-| `File` | 块级 + 每个文件附带 SHA256 | 预留（暂未实现） |
-| `Volume` | 上述全部 + 卷末尾附带整卷 SHA256 | 预留（暂未实现） |
-
-CRC32 校验值嵌入在加密数据块末尾，打包时自动计算，提取时自动验证。卷损坏时 `verify` 可精确定位损坏块，`repair` 可零填充损坏块以保留卷结构完整性。
-
-## 📁 文件格式
-
-- **`.cvp`** — 加密数据卷文件，命名格式：`<前缀>.<卷号>.cvp`
-- **`.cvk`** — 密钥文件，命名格式：`<前缀>.cvk`
-
-### .cvp 卷结构
-
-```
-[FileEntryHeader]              ← 256B (plain) 或 284B (AES-GCM 加密)
-  ├── Magic (0x48505643)
-  ├── FileId (FNV-1a-64 路径哈希)
-  ├── Flags (bits 0-1: 段类型, bit 2: 扩展头, bits 3-4: IntegrityLevel)
-  ├── FragmentIndex
-  ├── SizeOrTotal
-  └── FilePath (UTF-8, 最多 231 字节)
-
-[int32 BlockLen] [BlockData]   ← 数据块 = Nonce(12) + Ciphertext + Tag(16) + [CRC32(4)]
-[int32 BlockLen] [BlockData]
-...
+```text
+IDataProvider
+    │ DataBlock（缓冲区 + BlockMetadata）
+    ▼
+Processor 1 ──► Processor 2 ──► … ──► IDataReceiver
 ```
 
-### .cvk 密钥文件结构
+- `IDataProvider`、`IDataProcessor`、`IDataReceiver` 均实现异步生命周期：初始化、校验、预处理、启动与释放。
+- 每个阶段运行在独立任务中，阶段之间是容量为 1 的有界 `Channel<DataBlock>`。背压限制了内存占用，同时允许 I/O、压缩和加密并行推进。
+- Provider、Processor 依次完成自己的下游 Channel；任一阶段失败或取消时，引擎关闭所有通道并取消所有阶段。
+- 引擎事件为 `Starting`、`Started`、`Completed`、`Failed` 和 `Stopped`。处理器通过传入的 Engine 实例记录日志、报告异常或共享运行记录，而不是依赖额外 Hook 接口。
+- 当前内置组件包括 `SourceFileDataProvider`、`CvpFileDataProvider`、压缩/解压缩/加密/解密处理器，以及 `CvpFileReciver`、`DataFileReciver`。
 
-```
-[Magic "KEY0"] [Version=1] [Mode] [PayloadLength] [Payload...] → Base64 编码
-```
+## 格式与完整性
 
-## 🛠️ 技术栈
+CVP 文件条目头使用 `CVPH`（明文）或 `CVPE`（加密）魔数；读取时自动识别，不需要人工指定卷的加密模式。加密数据块使用 AES-GCM，`--integrity Block`（默认）会额外保存 CRC32，用于快速定位介质损坏。CRC32 用于损坏检测，不替代密码学认证；AES-GCM 的认证标签仍是加密数据的完整性保障。
 
-| 组件 | 技术 |
-|------|------|
-| 运行时 | .NET 10.0 |
-| GUI 框架 | Avalonia UI 11.3 |
-| MVVM | ReactiveUI + CommunityToolkit.Mvvm |
-| CLI 框架 | System.CommandLine |
-| 依赖注入 | Microsoft.Extensions.Hosting |
-| 加密 | AES-256-GCM + Argon2id + RSA/ECC |
-| CRC32 | IEEE 802.3 (自定义实现) |
+## 项目结构
 
-## 📁 项目结构
-
-```
+```text
 CrypVol.sln
-├── CrypVol/                 # 桌面应用入口
-├── CrypVol.Core/            # 核心 GUI 逻辑 (ViewModels/Views)
-├── CrypVol.Core.Abstract/   # 抽象层 (Services/Controls/ViewModels 接口)
-├── CrypVol.Lib/             # 核心库
-│   ├── Crypto/              # CVK 密钥信封读写
-│   ├── Volume/              # 卷发现/分配/扫描
-│   ├── Engine/              # 核心引擎 (Pack/Extract/Browse/Convert/Verify/Repair)
-│   │   └── Models/          # 选项/结果记录
-│   ├── Pipeline/            # 并行流水线 (Channel-based)
-│   ├── Transforms/          # 块变换 (加密/解密/压缩/CRC32)
-│   ├── IO/                  # 数据源/汇
-│   │   ├── Sources/         # FileSource, CvpSource
-│   │   └── Sinks/           # FileSink, CvpSink
-│   ├── Extensions/          # LINQ 扩展
-│   └── Utility/             # 引用池/单例工具
-├── CrypVol.Cli/             # 命令行工具
-└── CrypVol.Tests/           # 测试 (181 xUnit + 72 bash)
+├── CrypVol/                 # Avalonia 桌面应用入口
+├── CrypVol.Core/            # GUI 实现
+├── CrypVol.Core.Abstract/   # GUI 抽象层
+├── CrypVol.Cli/             # System.CommandLine 命令行工具
+├── CrypVol.Lib/
+│   ├── Crypto/              # CvkDocument、CvkLoader 与密钥信封
+│   ├── Engine/              # Provider / Processor / Receiver 流水线
+│   ├── Helper/              # Pack、Extract、Convert 等统一入口
+│   ├── Volume/              # 卷发现、条目头与扫描
+│   └── Utility/             # CRC32、Glob 等工具
+└── CrypVol.Tests/           # xUnit 测试
 ```
 
-## 🤝 贡献
+## 许可证
 
-欢迎提交 Issue 和 Pull Request！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-## 📄 许可证
-
-本项目采用 [GNU Lesser General Public License v2.1](LICENSE)。
+[GNU Lesser General Public License v3.0](LICENSE)。

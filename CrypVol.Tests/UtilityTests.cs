@@ -1,7 +1,6 @@
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Engine.Models;
-using CrypVol.Lib.Pipeline;
 using CrypVol.Lib.Utility;
 using Xunit;
 
@@ -118,62 +117,16 @@ public class EnvelopeModeTests
     }
 }
 
-public class ProgressReportTests
+public class BlockMetadataTests
 {
     [Fact]
-    public void ProgressReport_DefaultValues()
+    public void BlockMetadata_Properties_SetCorrectly()
     {
-        var report = new ProgressReport();
-        Assert.Equal("", report.Phase);
-        Assert.Equal(0, report.Completed);
-        Assert.Equal(0, report.Total);
-        Assert.Null(report.Detail);
-    }
-
-    [Fact]
-    public void ProgressReport_SetsProperties()
-    {
-        var report = new ProgressReport
-        {
-            Phase = "Write",
-            Completed = 5,
-            Total = 10,
-            Detail = "file.txt"
-        };
-        Assert.Equal("Write", report.Phase);
-        Assert.Equal(5, report.Completed);
-        Assert.Equal(10, report.Total);
-        Assert.Equal("file.txt", report.Detail);
-    }
-}
-
-public class PipelineConfigTests
-{
-    [Fact]
-    public void PipelineConfig_DefaultValues()
-    {
-        var config = new PipelineConfig();
-        Assert.Equal(4, config.ReaderConcurrency);
-        Assert.Equal(Environment.ProcessorCount, config.TransformConcurrency);
-        Assert.Equal(2, config.WriterConcurrency);
-        Assert.Equal(128, config.RawChannelCapacity);
-        Assert.Equal(128, config.ProcessedChannelCapacity);
-        Assert.Equal(4096, config.BlockSize);
-        Assert.Null(config.LogInfo);
-        Assert.Null(config.LogVerbose);
-    }
-}
-
-public class WorkItemTests
-{
-    [Fact]
-    public void WorkItem_Properties_SetCorrectly()
-    {
-        var item = new WorkItem
+        var item = new BlockMetadata
         {
             RelativePath = "sub/file.txt",
             SourceFullPath = "/tmp/sub/file.txt",
-            VolumeIndex = 2,
+            TargetIndex = 2,
             Sequence = 5,
             SourceOffset = 1024,
             Length = 4096,
@@ -184,7 +137,7 @@ public class WorkItemTests
 
         Assert.Equal("sub/file.txt", item.RelativePath);
         Assert.Equal("/tmp/sub/file.txt", item.SourceFullPath);
-        Assert.Equal(2, item.VolumeIndex);
+        Assert.Equal(2, item.TargetIndex);
         Assert.Equal(5, item.Sequence);
         Assert.Equal(1024, item.SourceOffset);
         Assert.Equal(4096, item.Length);
