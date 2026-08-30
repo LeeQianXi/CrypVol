@@ -1,11 +1,10 @@
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Utility;
 
 /// <summary>CRC-32 (IEEE 802.3) 快速实现</summary>
 public static class Crc32
 {
     private const uint Polynomial = 0xEDB88320u;
-    private static readonly uint[] _table = BuildTable();
-    private static readonly ThreadLocal<uint[]> _buffer = new(() => new uint[256]);
+    private static readonly uint[] Table = BuildTable();
 
     private static uint[] BuildTable()
     {
@@ -26,7 +25,7 @@ public static class Crc32
     {
         var crc = 0xFFFFFFFFu;
         foreach (var b in data)
-            crc = crc >> 8 ^ _table[(crc ^ b) & 0xFF];
+            crc = crc >> 8 ^ Table[(crc ^ b) & 0xFF];
         return crc ^ 0xFFFFFFFFu;
     }
 }

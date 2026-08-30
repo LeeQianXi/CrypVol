@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Utility;
 
 namespace CrypVol.Lib.Engine.Processors;
 

@@ -14,11 +14,9 @@ public static class ConvertHelper
         var rawInput = args.GetRequiredValue(CommandDefinition.Convert.VolFiles);
         var outputDir = args.GetValue(CommandDefinition.Convert.Output)!;
         var prefix = args.GetValue(CommandDefinition.Convert.OutputPrefix) ?? "converted";
-
         var loggerFactory = Program.LoggerFactory;
 
-        // 1. 快速校验 + 解析卷文件
-        if (!outputDir.Exists) outputDir.Create();
+        // 1. 解析输入卷。此处不修改任何文件；凭据校验完成后才会创建输出或备份。
         var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
             .AsReadOnly();
         if (volFiles.Count is 0)
@@ -27,13 +25,8 @@ public static class ConvertHelper
             return 1;
         }
 
-        if (args.GetValue(CommandDefinition.Convert.Backup))
-            foreach (var f in volFiles)
-                if (f.Exists)
-                    File.Copy(f.FullName, f.FullName + ".bak", true);
-
         // 2. 加载旧 CEK
-        CvkCredentials? oldCreds;
+        CvkCredentials oldCreds;
         var oldKeyFile = args.GetValue(CommandDefinition.Convert.OldKeyFile);
         if (oldKeyFile is null)
         {
@@ -59,39 +52,71 @@ public static class ConvertHelper
         else
             oldCreds = new CvkCredentials(EncryptionMode.None, null!);
 
-        // 3. 获取新 CEK（二选一）
-        CvkCredentials? newCreds;
+        // 3. 目标必须是已有 CVK。禁止在未指定密钥时静默降级为明文。
         var newKeyFile = args.GetValue(CommandDefinition.Convert.KeyFile);
-        if (newKeyFile is not null)
-            try
-            {
-                var cvk = await CvkLoader.LoadAsync(newKeyFile,
-                    args.GetValue(CommandDefinition.Convert.Password),
-                    args.GetValue(CommandDefinition.Convert.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass), token);
-                newCreds = cvk.ToCredentials();
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine(ex.Message);
-                return 1;
-            }
-        else
-            newCreds = new CvkCredentials(EncryptionMode.None, null!);
+        if (newKeyFile is null)
+        {
+            Console.Error.WriteLine("转换必须指定目标密钥文件：--key-file <cvk-file>");
+            return 1;
+        }
 
-        // 4. Engine
+        CvkCredentials newCreds;
+        try
+        {
+            var cvk = await CvkLoader.LoadAsync(newKeyFile,
+                args.GetValue(CommandDefinition.Convert.Password),
+                args.GetValue(CommandDefinition.Convert.PrivkeyKey),
+                args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass), token);
+            newCreds = cvk.ToCredentials();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"无法加载目标密钥文件：{ex.Message}");
+            return 1;
+        }
+
+        // 4. 所有可失败的前置校验均已完成，此后才允许产生外部副作用。
+        try
+        {
+            if (!outputDir.Exists) outputDir.Create();
+
+            if (args.GetValue(CommandDefinition.Convert.Backup))
+                foreach (var file in volFiles.Where(static file => file.Exists))
+                    File.Copy(file.FullName, file.FullName + ".bak", true);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"无法准备转换输出或备份：{ex.Message}");
+            return 1;
+        }
+
+        // 5. Engine
         var engine = new CrypVolHelper
         {
             Logger = loggerFactory.CreateLogger("CrypVol")
         };
-        var result = await engine.ConvertAsync(new ConvertOptions
+        ConvertResult result;
+        try
         {
-            VolumeFiles = volFiles,
-            OutputDir = outputDir,
-            OutputPrefix = prefix,
-            OldCredentials = oldCreds,
-            NewCredentials = newCreds
-        }, token);
+            result = await engine.ConvertAsync(new ConvertOptions
+            {
+                VolumeFiles = volFiles,
+                OutputDir = outputDir,
+                OutputPrefix = prefix,
+                OldCredentials = oldCreds,
+                NewCredentials = newCreds
+            }, token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Console.Error.WriteLine("转换已取消");
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"转换失败：{ex.Message}");
+            return 1;
+        }
 
         if (!result.Success)
         {

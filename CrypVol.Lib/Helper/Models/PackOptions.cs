@@ -32,6 +32,12 @@ public sealed record PackOptions
     /// <summary>单卷大小上限（MiB）</summary>
     public uint VolumeSizeMb { get; init; } = 1024;
 
+    /// <summary>
+    ///     单个数据块的最大原始大小（MiB）。该值决定流式读取粒度、压缩窗口和近似卷切分粒度。
+    ///     有效范围为 1–64 MiB。
+    /// </summary>
+    public uint ChunkSizeMb { get; init; } = 16;
+
     /// <summary>已加载的 CEK 凭据（CLI 预加载后传入）</summary>
     public required CvkCredentials Credentials { get; init; }
 

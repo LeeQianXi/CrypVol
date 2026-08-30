@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
-using CrypVol.Lib;
 using CrypVol.Lib.Helper;
+using CrypVol.Lib.Utility;
 using CrypVol.Lib.Volume;
 using Xunit;
 
@@ -93,7 +93,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -120,10 +123,7 @@ public class VolumeScannerTests
                 fs.Write(hb);
                 var len2 = BitConverter.GetBytes(2);
                 fs.Write(len2);
-                fs.Write(new byte[]
-                {
-                    9, 9
-                });
+                fs.Write("\t\t"u8);
             }
 
             var result = VolumeScanner.Scan([cvp]).Files;
@@ -135,7 +135,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -156,7 +159,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -177,7 +183,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -235,7 +244,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -276,7 +288,10 @@ public class VolumeScannerTests
         finally
         {
             try { dir.Delete(true); }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
     }
 

@@ -36,32 +36,3 @@ public class FileEntryHeaderIntegrityTests
         Assert.Equal(IntegrityLevel.File, (IntegrityLevel)(header.ToBytes()[12] >> 3 & 3));
     }
 }
-
-public class VolumeAllocatorIntegrityTests
-{
-    [Theory]
-    [InlineData(IntegrityLevel.None)]
-    [InlineData(IntegrityLevel.Block)]
-    [InlineData(IntegrityLevel.Volume)]
-    public void Allocate_EncodesIntegrityLevelInFlags(IntegrityLevel level)
-    {
-        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"vai-{Guid.NewGuid()}"));
-        try
-        {
-            directory.Create();
-            var sourcePath = Path.Combine(directory.FullName, "source.bin");
-            File.WriteAllBytes(sourcePath, new byte[100]);
-
-            var (items, _) = VolumeAllocator.Allocate(
-                [new FileInfo(sourcePath)], directory, 1024 * 1024, 256, level);
-
-            Assert.Single(items);
-            Assert.Equal(level, (IntegrityLevel)(items[0].Flags >> 3 & 3));
-        }
-        finally
-        {
-            try { directory.Delete(true); }
-            catch { }
-        }
-    }
-}

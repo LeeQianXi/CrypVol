@@ -1,6 +1,6 @@
 using DotNet.Globbing;
 
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Utility;
 
 /// <summary>Glob 模式匹配器：支持 include/exclude 双重过滤</summary>
 public sealed class GlobMatcher

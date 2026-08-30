@@ -77,7 +77,16 @@ public static class BrowseHelper
         var output = Format(result.Files, result.VolumeCount, fmt, longFormat);
 
         if (outputFile is not null)
-            await File.WriteAllTextAsync(outputFile.FullName, output, token);
+            try
+            {
+                outputFile.Directory?.Create();
+                await File.WriteAllTextAsync(outputFile.FullName, output, token);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"无法写入输出文件：{ex.Message}");
+                return 1;
+            }
         else
             Console.Write(output);
 

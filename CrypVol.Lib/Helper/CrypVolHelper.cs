@@ -4,6 +4,7 @@ using CrypVol.Lib.Engine.Processors;
 using CrypVol.Lib.Engine.Providers;
 using CrypVol.Lib.Engine.Receivers;
 using CrypVol.Lib.Helper.Models;
+using CrypVol.Lib.Utility;
 using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +17,7 @@ namespace CrypVol.Lib.Helper;
 public sealed class CrypVolHelper
 {
     /// <summary>结构化日志（可选）</summary>
-    public ILogger? Logger { get; set; }
+    public ILogger? Logger { get; init; }
 
     // ═══════════════════════════════════════════════════════
     //  Pack
@@ -27,57 +28,46 @@ public sealed class CrypVolHelper
         try
         {
             var prefix = opts.OutputPrefix;
-            var capacity = 1L * 1024 * 1024 * opts.VolumeSizeMb;
+            if (opts.SourceFiles.Count == 0)
+                return new PackResult { Error = "无工作项" };
+
+            if (opts.ChunkSizeMb is < 1 or > 64)
+                return new PackResult { Error = "块大小必须在 1–64 MiB 之间" };
+
+            var capacity = checked((long)opts.VolumeSizeMb * 1024 * 1024);
             var (mode, cek) = opts.Credentials;
             var headerSize = mode is EncryptionMode.None ? FileEntryHeader.HeaderSize : FileEntryHeader.EncryptedHeaderSize;
-
-            var (items, volumes) = VolumeAllocator.Allocate(
-                opts.SourceFiles,
-                opts.SourceFolder,
-                capacity,
-                headerSize,
-                opts.IntegrityLevel,
-                opts.EnableCompression,
-                Logger);
-
-            if (items.Count == 0)
-                return new PackResult
-                {
-                    Error = "无工作项"
-                };
+            var maxChunkSize = capacity - headerSize - sizeof(int);
+            if (maxChunkSize <= 0)
+                return new PackResult { Error = "卷容量不足以容纳文件头和数据块长度字段" };
+            var chunkSize = (int)Math.Min(checked((long)opts.ChunkSizeMb * 1024 * 1024), maxChunkSize);
 
             var compressing = mode != EncryptionMode.None && opts.EnableCompression;
             Logger?.LogInformation(
-                "Pack 开始: {VolumeCount} 卷, {ItemCount} 块, {TotalBytes} 字节, 加密={Encrypted}, 压缩={Compressed}",
-                volumes.Count, items.Count, opts.SourceFiles.Sum(f => f.Length),
+                "Pack 开始: 流式块大小 {ChunkSize} 字节, {FileCount} 文件, {TotalBytes} 字节, 加密={Encrypted}, 压缩={Compressed}",
+                chunkSize, opts.SourceFiles.Count, opts.SourceFiles.Sum(f => f.Length),
                 mode != EncryptionMode.None ? "是" : "否",
                 compressing ? $"是 (L{opts.CompressionLevel})" : "否");
 
             var encryptHeaders = mode != EncryptionMode.None;
 
-            var receiver = new CvpFileReciver(encryptHeaders ? cek : null);
-
-            var volPaths = new List<string>();
-            foreach (var (idx, _) in volumes)
-            {
-                var vp = Path.Combine(opts.OutputDir.FullName, $"{prefix}.{idx}.cvp");
-                volPaths.Add(vp);
-                receiver.AddTarget(idx, vp);
-            }
-
-            var builder = ProcessingEngine.Builder().UseProvider(new SourceFileDataProvider(items));
+            var receiver = new CvpFileReciver(encryptHeaders ? cek : null, opts.OutputDir.FullName, prefix);
+            var provider = new SourceFileDataProvider(opts.SourceFiles, opts.SourceFolder, chunkSize, capacity,
+                headerSize, opts.IntegrityLevel, opts.EnableCompression);
+            var builder = ProcessingEngine.Builder().UseProvider(provider);
             if (opts.EnableCompression) builder.AddProcessor(new CompressionProcessor(opts.CompressionLevel));
             if (mode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(cek, opts.IntegrityLevel));
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
             await pipeline.StartAsync(token);
 
             var totalBytes = opts.SourceFiles.Sum(f => f.Length);
-            Logger?.LogInformation("Pack 完成: {VolumeCount} 卷, {TotalBytes} 字节", volumes.Count, totalBytes);
+            var volumePaths = receiver.VolumePaths;
+            Logger?.LogInformation("Pack 完成: {VolumeCount} 卷, {TotalBytes} 字节", volumePaths.Count, totalBytes);
             return new PackResult
             {
                 Success = true,
-                VolumePaths = volPaths,
-                VolumeCount = volumes.Count,
+                VolumePaths = volumePaths,
+                VolumeCount = volumePaths.Count,
                 TotalBytes = totalBytes
             };
         }
@@ -207,7 +197,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (mode, cek) = opts.Credentials;
+            var (_, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null, Logger);
@@ -311,12 +301,10 @@ public sealed class CrypVolHelper
                 };
 
             var integrityLevel = IntegrityLevel.None;
-            var isCompressed = false;
             if (fileFragments.Count > 0)
             {
                 var firstFragment = fileFragments.Values.First(f => f.Count > 0);
                 integrityLevel = (IntegrityLevel)(firstFragment[0].Flags >> 3 & 3);
-                isCompressed = (firstFragment[0].Flags & 0x20) != 0;
             }
 
             var (newMode, newCek) = opts.NewCredentials;
@@ -362,7 +350,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (mode, cek) = opts.Credentials;
+            var (_, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null, Logger);
@@ -404,7 +392,7 @@ public sealed class CrypVolHelper
 
                     try
                     {
-                        using var fs = File.OpenRead(f.CvpFile.FullName);
+                        await using var fs = File.OpenRead(f.CvpFile.FullName);
                         var blockBuf = new byte[f.BlockSize];
                         fs.Position = f.CvpOffset;
                         var read = fs.Read(blockBuf.AsSpan());
@@ -416,7 +404,10 @@ public sealed class CrypVolHelper
 
                         if (expectedCrc == actualCrc) continue;
                     }
-                    catch { }
+                    catch
+                    {
+                        // ignored
+                    }
 
                     corrupted:
                     corruptedBlocks++;
@@ -469,7 +460,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (mode, cek) = opts.Credentials;
+            var (_, cek) = opts.Credentials;
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, logger: Logger);
             if (scanResult.PossiblyEncrypted)
                 return new RepairResult
@@ -518,7 +509,7 @@ public sealed class CrypVolHelper
 
                     try
                     {
-                        using var fs = File.OpenRead(f.CvpFile.FullName);
+                        await using var fs = File.OpenRead(f.CvpFile.FullName);
                         var buf = new byte[f.BlockSize];
                         fs.Position = f.CvpOffset;
                         if (fs.Read(buf.AsSpan()) < f.BlockSize) goto corrupted1;
@@ -528,7 +519,10 @@ public sealed class CrypVolHelper
                         var actual = Crc32.Compute(buf.AsSpan(0, dataLen));
                         if (expected == actual) continue;
                     }
-                    catch { }
+                    catch
+                    {
+                        // ignored
+                    }
 
                     corrupted1:
                     corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));

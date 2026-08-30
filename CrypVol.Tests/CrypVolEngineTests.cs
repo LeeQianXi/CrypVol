@@ -447,7 +447,8 @@ public class CrypVolEngineTests : IDisposable
     [Fact]
     public async Task Pack_MultiVolume_LargeFile_SplitsAcrossVolumes()
     {
-        var data = new byte[20000];
+        // 每卷可容纳多个块，覆盖 CrossTail 不能被前一个 CrossMid 条目头掩盖的场景。
+        var data = new byte[7_500_000];
         RandomNumberGenerator.Fill(data);
         MakeFile("big.dat", data);
 
@@ -466,11 +467,13 @@ public class CrypVolEngineTests : IDisposable
             }.ToList(),
             OutputDir = outDir,
             Credentials = credentials,
-            VolumeSizeMb = 1
+            VolumeSizeMb = 3,
+            ChunkSizeMb = 1
         };
 
         var packResult = await engine.PackAsync(packOpts);
         Assert.True(packResult.Success, packResult.Error);
+        Assert.True(packResult.VolumeCount >= 3);
 
         var extractOpts = new ExtractOptions
         {

@@ -83,6 +83,7 @@ public static class CommandDefinition
         public static readonly Option<DirectoryInfo> OutputPath;
         public static readonly Option<string> OutputPrefix;
         public static readonly Option<uint> VolumeSize;
+        public static readonly Option<uint> ChunkSize;
         public static readonly Option<FileInfo> KeyFile;
         public static readonly Option<EncryptionMode> Mode;
         public static readonly Option<string> Password;
@@ -149,9 +150,16 @@ public static class CommandDefinition
             // ── 卷选项 ──
             VolumeSize = new Option<uint>("--volume-size", "-s")
             {
-                Description = "单个数据卷的大小上限（单位：MiB）。超出该大小的数据将自动切分为多个卷",
+                Description = "生成时的近似卷切分目标（单位：MiB）。卷格式与读取流程不依赖此值",
                 HelpName = "mib",
                 DefaultValueFactory = static _ => 1024u
+            };
+
+            ChunkSize = new Option<uint>("--chunk-size")
+            {
+                Description = "单次读取与处理的数据块大小（单位：MiB，范围 1–64）。较大值通常压缩率更高，但占用更多内存",
+                HelpName = "mib",
+                DefaultValueFactory = static _ => 16u
             };
 
             // ── 加密选项：两种模式互斥 ──
@@ -244,7 +252,7 @@ public static class CommandDefinition
             // ── 过滤选项 ──
             Include = new Option<string>("--include")
             {
-                Description = "仅打包匹配 Glob 模式的文件。可多次指定以添加多个模式",
+                Description = "仅打包匹配该 Glob 模式的文件",
                 HelpName = "pattern"
             };
 
@@ -272,10 +280,8 @@ public static class CommandDefinition
             {
                 Description =
                     """
-                    预估模式：不实际写入任何数据，仅计算并输出：
-                      - 预计生成的卷文件数量及大小
-                      - 每个卷的文件列表
-                      - .cvk 密钥文件的加密模式
+                    预估模式：不写入数据或密钥文件，仅按原始大小和块大小给出近似卷数与块数。
+                    压缩、加密和动态卷路由会使实际结果不同。
                     """
             };
 
@@ -304,6 +310,7 @@ public static class CommandDefinition
                 OutputPath,
                 OutputPrefix,
                 VolumeSize,
+                ChunkSize,
                 KeyFile,
                 Mode,
                 Password,
@@ -620,14 +627,12 @@ public static class CommandDefinition
         {
             var cmd = new Command("info",
                 """
-                显示密钥文件 (.cvk) 的元数据信息。
-
-                输出内容包括：保护模式、格式版本、CEK 指纹等。
-                提供解密凭据后将验证密钥并展示完整信息。
+                验证并显示密钥文件 (.cvk) 的保护模式与 CEK 指纹。
+                Password 或 Asymmetric 模式必须提供相应解封凭据。
 
                 示例：
                   crypvol info ./archive.cvk
-                    查看基本元数据
+                    验证明文密钥文件
 
                   crypvol info ./archive.cvk -p "secret123"
                     验证密码并展示 CEK 指纹
@@ -1030,7 +1035,7 @@ public static class CommandDefinition
                 Description =
                     """
                     一个或多个 .cvp 数据卷文件。
-                    只需提供需要转换的卷（不必是全部卷），程序自动发现同组文件。
+                    程序会发现当前目录中可见的同前缀卷；转换完整跨卷文件时应提供完整卷组。
                     """,
                 Arity = ArgumentArity.OneOrMore
             }.AcceptExistingOnly();
@@ -1077,32 +1082,28 @@ public static class CommandDefinition
 
             OutputPrefix = new Option<string>("--output-prefix", "--prefix")
             {
-                Description = "新卷文件的文件名前缀。未指定时沿用原前缀",
+                Description = "新卷文件的文件名前缀。未指定时使用 converted",
                 HelpName = "name"
             };
-
-            // 目标密钥：两种模式互斥
-            //   A) 指定 --key-file → 复用已有 .cvk 的 CEK（--mode/--password/--public-key 忽略）
-            //   B) 不指定       → 生成新 CEK + 新 .cvk（--mode 等必需）
 
             KeyFile = new Option<FileInfo>("--key-file")
             {
                 Description =
                     """
-                    指定目标 .cvk 密钥文件，直接使用其 CEK 作为新加密密钥。
-                    提供此选项时，--mode / --password / --public-key 均被忽略。
+                    目标 .cvk 密钥文件。其 CEK 将作为新加密密钥。
+                    此命令仅支持重加密到已有 CVK，必须提供该参数。
                     """,
                 HelpName = "cvk-file"
             }.AcceptExistingOnly();
             Password = new Option<string>("--password", "-p")
             {
-                Description = "新密钥的加密密码（Password 模式）",
+                Description = "解封目标 --key-file 的密码（目标 CVK 为 Password 模式时必需）",
                 HelpName = "passphrase"
             };
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "当前 .cvk 的解密私钥（当前为 Asymmetric 模式时必需）",
+                Description = "解封目标 --key-file 的私钥（目标 CVK 为 Asymmetric 模式时必需）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -1122,23 +1123,15 @@ public static class CommandDefinition
         {
             var cmd = new Command("convert",
                 """
-                块级密钥轮换：用旧 CEK 解密每个数据块，用新 CEK 重新加密。
+                块级重加密：用旧 CEK 解密每个数据块，再用目标现有 CVK 的 CEK 重新加密。
 
-                不解压、不还原文件，仅替换加密层。每个卷独立转换，
-                可只转换部分卷，无需所有卷在场。
-
-                目标密钥来源二选一：
-                  --key-file <cvk>  复用已有 .cvk 的 CEK
-                  --mode/--password  生成新 CEK + 新 .cvk
+                不解压、不还原文件，也不创建新的 CVK。读取流程不依赖生成时卷大小。
 
                 典型场景：密钥轮换、为不同节点分发不同密钥域的数据。
 
                 示例：
-                  crypvol convert ./archive.1.cvp -k ./old.cvk -o ./new
-                    转换指定卷，使用新的 CEK
-
-                  crypvol convert ./archive.1.cvp -k ./old.cvk -m Password -p "newpass" -o ./new
-                    转换并用密码保护新 CEK
+                  crypvol convert ./archive.1.cvp --old-key-file ./old.cvk --key-file ./new.cvk -o ./new
+                    使用已有 new.cvk 的 CEK 重加密卷
                 """)
             {
                 VolFiles,

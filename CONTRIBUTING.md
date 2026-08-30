@@ -59,8 +59,11 @@ dotnet run --project CrypVol
 # 确保代码可构建
 dotnet build -c Release
 
-# 运行测试（如果有）
+# 运行单元测试
 dotnet test
+
+# 运行 CLI 端到端回归测试（需要 Bash 与 openssl）
+bash tests/run-tests.sh
 ```
 
 ## 📂 项目结构

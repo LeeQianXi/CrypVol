@@ -29,6 +29,6 @@ public sealed class BlockMetadata
     /// <summary>段标志（Full/CrossHead/CrossMid/CrossTail）</summary>
     public byte Flags { get; init; }
 
-    /// <summary>是否为某文件的首个段（决定是否写 FileEntryHeader）</summary>
+    /// <summary>是否在该块前写入 FileEntryHeader。</summary>
     public bool IsFirstFragment { get; init; }
 }

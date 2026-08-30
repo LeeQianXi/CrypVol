@@ -12,10 +12,7 @@ public sealed class VolumeContext
     public int VolumeIndex { get; init; }
 
     /// <summary>输出文件路径</summary>
-    public string OutputPath { get; set; } = string.Empty;
-
-    /// <summary>预分配的卷文件大小（字节）</summary>
-    public long PreallocatedSize { get; set; }
+    public string OutputPath { get; init; } = string.Empty;
 
     /// <summary>有序输出通道。容量=1，与 Route 形成反压，防止 Write 延迟时内存积压。</summary>
     public Channel<DataBlock> OutputChannel { get; } =

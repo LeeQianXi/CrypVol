@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using CrypVol.Lib.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Volume;

@@ -3,7 +3,7 @@ using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
-using CrypVol.Lib.Volume;
+using CrypVol.Lib.Utility;
 
 namespace CrypVol.Cli.Pack;
 
@@ -21,13 +21,22 @@ public static class PackHelper
         }
 
         var outputDir = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
-        if (!outputDir.Exists)
-            outputDir.Create();
 
         var prefix = args.GetValue(CommandDefinition.Pack.OutputPrefix);
         if (string.IsNullOrWhiteSpace(prefix))
         {
             Console.Error.WriteLine("无效前缀");
+            return 1;
+        }
+        if (prefix.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || prefix.Contains(Path.DirectorySeparatorChar)
+            || prefix.Contains(Path.AltDirectorySeparatorChar))
+        {
+            Console.Error.WriteLine("输出前缀不能包含路径分隔符或非法文件名字符");
+            return 1;
+        }
+        if (args.GetValue(CommandDefinition.Pack.VolumeSize) == 0)
+        {
+            Console.Error.WriteLine("卷切分目标必须大于 0 MiB");
             return 1;
         }
 
@@ -44,7 +53,9 @@ public static class PackHelper
         var exc = args.GetValue(CommandDefinition.Pack.Exclude);
         if (!string.IsNullOrWhiteSpace(exc)) matcher.AddExclude(exc);
 
-        var allFiles = Directory.GetFiles(sourceFolder.FullName, "*", SearchOption.AllDirectories);
+        var allFiles = inputPath is FileInfo inputFile
+            ? [inputFile.FullName]
+            : Directory.GetFiles(sourceFolder.FullName, "*", SearchOption.AllDirectories);
         var files = new List<FileInfo>();
         foreach (var f in allFiles)
         {
@@ -59,13 +70,22 @@ public static class PackHelper
             return 1;
         }
 
+        var chunkSizeMb = args.GetValue(CommandDefinition.Pack.ChunkSize);
+        if (chunkSizeMb is < 1 or > 64)
+        {
+            Console.Error.WriteLine("块大小必须在 1–64 MiB 之间");
+            return 1;
+        }
+
         // Dry-run: 仅估算，不调用引擎
         if (args.GetValue(CommandDefinition.Pack.DryRun))
         {
             var cap = 1L * 1024 * 1024 * args.GetValue(CommandDefinition.Pack.VolumeSize);
-            var logger = loggerFactory.CreateLogger("VolumeAllocator");
-            var (items, vols) = VolumeAllocator.Allocate(files, sourceFolder, cap, logger: logger);
-            Console.WriteLine($"预估: {vols.Count} 卷, {items.Count} 块, {files.Sum(f => f.Length)} 字节");
+            var chunk = Math.Min(cap, (long)chunkSizeMb * 1024 * 1024);
+            var blocks = files.Sum(file => Math.Max(1, (file.Length + chunk - 1) / chunk));
+            var totalBytes = files.Sum(file => file.Length);
+            var volumes = Math.Max(1, (totalBytes + cap - 1) / cap);
+            Console.WriteLine($"流式近似预估: {volumes} 卷, {blocks} 块, {totalBytes} 字节");
             return 0;
         }
 
@@ -91,14 +111,46 @@ public static class PackHelper
         }
         else
         {
-            var cvk = CvkDocument.CreateNew(mode);
-            cvk.Password = args.GetValue(CommandDefinition.Pack.Password);
-            cvk.Comment = args.GetValue(CommandDefinition.Pack.Comment);
-            foreach (var publicKey in args.GetValue(CommandDefinition.Pack.PublicKey) ?? [])
-                cvk.AddPublicKey(publicKey);
-            var keyDirectory = args.GetValue(CommandDefinition.Pack.KeyOutputPath) ?? outputDir;
-            await cvk.WriteAsync(new FileInfo(Path.Combine(keyDirectory.FullName, $"{prefix}.cvk")), token);
-            creds = cvk.ToCredentials();
+            var password = args.GetValue(CommandDefinition.Pack.Password);
+            var publicKeys = args.GetValue(CommandDefinition.Pack.PublicKey)?.ToList() ?? [];
+            if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
+            {
+                Console.Error.WriteLine("Password 模式需要 --password");
+                return 1;
+            }
+            if (mode == EncryptionMode.Asymmetric && publicKeys.Count == 0)
+            {
+                Console.Error.WriteLine("Asymmetric 模式需要 --public-key");
+                return 1;
+            }
+
+            try
+            {
+                outputDir.Create();
+                var cvk = CvkDocument.CreateNew(mode);
+                cvk.Password = password;
+                cvk.Comment = args.GetValue(CommandDefinition.Pack.Comment);
+                foreach (var publicKey in publicKeys) cvk.AddPublicKey(publicKey);
+                var keyDirectory = args.GetValue(CommandDefinition.Pack.KeyOutputPath) ?? outputDir;
+                keyDirectory.Create();
+                await cvk.WriteAsync(new FileInfo(Path.Combine(keyDirectory.FullName, $"{prefix}.cvk")), token);
+                creds = cvk.ToCredentials();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"创建密钥文件失败: {ex.Message}");
+                return 1;
+            }
+        }
+
+        try
+        {
+            outputDir.Create();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"无法创建输出目录：{ex.Message}");
+            return 1;
         }
 
         var engine = new CrypVolHelper
@@ -112,6 +164,7 @@ public static class PackHelper
             OutputDir = outputDir,
             OutputPrefix = prefix,
             VolumeSizeMb = args.GetValue(CommandDefinition.Pack.VolumeSize),
+            ChunkSizeMb = chunkSizeMb,
             EnableCompression = args.GetValue(CommandDefinition.Pack.Compress),
             CompressionLevel = args.GetValue(CommandDefinition.Pack.CompressionLevel),
             KeyOutputDir = args.GetValue(CommandDefinition.Pack.KeyOutputPath)!,
