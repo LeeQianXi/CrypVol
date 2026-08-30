@@ -37,16 +37,11 @@ public static class RepairHelper
         if (keyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Repair.Password),
                     args.GetValue(CommandDefinition.Repair.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass)
-                )
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader")
-                };
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {

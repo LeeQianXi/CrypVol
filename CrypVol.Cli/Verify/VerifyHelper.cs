@@ -37,16 +37,11 @@ public static class VerifyHelper
         if (keyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Verify.Password),
                     args.GetValue(CommandDefinition.Verify.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass)
-                )
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader")
-                };
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {

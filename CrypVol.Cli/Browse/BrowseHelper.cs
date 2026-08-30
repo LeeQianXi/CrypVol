@@ -41,16 +41,11 @@ public static class BrowseHelper
         if (keyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Browse.Password),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass)
-                )
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader")
-                };
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {

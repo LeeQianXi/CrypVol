@@ -221,8 +221,10 @@ public class CrypVolEngineTests : IDisposable
         var keyDir = _workDir.CreateSubdirectory("keys");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var cvkWriter = new CvkWriter(EncryptionMode.Password, "mypassword");
-        var credentials = await cvkWriter.WriteCvkAsync(keyDir, "key");
+        var cvk = CvkDocument.CreateNew(EncryptionMode.Password);
+        cvk.Password = "mypassword";
+        await cvk.WriteAsync(new FileInfo(Path.Combine(keyDir.FullName, "key.cvk")));
+        var credentials = cvk.ToCredentials();
 
         var engine = new CrypVolHelper();
         var packOpts = new PackOptions
@@ -239,8 +241,9 @@ public class CrypVolEngineTests : IDisposable
         var packResult = await engine.PackAsync(packOpts);
         Assert.True(packResult.Success, packResult.Error);
 
-        var cvkReader = new CvkReader(new FileInfo(Path.Combine(keyDir.FullName, "key.cvk")), "mypassword");
-        var loaded = await cvkReader.LoadKeyAsync();
+        var loadedCvk = await CvkLoader.LoadAsync(
+            new FileInfo(Path.Combine(keyDir.FullName, "key.cvk")), "mypassword");
+        var loaded = loadedCvk.ToCredentials();
 
         var extractOpts = new ExtractOptions
         {

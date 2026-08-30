@@ -15,15 +15,11 @@ public static class RekeyHelper
         CvkCredentials creds;
         try
         {
-            creds = await new CvkReader(
-                    cvkFile,
-                    args.GetValue(CommandDefinition.Rekey.Password),
-                    args.GetValue(CommandDefinition.Rekey.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass))
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader")
-                }
-                .LoadKeyAsync(token);
+            var cvk = await CvkLoader.LoadAsync(cvkFile,
+                args.GetValue(CommandDefinition.Rekey.Password),
+                args.GetValue(CommandDefinition.Rekey.PrivkeyKey),
+                args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass), token);
+            creds = cvk.ToCredentials();
         }
         catch (Exception ex)
         {
@@ -39,15 +35,13 @@ public static class RekeyHelper
         var output = args.GetValue(CommandDefinition.Rekey.Output);
         var outDir = output?.Directory ?? cvkFile.Directory!;
         var prefix = Path.GetFileNameWithoutExtension(output?.Name ?? cvkFile.Name);
-        var writer = new CvkWriter(
-            creds.Cek,
-            toMode,
-            args.GetValue(CommandDefinition.Rekey.NewPassword),
-            args.GetValue(CommandDefinition.Rekey.PublicKey))
+        var outputCvk = new CvkDocument(creds.Cek, toMode)
         {
-            Logger = loggerFactory.CreateLogger("CvkWriter")
+            Password = args.GetValue(CommandDefinition.Rekey.NewPassword)
         };
-        await writer.WriteCvkAsync(outDir, prefix, token);
+        foreach (var publicKey in args.GetValue(CommandDefinition.Rekey.PublicKey) ?? [])
+            outputCvk.AddPublicKey(publicKey);
+        await outputCvk.WriteAsync(new FileInfo(Path.Combine(outDir.FullName, $"{prefix}.cvk")), token);
 
         Console.WriteLine($"密钥已重新封装 → {Path.Combine(outDir.FullName, prefix + ".cvk")}");
         return 0;

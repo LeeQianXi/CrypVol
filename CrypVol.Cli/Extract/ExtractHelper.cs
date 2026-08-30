@@ -39,16 +39,11 @@ public static class ExtractHelper
         if (keyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Extract.Password),
                     args.GetValue(CommandDefinition.Extract.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Extract.PrivkeyKeyPass)
-                )
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader")
-                };
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Extract.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {

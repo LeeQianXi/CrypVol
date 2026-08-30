@@ -33,12 +33,11 @@ public static class GenKeyHelper
         // 2. 生成密钥
         try
         {
-            var writer = new CvkWriter(mode, password, pubKeys,
-                args.GetValue(CommandDefinition.GenKey.Comment))
-            {
-                Logger = loggerFactory.CreateLogger("CvkWriter")
-            };
-            await writer.WriteCvkAsync(outputDir, name, token);
+            var cvk = CvkDocument.CreateNew(mode);
+            cvk.Password = password;
+            cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
+            foreach (var publicKey in pubKeys) cvk.AddPublicKey(publicKey);
+            await cvk.WriteAsync(new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), token);
             Console.WriteLine($"密钥已生成: {Path.Combine(outputDir.FullName, name + ".cvk")}  ({mode})");
             return 0;
         }

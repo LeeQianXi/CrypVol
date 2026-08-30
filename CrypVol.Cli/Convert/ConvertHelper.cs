@@ -45,16 +45,11 @@ public static class ConvertHelper
         if (oldKeyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    oldKeyFile,
+                var cvk = await CvkLoader.LoadAsync(oldKeyFile,
                     args.GetValue(CommandDefinition.Convert.OldPassword),
                     args.GetValue(CommandDefinition.Convert.OldPrivkey),
-                    args.GetValue(CommandDefinition.Convert.OldPrivkeyPass)
-                )
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader(old)")
-                };
-                oldCreds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Convert.OldPrivkeyPass), token);
+                oldCreds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {
@@ -70,16 +65,11 @@ public static class ConvertHelper
         if (newKeyFile is not null)
             try
             {
-                var reader = new CvkReader(
-                    newKeyFile,
+                var cvk = await CvkLoader.LoadAsync(newKeyFile,
                     args.GetValue(CommandDefinition.Convert.Password),
                     args.GetValue(CommandDefinition.Convert.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass)
-                )
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader(new)")
-                };
-                newCreds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass), token);
+                newCreds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {

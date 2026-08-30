@@ -77,16 +77,11 @@ public static class PackHelper
         {
             try
             {
-                var reader = new CvkReader(
-                    keyFile,
+                var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Pack.Password),
                     args.GetValue(CommandDefinition.Pack.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Pack.PrivkeyKeyPass)
-                )
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader")
-                };
-                creds = await reader.LoadKeyAsync(token);
+                    args.GetValue(CommandDefinition.Pack.PrivkeyKeyPass), token);
+                creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {
@@ -96,18 +91,14 @@ public static class PackHelper
         }
         else
         {
-            var writer = new CvkWriter(
-                mode,
-                args.GetValue(CommandDefinition.Pack.Password),
-                args.GetValue(CommandDefinition.Pack.PublicKey),
-                args.GetValue(CommandDefinition.Pack.Comment)
-            )
-            {
-                Logger = loggerFactory.CreateLogger("CvkWriter")
-            };
-            creds = await writer.WriteCvkAsync(
-                args.GetValue(CommandDefinition.Pack.KeyOutputPath) ?? outputDir,
-                prefix, token);
+            var cvk = CvkDocument.CreateNew(mode);
+            cvk.Password = args.GetValue(CommandDefinition.Pack.Password);
+            cvk.Comment = args.GetValue(CommandDefinition.Pack.Comment);
+            foreach (var publicKey in args.GetValue(CommandDefinition.Pack.PublicKey) ?? [])
+                cvk.AddPublicKey(publicKey);
+            var keyDirectory = args.GetValue(CommandDefinition.Pack.KeyOutputPath) ?? outputDir;
+            await cvk.WriteAsync(new FileInfo(Path.Combine(keyDirectory.FullName, $"{prefix}.cvk")), token);
+            creds = cvk.ToCredentials();
         }
 
         var engine = new CrypVolHelper

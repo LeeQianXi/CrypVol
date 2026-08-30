@@ -13,14 +13,10 @@ public static class InfoHelper
 
         try
         {
-            var c = await new CvkReader(keyFile,
-                    args.GetValue(CommandDefinition.Info.Password),
-                    args.GetValue(CommandDefinition.Info.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Info.PrivkeyKeyPass))
-                {
-                    Logger = loggerFactory.CreateLogger("CvkReader")
-                }
-                .LoadKeyAsync(token);
+            var c = await CvkLoader.LoadAsync(keyFile,
+                args.GetValue(CommandDefinition.Info.Password),
+                args.GetValue(CommandDefinition.Info.PrivkeyKey),
+                args.GetValue(CommandDefinition.Info.PrivkeyKeyPass), token);
 
             Console.WriteLine(
                 $"{keyFile.Name}: {ModeLabel(c.EncryptionMode)} (验证通过, CEK: {System.Convert.ToHexString(c.Cek)[..8]}...)");
