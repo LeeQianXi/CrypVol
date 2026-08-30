@@ -2,13 +2,13 @@ using System.Security.Cryptography;
 using System.Text;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Engine;
-using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Helper;
+using CrypVol.Lib.Helper.Models;
 using Xunit;
 
 namespace CrypVol.Tests;
 
-/// <summary>End-to-end integration tests for CrypVolEngine.</summary>
+/// <summary>End-to-end integration tests for CrypVolHelper.</summary>
 public class CrypVolEngineTests : IDisposable
 {
     private readonly DirectoryInfo _workDir;
@@ -58,7 +58,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -99,7 +99,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -140,7 +140,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var credentials = new CvkCredentials(EncryptionMode.PlainKey, RandomNumberGenerator.GetBytes(32));
 
         var packOpts = new PackOptions
@@ -179,7 +179,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var credentials = new CvkCredentials(EncryptionMode.PlainKey, RandomNumberGenerator.GetBytes(32));
 
         var packOpts = new PackOptions
@@ -224,7 +224,7 @@ public class CrypVolEngineTests : IDisposable
         var cvkWriter = new CvkWriter(EncryptionMode.Password, "mypassword");
         var credentials = await cvkWriter.WriteCvkAsync(keyDir, "key");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -266,7 +266,7 @@ public class CrypVolEngineTests : IDisposable
         MakeFile("sub/file2.txt", "BBB");
         var outDir = _workDir.CreateSubdirectory("out");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -310,7 +310,7 @@ public class CrypVolEngineTests : IDisposable
         var convertDir = _workDir.CreateSubdirectory("convert");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var oldCek = RandomNumberGenerator.GetBytes(32);
         var oldCredentials = new CvkCredentials(EncryptionMode.PlainKey, oldCek);
 
@@ -369,7 +369,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -407,7 +407,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -451,7 +451,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>());
 
         var packOpts = new PackOptions
@@ -498,7 +498,7 @@ public class CrypVolEngineTests : IDisposable
         var outDir = _workDir.CreateSubdirectory("out");
         var restoreDir = _workDir.CreateSubdirectory("restore");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -536,7 +536,7 @@ public class CrypVolEngineTests : IDisposable
         MakeFile("size.txt", content);
         var outDir = _workDir.CreateSubdirectory("out");
 
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var packOpts = new PackOptions
         {
             SourceFolder = _workDir,
@@ -575,7 +575,7 @@ public class CrypVolEngineTests : IDisposable
     public async Task Pack_NoSourceFiles_ReturnsError()
     {
         var outDir = _workDir.CreateSubdirectory("out");
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
 
         var packOpts = new PackOptions
         {
@@ -594,7 +594,7 @@ public class CrypVolEngineTests : IDisposable
     public async Task Extract_NoVolumeFiles_ReturnsError()
     {
         var restoreDir = _workDir.CreateSubdirectory("restore");
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
 
         var extractOpts = new ExtractOptions
         {
@@ -611,7 +611,7 @@ public class CrypVolEngineTests : IDisposable
     [Fact]
     public async Task Browse_EmptyVolumeFiles_ReturnsEmptyList()
     {
-        var engine = new CrypVolEngine();
+        var engine = new CrypVolHelper();
         var browseOpts = new BrowseOptions
         {
             VolumeFiles = Array.Empty<FileInfo>().AsReadOnly(),

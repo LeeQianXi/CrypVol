@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using CrypVol.Lib.Crypto;
 
-namespace CrypVol.Lib.Engine.Models;
+namespace CrypVol.Lib.Helper.Models;
 
 public sealed record PackOptions
 {

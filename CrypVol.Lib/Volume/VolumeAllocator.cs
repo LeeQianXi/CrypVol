@@ -1,4 +1,4 @@
-using CrypVol.Lib.Pipeline;
+using CrypVol.Lib.Engine.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Volume;
@@ -9,14 +9,14 @@ public static class VolumeAllocator
     private const long MaxBlockSize = 4L * 1024 * 1024;
     private const long Alignment = 1024;
 
-    public static (List<WorkItem> items, List<(int Index, long Size)> volumes)
+    public static (List<BlockMetadata> items, List<(int Index, long Size)> volumes)
         Allocate(IEnumerable<FileInfo> files, DirectoryInfo sourceDir, long volumeCapacity, int headerSize = 284,
             IntegrityLevel integrityLevel = IntegrityLevel.None, bool enableCompression = false,
             ILogger? logger = null)
     {
         const int maxPathLen = 231 + 256;
 
-        var items = new List<WorkItem>();
+        var items = new List<BlockMetadata>();
         var volSizes = new Dictionary<int, long>();
         var perVolSeq = new Dictionary<int, long>();
 
@@ -44,11 +44,11 @@ public static class VolumeAllocator
                     used = 0;
                 }
 
-                items.Add(new WorkItem
+                items.Add(new BlockMetadata
                 {
                     RelativePath = relPath,
                     SourceFullPath = file.FullName,
-                    VolumeIndex = currentVol,
+                    TargetIndex = currentVol,
                     Sequence = NextSeq(currentVol),
                     Length = 0,
                     TotalFileSize = 0,
@@ -97,11 +97,11 @@ public static class VolumeAllocator
                 flags |= (byte)(((int)integrityLevel & 3) << 3);
                 if (enableCompression) flags |= 0x20;
 
-                items.Add(new WorkItem
+                items.Add(new BlockMetadata
                 {
                     RelativePath = relPath,
                     SourceFullPath = file.FullName,
-                    VolumeIndex = currentVol,
+                    TargetIndex = currentVol,
                     Sequence = NextSeq(currentVol),
                     SourceOffset = srcOffset,
                     Length = (int)rawToWrite,

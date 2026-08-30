@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using CrypVol.Lib;
-using CrypVol.Lib.Engine;
+using CrypVol.Lib.Helper;
 using CrypVol.Lib.Volume;
 using Xunit;
 
@@ -380,7 +380,7 @@ public class VolumeScannerTests
         {
             ["file.txt"] = [new VolumeScanner.Fragment(cvp, 260, 100, 100, 0, true, 0)]
         };
-        var incomplete = CrypVolEngine.FindIncompleteFiles(fragments);
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
         Assert.Empty(incomplete);
     }
 
@@ -393,7 +393,7 @@ public class VolumeScannerTests
         {
             ["file.txt"] = [new VolumeScanner.Fragment(cvp, 260, 100, 100, 1, true, 0)]
         };
-        var incomplete = CrypVolEngine.FindIncompleteFiles(fragments);
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
         Assert.Single(incomplete);
         Assert.Equal("file.txt", incomplete[0]);
     }
@@ -411,7 +411,7 @@ public class VolumeScannerTests
                 new VolumeScanner.Fragment(cvp, 2268, 500, 2500, 3, false, 0) // CrossTail
             ]
         };
-        var incomplete = CrypVolEngine.FindIncompleteFiles(fragments);
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
         Assert.Empty(incomplete);
     }
 
@@ -428,7 +428,7 @@ public class VolumeScannerTests
                 new VolumeScanner.Fragment(cvp, 1264, 1000, 2500, 2, false, 0)
             ]
         };
-        var incomplete = CrypVolEngine.FindIncompleteFiles(fragments);
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
         Assert.Single(incomplete);
     }
 
@@ -441,7 +441,7 @@ public class VolumeScannerTests
             ["complete.txt"] = [new VolumeScanner.Fragment(cvp, 260, 100, 100, 0, true, 0)],
             ["incomplete.bin"] = [new VolumeScanner.Fragment(cvp, 520, 50, 200, 1, true, 0)] // CrossHead alone
         };
-        var incomplete = CrypVolEngine.FindIncompleteFiles(fragments);
+        var incomplete = CrypVolHelper.FindIncompleteFiles(fragments);
         Assert.Single(incomplete);
         Assert.Equal("incomplete.bin", incomplete[0]);
     }

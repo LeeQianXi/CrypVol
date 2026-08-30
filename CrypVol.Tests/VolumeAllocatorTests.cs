@@ -62,7 +62,7 @@ public class VolumeAllocatorTests
 
         Assert.Single(volumes);
         Assert.Equal(3, items.Count);
-        Assert.All(items, item => Assert.Equal(0, item.VolumeIndex));
+        Assert.All(items, item => Assert.Equal(0, item.TargetIndex));
     }
 
     [Fact]

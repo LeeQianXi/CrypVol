@@ -1,6 +1,7 @@
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Pipeline;
+using CrypVol.Lib.Engine;
+using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Utility;
 using Xunit;
 
@@ -117,16 +118,16 @@ public class EnvelopeModeTests
     }
 }
 
-public class WorkItemTests
+public class BlockMetadataTests
 {
     [Fact]
-    public void WorkItem_Properties_SetCorrectly()
+    public void BlockMetadata_Properties_SetCorrectly()
     {
-        var item = new WorkItem
+        var item = new BlockMetadata
         {
             RelativePath = "sub/file.txt",
             SourceFullPath = "/tmp/sub/file.txt",
-            VolumeIndex = 2,
+            TargetIndex = 2,
             Sequence = 5,
             SourceOffset = 1024,
             Length = 4096,
@@ -137,7 +138,7 @@ public class WorkItemTests
 
         Assert.Equal("sub/file.txt", item.RelativePath);
         Assert.Equal("/tmp/sub/file.txt", item.SourceFullPath);
-        Assert.Equal(2, item.VolumeIndex);
+        Assert.Equal(2, item.TargetIndex);
         Assert.Equal(5, item.Sequence);
         Assert.Equal(1024, item.SourceOffset);
         Assert.Equal(4096, item.Length);

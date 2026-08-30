@@ -1,18 +1,19 @@
+using CrypVol.Lib.Engine;
 using CrypVol.Lib.Engine.Models;
-using CrypVol.Lib.IO.Sinks;
-using CrypVol.Lib.IO.Sources;
-using CrypVol.Lib.Pipeline;
-using CrypVol.Lib.Transforms;
+using CrypVol.Lib.Engine.Processors;
+using CrypVol.Lib.Engine.Providers;
+using CrypVol.Lib.Engine.Receivers;
+using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 
-namespace CrypVol.Lib.Engine;
+namespace CrypVol.Lib.Helper;
 
 /// <summary>
 ///     CrypVol 核心引擎。提供 Pack / Extract / Convert 等操作的统一入口。
 ///     每个阶段单线程顺序处理。
 /// </summary>
-public sealed class CrypVolEngine
+public sealed class CrypVolHelper
 {
     /// <summary>结构化日志（可选）</summary>
     public ILogger? Logger { get; set; }
@@ -54,27 +55,21 @@ public sealed class CrypVolEngine
 
             var encryptHeaders = mode != EncryptionMode.None;
 
-            using var sourceReader = new FileSourceReader();
-            var pipe = new SequentialPipeline(
-                mode is EncryptionMode.None
-                    ? new NullTransform(opts.EnableCompression, opts.CompressionLevel)
-                    : new PackTransform(cek, opts.EnableCompression, opts.CompressionLevel, opts.IntegrityLevel))
-            {
-                Logger = Logger,
-                ReadBlockAsync = (item, ct) => sourceReader.ReadAsync(item, ct, Logger),
-                WriteVolumeAsync = (ctx, ct) =>
-                    CvpSink.WriteAsync(ctx, encryptHeaders ? cek : null, ct, Logger)
-            };
+            var receiver = new CvpFileReciver(encryptHeaders ? cek : null);
 
             var volPaths = new List<string>();
             foreach (var (idx, _) in volumes)
             {
                 var vp = Path.Combine(opts.OutputDir.FullName, $"{prefix}.{idx}.cvp");
                 volPaths.Add(vp);
-                pipe.AddVolume(idx, vp, 0);
+                receiver.AddTarget(idx, vp);
             }
 
-            await pipe.RunAsync(items, token);
+            var builder = ProcessingEngine.Builder().UseProvider(new SourceFileDataProvider(items));
+            if (opts.EnableCompression) builder.AddProcessor(new CompressionProcessor(opts.CompressionLevel));
+            if (mode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(cek, opts.IntegrityLevel));
+            var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
+            await pipeline.StartAsync(token);
 
             var totalBytes = opts.SourceFiles.Sum(f => f.Length);
             Logger?.LogInformation("Pack 完成: {VolumeCount} 卷, {TotalBytes} 字节", volumes.Count, totalBytes);
@@ -137,16 +132,16 @@ public sealed class CrypVolEngine
             var fi = 0;
             foreach (var p in fileFragments.Keys) fileIndex[p] = fi++;
 
-            var items = new List<WorkItem>();
+            var items = new List<BlockMetadata>();
             foreach (var (relPath, fragments) in fileFragments)
             {
                 long seq = 0;
                 foreach (var f in fragments)
-                    items.Add(new WorkItem
+                    items.Add(new BlockMetadata
                     {
                         RelativePath = relPath,
                         SourceFullPath = f.CvpFile.FullName,
-                        VolumeIndex = fileIndex[relPath],
+                        TargetIndex = fileIndex[relPath],
                         Sequence = seq++,
                         SourceOffset = f.CvpOffset,
                         Length = f.BlockSize,
@@ -169,27 +164,22 @@ public sealed class CrypVolEngine
                 fileFragments.Count, items.Count,
                 mode != EncryptionMode.None ? "是" : "否", isCompressed);
 
-            using var sourceReader = new CvpSourceReader();
-            var pipe = new SequentialPipeline(mode is EncryptionMode.None
-                ? NullTransform.ForExtract(isCompressed)
-                : new ExtractTransform(cek, isCompressed, integrityLevel))
-            {
-                Logger = Logger,
-                ReadBlockAsync = (item, ct) => sourceReader.ReadAsync(item, ct, Logger),
-                WriteVolumeAsync = (ctx, ct) =>
-                    FileSink.WriteAsync(opts.OutputDir.FullName, opts.Overwrite, ctx, ct, Logger)
-            };
+            var receiver = new DataFileReciver(opts.OutputDir.FullName, opts.Overwrite);
 
             foreach (var kv in fileIndex)
             {
                 var fp = Path.Combine(opts.OutputDir.FullName, kv.Key);
                 var d = Path.GetDirectoryName(fp);
                 if (d is not null) Directory.CreateDirectory(d);
-                pipe.AddVolume(kv.Value, fp, 0);
+                receiver.AddTarget(kv.Value, fp);
             }
 
             if (!opts.OutputDir.Exists) opts.OutputDir.Create();
-            await pipe.RunAsync(items, token);
+            var builder = ProcessingEngine.Builder().UseProvider(new CvpFileDataProvider(items));
+            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek, integrityLevel));
+            if (isCompressed) builder.AddProcessor(new DecompressionProcessor());
+            var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
+            await pipeline.StartAsync(token);
 
             Logger?.LogInformation("提取完成: {FileCount} 文件", fileFragments.Count);
             return new ExtractResult
@@ -290,7 +280,7 @@ public sealed class CrypVolEngine
                 };
 
             var fileFragments = scanResult.Files;
-            var items = new List<WorkItem>();
+            var items = new List<BlockMetadata>();
             var volMap = new Dictionary<int, int>();
             var newVolIdx = 0;
 
@@ -300,12 +290,12 @@ public sealed class CrypVolEngine
                 var oldVol = Path.GetFileNameWithoutExtension(f.CvpFile.Name).Split('.').Last();
                 if (!int.TryParse(oldVol, out var ov)) ov = 0;
                 if (!volMap.TryGetValue(ov, out var nv)) volMap[ov] = nv = newVolIdx++;
-                items.Add(new WorkItem
+                items.Add(new BlockMetadata
                 {
                     RelativePath = relPath,
                     SourceFullPath = f.CvpFile.FullName,
-                    VolumeIndex = nv,
-                    Sequence = items.Count(i => i.VolumeIndex == nv),
+                    TargetIndex = nv,
+                    Sequence = items.Count(i => i.TargetIndex == nv),
                     SourceOffset = f.CvpOffset,
                     Length = f.BlockSize,
                     TotalFileSize = f.TotalFileSize,
@@ -332,20 +322,17 @@ public sealed class CrypVolEngine
             var (newMode, newCek) = opts.NewCredentials;
             Logger?.LogInformation("密钥轮换开始: {ItemCount} 块, {VolCount} 卷", items.Count, newVolIdx);
 
-            using var sourceReader = new CvpSourceReader();
-            var pipe = new SequentialPipeline(newMode is EncryptionMode.None
-                ? new ExtractTransform(cek, isCompressed, integrityLevel)
-                : new ConvertTransform(cek, newCek, integrityLevel))
-            {
-                Logger = Logger,
-                ReadBlockAsync = (item, ct) => sourceReader.ReadAsync(item, ct, Logger),
-                WriteVolumeAsync = (ctx, ct) =>
-                    CvpSink.WriteAsync(ctx, newMode is EncryptionMode.None ? null : newCek, ct, Logger)
-            };
+            var receiver = new CvpFileReciver(newMode is EncryptionMode.None ? null : newCek);
 
             for (var i = 0; i < newVolIdx; i++)
-                pipe.AddVolume(i, Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp"), 0);
-            await pipe.RunAsync(items, token);
+                receiver.AddTarget(i, Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp"));
+
+            var builder = ProcessingEngine.Builder()
+                .UseProvider(new CvpFileDataProvider(items));
+            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek, integrityLevel));
+            if (newMode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(newCek, integrityLevel));
+            var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
+            await pipeline.StartAsync(token);
 
             var volPaths = Enumerable.Range(0, newVolIdx)
                 .Select(i => Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp")).ToList();

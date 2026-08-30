@@ -1,8 +1,8 @@
 using System.CommandLine;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Engine;
-using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Helper;
+using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
 
 namespace CrypVol.Cli.Repair;
@@ -57,7 +57,7 @@ public static class RepairHelper
             creds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 3. Engine 修复
-        var engine = new CrypVolEngine
+        var engine = new CrypVolHelper
         {
             Logger = loggerFactory.CreateLogger("CrypVol")
         };

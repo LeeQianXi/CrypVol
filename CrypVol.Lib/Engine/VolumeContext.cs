@@ -1,6 +1,7 @@
 using System.Threading.Channels;
+using CrypVol.Lib.Engine.Models;
 
-namespace CrypVol.Lib.Pipeline;
+namespace CrypVol.Lib.Engine;
 
 /// <summary>
 ///     单个输出卷的运行时上下文。
@@ -17,8 +18,8 @@ public sealed class VolumeContext
     public long PreallocatedSize { get; set; }
 
     /// <summary>有序输出通道。容量=1，与 Route 形成反压，防止 Write 延迟时内存积压。</summary>
-    public Channel<ProcessedBlock> OutputChannel { get; } =
-        Channel.CreateBounded<ProcessedBlock>(new BoundedChannelOptions(1)
+    public Channel<DataBlock> OutputChannel { get; } =
+        Channel.CreateBounded<DataBlock>(new BoundedChannelOptions(1)
         {
             SingleReader = true,
             SingleWriter = true

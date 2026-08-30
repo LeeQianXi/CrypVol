@@ -1,8 +1,8 @@
 using System.CommandLine;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Engine;
-using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Helper;
+using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
 
 namespace CrypVol.Cli.Convert;
@@ -90,7 +90,7 @@ public static class ConvertHelper
             newCreds = new CvkCredentials(EncryptionMode.None, null!);
 
         // 4. Engine
-        var engine = new CrypVolEngine
+        var engine = new CrypVolHelper
         {
             Logger = loggerFactory.CreateLogger("CrypVol")
         };
