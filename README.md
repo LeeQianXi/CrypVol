@@ -28,6 +28,18 @@ cd CrypVol
 dotnet build -c Release
 ```
 
+本地发布 CLI 与 GUI：
+
+```bash
+bash scripts/publish-local.sh
+```
+
+默认输出为 `publish/local/linux-x64`。可传入目标目录与 RID：
+
+```bash
+bash scripts/publish-local.sh /opt/crypvol-publish linux-x64
+```
+
 开发环境需要 .NET SDK 10。CLI 项目为 `CrypVol.Cli`；构建后可通过 `dotnet run --project CrypVol.Cli -- <命令>` 使用。以下示例以已安装到 PATH 的 `crypvol` 表示。
 
 ```bash
