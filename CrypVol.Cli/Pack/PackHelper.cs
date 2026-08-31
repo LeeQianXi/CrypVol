@@ -24,6 +24,15 @@ public static class PackHelper
         }
 
         var outputDir = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
+        var mode = args.GetValue(CommandDefinition.Pack.Mode);
+        var keyFile = args.GetValue(CommandDefinition.Pack.KeyFile);
+        var publicKeys = args.GetValue(CommandDefinition.Pack.PublicKey)?.ToList() ?? [];
+
+        if (keyFile is null && mode == EncryptionMode.Asymmetric && publicKeys.Count == 0)
+        {
+            logger.LogWarning("参数错误：--mode Asymmetric 必须至少提供一个 --public-key；也可以改用 PlainKey 或 Password 模式。");
+            return 1;
+        }
 
         var prefix = args.GetValue(CommandDefinition.Pack.OutputPrefix);
         if (string.IsNullOrWhiteSpace(prefix))
@@ -96,8 +105,6 @@ public static class PackHelper
 
         // Pre-load/generate CEK
         CvkCredentials? creds;
-        var mode = args.GetValue(CommandDefinition.Pack.Mode);
-        var keyFile = args.GetValue(CommandDefinition.Pack.KeyFile);
         if (keyFile is not null)
         {
             try
@@ -105,7 +112,7 @@ public static class PackHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Pack.Password),
                     args.GetValue(CommandDefinition.Pack.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Pack.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Pack.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)
@@ -117,16 +124,9 @@ public static class PackHelper
         else
         {
             var password = args.GetValue(CommandDefinition.Pack.Password);
-            var publicKeys = args.GetValue(CommandDefinition.Pack.PublicKey)?.ToList() ?? [];
             if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
             {
                 logger.LogWarning("Password 模式需要 --password");
-                return 1;
-            }
-
-            if (mode == EncryptionMode.Asymmetric && publicKeys.Count == 0)
-            {
-                logger.LogWarning("Asymmetric 模式需要 --public-key");
                 return 1;
             }
 

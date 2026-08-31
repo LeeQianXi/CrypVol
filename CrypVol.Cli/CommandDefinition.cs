@@ -175,7 +175,7 @@ public static class CommandDefinition
                 Description =
                     """
                     指定已有 .cvk 密钥文件，直接使用其 CEK 加密数据。
-                    Password 模式的 CVK 仍须通过 --password 解封；Asymmetric 模式须提供 --privkey-key。
+                    Password 模式的 CVK 仍须通过 --password 解封；Asymmetric 模式会自动尝试 ~/.ssh 中的私钥，也可通过 --privkey-key 指定。
                     提供此选项时，--mode / --public-key / --comment 不参与新密钥创建。
                     不提供时，需通过 --mode 等选项配置新密钥的生成方式。
                     """,
@@ -222,7 +222,7 @@ public static class CommandDefinition
             {
                 Description =
                     """
-                    RSA 公钥文件（PEM 格式）。仅在未指定 --key-file 且 --mode Asymmetric 时生效。
+                    RSA 公钥文件（PEM 或 OpenSSH ssh-rsa 格式）。仅在未指定 --key-file 且 --mode Asymmetric 时生效。
                     可多次指定以支持多个接收者。
                     KeyID 默认为文件名（不含扩展名），用于标识密钥。
                     """,
@@ -405,7 +405,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "RSA 私钥文件路径（Asymmetric 模式必需）",
+                Description = "RSA 私钥文件路径（Asymmetric 模式会自动尝试 ~/.ssh；指定后优先使用）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -969,7 +969,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "当前 .cvk 的解密私钥（当前为 Asymmetric 模式时必需）",
+                Description = "当前 .cvk 的解密私钥（Asymmetric 模式会自动尝试 ~/.ssh；指定后优先使用）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -1117,7 +1117,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "解封目标 --key-file 的私钥（目标 CVK 为 Asymmetric 模式时必需）",
+                Description = "解封目标 --key-file 的私钥（Asymmetric 模式会自动尝试 ~/.ssh；指定后优先使用）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -1216,7 +1216,7 @@ public static class CommandDefinition
 
             PublicKey = new Option<IEnumerable<FileInfo>>("--public-key")
             {
-                Description = "RSA 公钥 PEM 文件（Asymmetric 模式必需）",
+                Description = "RSA 公钥文件（PEM 或 OpenSSH ssh-rsa；Asymmetric 模式必需）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 

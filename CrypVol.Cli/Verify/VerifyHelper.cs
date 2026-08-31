@@ -43,7 +43,7 @@ public static class VerifyHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Verify.Password),
                     args.GetValue(CommandDefinition.Verify.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)

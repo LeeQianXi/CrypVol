@@ -45,7 +45,7 @@ public static class ExtractHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Extract.Password),
                     args.GetValue(CommandDefinition.Extract.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Extract.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Extract.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)

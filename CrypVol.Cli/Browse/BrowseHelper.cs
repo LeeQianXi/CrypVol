@@ -45,7 +45,7 @@ public static class BrowseHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Browse.Password),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)

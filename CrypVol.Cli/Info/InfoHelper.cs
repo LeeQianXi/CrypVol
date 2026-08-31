@@ -30,7 +30,7 @@ public static class InfoHelper
             var document = await CvkLoader.LoadAsync(keyFile,
                 args.GetValue(CommandDefinition.Info.Password),
                 args.GetValue(CommandDefinition.Info.PrivkeyKey),
-                args.GetValue(CommandDefinition.Info.PrivkeyKeyPass), token);
+                args.GetValue(CommandDefinition.Info.PrivkeyKeyPass), token, logger);
 
             Console.WriteLine("状态: 已解封并验证");
             Console.WriteLine($"内容模式: {ModeLabel(document.EncryptionMode)} ({document.EncryptionMode})");

@@ -23,7 +23,7 @@ public static class RekeyHelper
             document = await CvkLoader.LoadAsync(cvkFile,
                 args.GetValue(CommandDefinition.Rekey.Password),
                 args.GetValue(CommandDefinition.Rekey.PrivkeyKey),
-                args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass), token);
+                args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass), token, logger);
         }
         catch (Exception ex)
         {

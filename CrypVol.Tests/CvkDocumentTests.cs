@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Volume;
+using Org.BouncyCastle.Crypto.Utilities;
+using Org.BouncyCastle.Security;
 using Xunit;
 
 namespace CrypVol.Tests;
@@ -68,6 +70,31 @@ public sealed class CvkDocumentTests
     }
 
     [Fact]
+    public async Task SshPrivateKeyDiscovery_OnlyReturnsPairedPrivateKeys()
+    {
+        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-ssh-{Guid.NewGuid()}"));
+        directory.Create();
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "id_rsa"), "private");
+            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "id_rsa.pub"), "public");
+            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "unpaired"), "private");
+            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "known_hosts"), "host");
+            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "config"), "config");
+
+            var candidates = SshPrivateKeyDiscovery.DiscoverPrivateKeys(directory).ToArray();
+
+            var candidate = Assert.Single(candidates);
+            Assert.Equal("id_rsa", candidate.Name);
+        }
+        finally
+        {
+            try { directory.Delete(true); }
+            catch { }
+        }
+    }
+
+    [Fact]
     public async Task LoadedPublicKeyRecipients_ArePreservedWithoutTheirPemFiles()
     {
         var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-recipients-{Guid.NewGuid()}"));
@@ -106,6 +133,42 @@ public sealed class CvkDocumentTests
             var final = await CvkLoader.LoadAsync(reduced, privateKeyFile: firstPrivate);
             Assert.Single(final.PublicKeyRecipients);
             Assert.Equal("first", final.PublicKeyRecipients[0].KeyId);
+        }
+        finally
+        {
+            try { directory.Delete(true); }
+            catch { }
+        }
+    }
+
+    [Fact]
+    public async Task OpenSshRsaKeyPair_CanCreateAndLoadAsymmetricDocument()
+    {
+        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-openssh-{Guid.NewGuid()}"));
+        directory.Create();
+        try
+        {
+            var publicKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa.pub"));
+            var privateKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa"));
+            using (var rsa = RSA.Create(2048))
+            {
+                var pair = DotNetUtilities.GetRsaKeyPair(rsa);
+                var publicBlob = OpenSshPublicKeyUtilities.EncodePublicKey(pair.Public);
+                var privateBlob = OpenSshPrivateKeyUtilities.EncodePrivateKey(pair.Private);
+                await File.WriteAllTextAsync(publicKey.FullName, $"ssh-rsa {Convert.ToBase64String(publicBlob)} alice@example.com");
+                await File.WriteAllTextAsync(privateKey.FullName,
+                    $"-----BEGIN OPENSSH PRIVATE KEY-----\n{Convert.ToBase64String(privateBlob)}\n-----END OPENSSH PRIVATE KEY-----\n");
+            }
+
+            var original = CvkDocument.CreateNew(EncryptionMode.Asymmetric);
+            original.AddPublicKey(publicKey);
+            var file = new FileInfo(Path.Combine(directory.FullName, "key.cvk"));
+            await original.WriteAsync(file);
+
+            var loaded = await CvkLoader.LoadAsync(file, privateKeyFile: privateKey);
+
+            Assert.Equal(original.Cek, loaded.Cek);
+            Assert.Equal("alice@example.com", Assert.Single(loaded.PublicKeyRecipients).KeyId);
         }
         finally
         {

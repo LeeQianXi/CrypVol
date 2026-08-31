@@ -43,7 +43,7 @@ public static class RepairHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Repair.Password),
                     args.GetValue(CommandDefinition.Repair.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)

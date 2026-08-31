@@ -112,7 +112,9 @@ crypvol browse ./archive/backup.0.cvp --format Json --output files.json
 crypvol verify ./archive/backup.0.cvp --repair-report damage-report.txt
 ```
 
-加密卷会自动尝试发现同目录、同前缀的 `.cvk`。若无法发现或需指定其他位置，请传入 `--key-file`；Password 模式配合 `--password`，Asymmetric 模式配合 `--privkey-key`，加密私钥另可使用 `--key-pass`。
+加密卷会自动尝试发现同目录、同前缀的 `.cvk`。若无法发现或需指定其他位置，请传入 `--key-file`；Password 模式配合 `--password`。Asymmetric 模式会自动尝试当前用户 `~/.ssh` 中与同名 `.pub` 文件成对的私钥，也可用 `--privkey-key` 明确指定；加密私钥另可使用 `--key-pass`。
+
+Asymmetric 模式仅使用 RSA：公钥支持 PEM 与 OpenSSH 的 `ssh-rsa` 单行格式；私钥支持 PKCS#1/PKCS#8 PEM、OpenSSH（含密码保护）、ssh.com 和 PuTTY PPK 格式。
 
 ### 3. 修复
 

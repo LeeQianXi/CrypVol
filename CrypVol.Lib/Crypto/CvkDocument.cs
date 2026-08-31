@@ -30,10 +30,10 @@ public sealed class CvkDocument
     /// <summary>密码封装时用于派生密钥的密码。</summary>
     public string? Password { get; set; }
 
-    /// <summary>已存在的公钥接收者槽位；可在缺少原始 PEM 文件时保留或删除。</summary>
+    /// <summary>已存在的公钥接收者槽位；可在缺少原始公钥文件时保留或删除。</summary>
     public IList<CvkPublicKeyRecipient> PublicKeyRecipients { get; } = new List<CvkPublicKeyRecipient>();
 
-    /// <summary>待新增的 PEM 公钥文件；构建时会生成新的接收者槽位。</summary>
+    /// <summary>待新增的 RSA 公钥文件；构建时会生成新的接收者槽位。</summary>
     public IReadOnlyList<FileInfo> NewPublicKeyFiles => _newPublicKeyFiles;
 
     /// <summary>可选注释。</summary>
@@ -48,7 +48,7 @@ public sealed class CvkDocument
     }
 
     /// <summary>添加一个公钥接收者。</summary>
-    /// <param name="publicKeyFile">PEM 公钥文件。</param>
+    /// <param name="publicKeyFile">PEM 或 OpenSSH <c>ssh-rsa</c> 公钥文件。</param>
     public void AddPublicKey(FileInfo publicKeyFile)
     {
         ArgumentNullException.ThrowIfNull(publicKeyFile);
@@ -59,7 +59,7 @@ public sealed class CvkDocument
     }
 
     /// <summary>移除一个公钥接收者。</summary>
-    /// <param name="publicKeyFile">要移除的 PEM 公钥文件。</param>
+    /// <param name="publicKeyFile">要移除的公钥文件。</param>
     /// <returns>是否移除了接收者。</returns>
     public bool RemovePublicKey(FileInfo publicKeyFile)
     {
@@ -208,15 +208,14 @@ public sealed class CvkDocument
         var dek = _publicKeyDek ??= RandomNumberGenerator.GetBytes(32);
         foreach (var file in _newPublicKeyFiles)
         {
-            using var rsa = RSA.Create();
-            rsa.ImportFromPem(File.ReadAllText(file.FullName));
-            var keyId = Path.GetFileNameWithoutExtension(file.Name);
+            using var rsa = RsaKeyLoader.LoadPublicKey(File.ReadAllText(file.FullName));
+            var keyId = CvkKeyIdResolver.Resolve(file);
             recipients[keyId] = new CvkPublicKeyRecipient(keyId,
                 rsa.Encrypt(dek, RSAEncryptionPadding.OaepSHA256));
         }
 
         if (recipients.Count == 0)
-            throw new Exception("至少需要一个接收者公钥。");
+            throw new CvkValidationException("Asymmetric 模式必须提供至少一个公钥接收者。请指定 --public-key，或改用其他 --mode。");
         if (recipients.Count > ushort.MaxValue)
             throw new InvalidOperationException("接收者数量不能超过 65535。");
 

@@ -44,7 +44,7 @@ public static class ConvertHelper
                 var cvk = await CvkLoader.LoadAsync(oldKeyFile,
                     args.GetValue(CommandDefinition.Convert.OldPassword),
                     args.GetValue(CommandDefinition.Convert.OldPrivkey),
-                    args.GetValue(CommandDefinition.Convert.OldPrivkeyPass), token);
+                    args.GetValue(CommandDefinition.Convert.OldPrivkeyPass), token, logger);
                 oldCreds = cvk.ToCredentials();
             }
             catch (Exception ex)
@@ -69,7 +69,7 @@ public static class ConvertHelper
             var cvk = await CvkLoader.LoadAsync(newKeyFile,
                 args.GetValue(CommandDefinition.Convert.Password),
                 args.GetValue(CommandDefinition.Convert.PrivkeyKey),
-                args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass), token);
+                args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass), token, logger);
             newCreds = cvk.ToCredentials();
         }
         catch (Exception ex)
