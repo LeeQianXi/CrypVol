@@ -41,6 +41,6 @@ public sealed class DataBlock : IDisposable
     public void Dispose()
     {
         var buffer = Interlocked.Exchange(ref _buffer, null);
-        if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer);
+        if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
     }
 }

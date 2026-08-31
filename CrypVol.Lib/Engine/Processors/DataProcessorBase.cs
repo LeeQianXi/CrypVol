@@ -64,6 +64,8 @@ public abstract class DataProcessorBase : IDataProcessor
                 try
                 {
                     output = await ProcessBlockAsync(block, cancellationToken);
+                    if (ReferenceEquals(output, block))
+                        throw new InvalidOperationException("Processor 不能将输入 DataBlock 作为输出转交。");
                     if (output is not null)
                     {
                         await writer.WriteAsync(output, cancellationToken);
