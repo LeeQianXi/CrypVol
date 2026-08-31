@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using CrypVol.Lib.Volume;
 using Konscious.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 
@@ -142,6 +141,7 @@ public static class CvkLoader
             foreach (var recipient in recipients)
                 try { return rsa.Decrypt(recipient.EncryptedDek, RSAEncryptionPadding.OaepSHA256); }
                 catch (CryptographicException) { }
+
             return null;
         }
         catch (Exception exception) when (suppressCandidateErrors && IsUnreadableOrUnsupportedKey(exception))

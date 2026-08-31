@@ -1,8 +1,5 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Volume;
-using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Info;
 
@@ -21,7 +18,7 @@ public static class InfoHelper
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "无法读取 CVK 头");
+            await Console.Error.WriteLineAsync($"无法读取 CVK 头: {ex.Message}");
             return 1;
         }
 
@@ -47,7 +44,7 @@ public static class InfoHelper
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "无法解封 CVK");
+            await Console.Error.WriteLineAsync($"无法解封 CVK: {ex.Message}");
             return 1;
         }
 

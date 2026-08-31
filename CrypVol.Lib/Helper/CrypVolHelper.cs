@@ -52,12 +52,12 @@ public sealed class CrypVolHelper
                 };
             var chunkSize = (int)Math.Min(checked((long)opts.ChunkSizeMb * 1024 * 1024), maxChunkSize);
 
-            var compressing = mode != EncryptionMode.None && opts.EnableCompression;
+            var compressing = opts.EnableCompression;
             Logger?.LogInformation(
                 "Pack 开始: 流式块大小 {ChunkSize} 字节, {FileCount} 文件, {TotalBytes} 字节, 加密={Encrypted}, 压缩={Compressed}",
                 chunkSize, opts.SourceFiles.Count, opts.SourceFiles.Sum(f => f.Length),
                 mode != EncryptionMode.None ? "是" : "否",
-                compressing ? $"是 (L{opts.CompressionLevel})" : "否");
+                compressing ? $"是 ({opts.CompressionLevel})" : "否");
 
             var encryptHeaders = mode != EncryptionMode.None;
 
@@ -490,8 +490,7 @@ public sealed class CrypVolHelper
                     }
 
                     if (observer.TryGetCaptured(EngineRecordKeys.FileIntegrityFailures,
-                            out List<string>? failedPaths) && failedPaths is not null)
-                    {
+                            out var failedPaths) && failedPaths is not null)
                         foreach (var path in failedPaths)
                         {
                             var last = fileFragments[path][^1];
@@ -505,7 +504,6 @@ public sealed class CrypVolHelper
                                 BlockSize = last.BlockSize
                             });
                         }
-                    }
                 }
             }
 

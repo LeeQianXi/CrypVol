@@ -65,16 +65,24 @@ public abstract class DataProviderBase : IDataProvider
         finally
         {
             writer.TryComplete(error);
+            if (error is null) Engine.LogDebug("Provider {Provider} 已完成输出通道", GetType().Name);
+            else
+                Engine.LogDebug("Provider {Provider} 因 {ExceptionType} 完成输出通道", GetType().Name,
+                    error.GetType().Name);
         }
     }
 
     /// <summary>写出一个数据块；反压由 Engine 创建的有界通道提供。</summary>
     /// <param name="block">待写出的数据块。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    protected Task WriteAsync(DataBlock block, CancellationToken cancellationToken = default)
+    protected async Task WriteAsync(DataBlock block, CancellationToken cancellationToken = default)
     {
-        return (_writer ?? throw new InvalidOperationException("Provider 尚未绑定输出通道。"))
-            .WriteAsync(block, cancellationToken).AsTask();
+        Engine.LogTrace(
+            "Provider {Provider} 输出块: {Path}, Seq={Sequence}, Target={TargetIndex}, Offset={Offset}, Length={Length}, Flags=0x{Flags:X2}",
+            GetType().Name, block.Metadata.RelativePath, block.Metadata.Sequence, block.Metadata.TargetIndex,
+            block.Metadata.SourceOffset, block.Length, block.Metadata.Flags);
+        await (_writer ?? throw new InvalidOperationException("Provider 尚未绑定输出通道."))
+            .WriteAsync(block, cancellationToken);
     }
 
     /// <summary>Engine 注入后初始化阶段私有状态。</summary>

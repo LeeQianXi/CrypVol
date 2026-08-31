@@ -42,7 +42,7 @@ public sealed class CvpFileDataProvider : DataProviderBase
             }
         }
 
-        Engine.LogTrace("CVP 数据提供完成: {BlockCount} 块", _blocks.Count);
+        Engine.LogDebug("CVP 数据提供完成: {BlockCount} 块", _blocks.Count);
     }
 
     /// <inheritdoc />

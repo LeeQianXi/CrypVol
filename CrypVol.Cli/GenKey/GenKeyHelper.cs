@@ -1,8 +1,5 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Volume;
-using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.GenKey;
 
@@ -15,12 +12,10 @@ public static class GenKeyHelper
         var mode = args.GetValue(CommandDefinition.GenKey.Mode);
         var password = args.GetValue(CommandDefinition.GenKey.Password);
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
-        var logger = Program.LoggerFactory.CreateLogger(nameof(GenKeyHelper));
-
         // 1. 快速校验
         if (mode == EncryptionMode.None)
         {
-            logger.LogWarning("genkey 不支持 None 模式");
+            await Console.Error.WriteLineAsync("genkey 不支持 None 模式");
             return 1;
         }
 
@@ -29,19 +24,19 @@ public static class GenKeyHelper
                                             name.Contains(Path.DirectorySeparatorChar)
                                             || name.Contains(Path.AltDirectorySeparatorChar))
         {
-            logger.LogWarning("密钥名称应为不含扩展名的合法文件名");
+            await Console.Error.WriteLineAsync("密钥名称应为不含扩展名的合法文件名");
             return 1;
         }
 
         if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
         {
-            logger.LogWarning("Password 模式需要 --password");
+            await Console.Error.WriteLineAsync("Password 模式需要 --password");
             return 1;
         }
 
         if (mode == EncryptionMode.Asymmetric && !pubKeys.Any())
         {
-            logger.LogWarning("Asymmetric 模式需要 --public-key");
+            await Console.Error.WriteLineAsync("Asymmetric 模式需要 --public-key");
             return 1;
         }
 
@@ -54,13 +49,12 @@ public static class GenKeyHelper
             cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
             foreach (var publicKey in pubKeys) cvk.AddPublicKey(publicKey);
             await cvk.WriteAsync(new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), token);
-            logger.LogInformation("密钥已生成: {KeyFile} ({EncryptionMode})",
-                Path.Combine(outputDir.FullName, name + ".cvk"), mode);
+            Console.WriteLine($"密钥已生成: {Path.Combine(outputDir.FullName, name + ".cvk")} ({mode})");
             return 0;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "生成密钥失败");
+            await Console.Error.WriteLineAsync($"生成密钥失败: {ex.Message}");
             return 1;
         }
     }

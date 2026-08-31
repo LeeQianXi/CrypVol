@@ -1,8 +1,5 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Volume;
-using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Rekey;
 
@@ -27,32 +24,32 @@ public static class RekeyHelper
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "无法加载 CVK");
+            await Console.Error.WriteLineAsync($"无法加载 CVK: {ex.Message}");
             return 1;
         }
 
         // 2. 在任何写入前完成参数校验并构建内容，避免无效参数造成备份或覆写。
         if (toMode is EncryptionMode.None || !Enum.IsDefined(toMode))
         {
-            logger.LogWarning("rekey 的目标模式必须是 PlainKey、Password 或 Asymmetric。");
+            await Console.Error.WriteLineAsync("rekey 的目标模式必须是 PlainKey、Password 或 Asymmetric。");
             return 1;
         }
 
         if (toMode == EncryptionMode.Password && string.IsNullOrWhiteSpace(newPassword))
         {
-            logger.LogWarning("Password 模式需要 --new-password。");
+            await Console.Error.WriteLineAsync("Password 模式需要 --new-password。");
             return 1;
         }
 
         if (toMode != EncryptionMode.Password && !string.IsNullOrWhiteSpace(newPassword))
         {
-            logger.LogWarning("--new-password 仅可与 --to-mode Password 一起使用。");
+            await Console.Error.WriteLineAsync("--new-password 仅可与 --to-mode Password 一起使用。");
             return 1;
         }
 
         if (toMode != EncryptionMode.Asymmetric && publicKeys.Count > 0)
         {
-            logger.LogWarning("--public-key 仅可与 --to-mode Asymmetric 一起使用。");
+            await Console.Error.WriteLineAsync("--public-key 仅可与 --to-mode Asymmetric 一起使用。");
             return 1;
         }
 
@@ -62,7 +59,7 @@ public static class RekeyHelper
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
         if (!sameAsSource && outputFile.Exists)
         {
-            logger.LogWarning("输出文件已存在：{OutputFile}", outputFile.FullName);
+            await Console.Error.WriteLineAsync($"输出文件已存在：{outputFile.FullName}");
             return 1;
         }
 
@@ -82,7 +79,7 @@ public static class RekeyHelper
                 foreach (var publicKey in publicKeys) document.AddPublicKey(publicKey);
                 if (document.PublicKeyRecipients.Count == 0 && document.NewPublicKeyFiles.Count == 0)
                 {
-                    logger.LogWarning("Asymmetric 模式至少需要一个现有或通过 --public-key 指定的接收者。");
+                    await Console.Error.WriteLineAsync("Asymmetric 模式至少需要一个现有或通过 --public-key 指定的接收者。");
                     return 1;
                 }
 
@@ -96,7 +93,7 @@ public static class RekeyHelper
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "无法构建 CVK");
+            await Console.Error.WriteLineAsync($"无法构建 CVK: {ex.Message}");
             return 1;
         }
 
@@ -106,7 +103,7 @@ public static class RekeyHelper
         {
             if (backupFile.Exists)
             {
-                logger.LogWarning("备份文件已存在，拒绝覆盖：{BackupFile}", backupFile.FullName);
+                await Console.Error.WriteLineAsync($"备份文件已存在，拒绝覆盖：{backupFile.FullName}");
                 return 1;
             }
 
@@ -116,7 +113,7 @@ public static class RekeyHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "无法创建备份");
+                await Console.Error.WriteLineAsync($"无法创建备份: {ex.Message}");
                 return 1;
             }
         }
@@ -124,7 +121,7 @@ public static class RekeyHelper
         var outputDirectory = outputFile.Directory;
         if (outputDirectory is null)
         {
-            logger.LogWarning("输出文件路径无效。");
+            await Console.Error.WriteLineAsync("输出文件路径无效。");
             return 1;
         }
 
@@ -137,7 +134,7 @@ public static class RekeyHelper
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "无法写入 CVK");
+            await Console.Error.WriteLineAsync($"无法写入 CVK: {ex.Message}");
             return 1;
         }
         finally
@@ -145,7 +142,7 @@ public static class RekeyHelper
             if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
         }
 
-        logger.LogInformation("密钥已重新封装 → {OutputFile}", outputFile.FullName);
+        Console.WriteLine($"密钥已重新封装 → {outputFile.FullName}");
         return 0;
     }
 }

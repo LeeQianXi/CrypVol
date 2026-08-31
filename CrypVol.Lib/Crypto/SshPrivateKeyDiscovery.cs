@@ -44,6 +44,6 @@ public static class SshPrivateKeyDiscovery
     private static bool IsPairedPrivateKey(string fileName, IReadOnlySet<string> fileNames)
     {
         return !fileName.EndsWith(".pub", StringComparison.OrdinalIgnoreCase)
-            && fileNames.Contains($"{fileName}.pub");
+               && fileNames.Contains($"{fileName}.pub");
     }
 }

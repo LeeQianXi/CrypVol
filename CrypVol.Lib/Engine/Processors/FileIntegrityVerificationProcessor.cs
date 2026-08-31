@@ -45,7 +45,7 @@ public sealed class FileIntegrityVerificationProcessor : DataProcessorBase
             {
                 var error = new InvalidDataException($"文件 SHA-256 校验失败: {path}");
                 if (!_continueOnFailure) throw error;
-                if (!Engine.TryGetRecord(EngineRecordKeys.FileIntegrityFailures, out List<string>? failures) || failures is null)
+                if (!Engine.TryGetRecord(EngineRecordKeys.FileIntegrityFailures, out var failures) || failures is null)
                     throw new InvalidOperationException("File 完整性失败记录未初始化。", error);
                 failures.Add(path);
                 Engine.LogWarning("文件 SHA-256 校验失败: {Path}", path);

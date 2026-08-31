@@ -1,7 +1,5 @@
 using System.Security.Cryptography;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Volume;
 using Org.BouncyCastle.Crypto.Utilities;
 using Org.BouncyCastle.Security;
 using Xunit;
@@ -155,7 +153,8 @@ public sealed class CvkDocumentTests
                 var pair = DotNetUtilities.GetRsaKeyPair(rsa);
                 var publicBlob = OpenSshPublicKeyUtilities.EncodePublicKey(pair.Public);
                 var privateBlob = OpenSshPrivateKeyUtilities.EncodePrivateKey(pair.Private);
-                await File.WriteAllTextAsync(publicKey.FullName, $"ssh-rsa {Convert.ToBase64String(publicBlob)} alice@example.com");
+                await File.WriteAllTextAsync(publicKey.FullName,
+                    $"ssh-rsa {Convert.ToBase64String(publicBlob)} alice@example.com");
                 await File.WriteAllTextAsync(privateKey.FullName,
                     $"-----BEGIN OPENSSH PRIVATE KEY-----\n{Convert.ToBase64String(privateBlob)}\n-----END OPENSSH PRIVATE KEY-----\n");
             }

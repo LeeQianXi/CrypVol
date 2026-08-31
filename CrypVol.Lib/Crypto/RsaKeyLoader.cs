@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using Org.BouncyCastle.Crypto.Parameters;
@@ -50,7 +51,7 @@ public static class RsaKeyLoader
 
         try
         {
-            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(keyText), writable: false);
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(keyText), false);
             using var privateKeyFile = new PrivateKeyFile(stream, password);
             if (privateKeyFile.Key is not SshRsaKey sshRsaKey)
                 throw new CryptographicException("私钥不是 RSA 密钥。");
@@ -169,8 +170,8 @@ public static class RsaKeyLoader
         return rsa;
     }
 
-    private static byte[] ToUnsignedBigEndian(System.Numerics.BigInteger value)
+    private static byte[] ToUnsignedBigEndian(BigInteger value)
     {
-        return value.ToByteArray(isUnsigned: true, isBigEndian: true);
+        return value.ToByteArray(true, true);
     }
 }

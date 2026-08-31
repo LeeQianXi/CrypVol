@@ -5,9 +5,9 @@ namespace CrypVol.Lib.Engine;
 /// <summary>通过 Engine Hook 观察一次运行并捕获指定运行记录。</summary>
 public sealed class ProcessingEngineObserver : IDisposable
 {
-    private readonly Dictionary<string, object?> _records = new(StringComparer.Ordinal);
-    private readonly List<Action<ProcessingEngine>> _recordCaptures = [];
     private readonly ProcessingEngine _engine;
+    private readonly List<Action<ProcessingEngine>> _recordCaptures = [];
+    private readonly Dictionary<string, object?> _records = new(StringComparer.Ordinal);
 
     /// <summary>创建并立即订阅引擎事件的观察器。</summary>
     /// <param name="engine">被观察的已构造引擎。</param>
@@ -29,6 +29,15 @@ public sealed class ProcessingEngineObserver : IDisposable
     /// <summary>失败 Hook 捕获的异常。</summary>
     public Exception? Exception { get; private set; }
 
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _engine.Started -= OnStarted;
+        _engine.Completed -= OnCompleted;
+        _engine.Failed -= OnFailed;
+        _engine.Stopped -= OnStopped;
+    }
+
     /// <summary>在 Completed Hook 中捕获一个强类型运行记录。</summary>
     /// <typeparam name="T">记录值类型。</typeparam>
     /// <param name="key">待捕获的记录键。</param>
@@ -37,7 +46,7 @@ public sealed class ProcessingEngineObserver : IDisposable
         ArgumentNullException.ThrowIfNull(key);
         _recordCaptures.Add(engine =>
         {
-            if (engine.TryGetRecord(key, out T? value)) _records[key.Name] = value;
+            if (engine.TryGetRecord(key, out var value)) _records[key.Name] = value;
         });
     }
 
@@ -65,23 +74,23 @@ public sealed class ProcessingEngineObserver : IDisposable
         return false;
     }
 
-    /// <inheritdoc />
-    public void Dispose()
+    private void OnStarted(object? sender, ProcessingEngineEventArgs eventArgs)
     {
-        _engine.Started -= OnStarted;
-        _engine.Completed -= OnCompleted;
-        _engine.Failed -= OnFailed;
-        _engine.Stopped -= OnStopped;
+        StartedAt = DateTimeOffset.UtcNow;
     }
-
-    private void OnStarted(object? sender, ProcessingEngineEventArgs eventArgs) => StartedAt = DateTimeOffset.UtcNow;
 
     private void OnCompleted(object? sender, ProcessingEngineEventArgs eventArgs)
     {
         foreach (var capture in _recordCaptures) capture(_engine);
     }
 
-    private void OnFailed(object? sender, ProcessingEngineEventArgs eventArgs) => Exception = eventArgs.Exception;
+    private void OnFailed(object? sender, ProcessingEngineEventArgs eventArgs)
+    {
+        Exception = eventArgs.Exception;
+    }
 
-    private void OnStopped(object? sender, ProcessingEngineEventArgs eventArgs) => StoppedAt = DateTimeOffset.UtcNow;
+    private void OnStopped(object? sender, ProcessingEngineEventArgs eventArgs)
+    {
+        StoppedAt = DateTimeOffset.UtcNow;
+    }
 }

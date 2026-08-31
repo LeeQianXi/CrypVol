@@ -52,12 +52,13 @@ public sealed class SourceFileDataProvider : DataProviderBase
     {
         foreach (var file in _files)
             await ProduceFileAsync(file, cancellationToken);
-        Engine.LogTrace("源文件数据提供完成: {FileCount} 文件，最后卷 {VolumeIndex}", _files.Count, _currentVolume);
+        Engine.LogDebug("源文件数据提供完成: {FileCount} 文件，最后卷 {VolumeIndex}", _files.Count, _currentVolume);
     }
 
     private async Task ProduceFileAsync(FileInfo file, CancellationToken cancellationToken)
     {
         var relativePath = Path.GetRelativePath(_sourceDirectory.FullName, file.FullName);
+        Engine.LogDebug("源文件读取开始: {Path}, {Length} 字节", relativePath, file.Length);
         if (Encoding.UTF8.GetByteCount(relativePath) > 230)
             throw new InvalidOperationException($"文件相对路径超过 CVP 头限制: {relativePath}");
 
@@ -65,6 +66,7 @@ public sealed class SourceFileDataProvider : DataProviderBase
         {
             await WriteBlockAsync(ArrayPool<byte>.Shared.Rent(0), 0, file, relativePath, 0, true, true,
                 SHA256.HashData([]), cancellationToken);
+            Engine.LogDebug("源文件读取完成: {Path}, 0 字节", relativePath);
             return;
         }
 
@@ -94,6 +96,8 @@ public sealed class SourceFileDataProvider : DataProviderBase
                 if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer);
             }
         }
+
+        Engine.LogDebug("源文件读取完成: {Path}, {Length} 字节", relativePath, file.Length);
     }
 
     private async Task WriteBlockAsync(byte[] buffer, int length, FileInfo file, string relativePath, long offset,

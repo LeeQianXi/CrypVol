@@ -35,7 +35,7 @@ public sealed class DecompressionProcessor : DataProcessorBase
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(temp, clearArray: true);
+            ArrayPool<byte>.Shared.Return(temp, true);
         }
     }
 }

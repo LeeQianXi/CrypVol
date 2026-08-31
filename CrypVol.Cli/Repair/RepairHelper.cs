@@ -1,5 +1,4 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -23,7 +22,7 @@ public static class RepairHelper
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            logger.LogWarning("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 1;
         }
 
@@ -48,7 +47,7 @@ public static class RepairHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "密钥加载失败");
+                await Console.Error.WriteLineAsync($"密钥加载失败: {ex.Message}");
                 return 1;
             }
         else
@@ -70,19 +69,19 @@ public static class RepairHelper
 
         if (!result.Success)
         {
-            logger.LogError("修复失败: {ResultError}", result.Error);
+            await Console.Error.WriteLineAsync($"修复失败: {result.Error}");
             return 1;
         }
 
         if (result.RepairedBlocks == 0)
         {
-            logger.LogInformation("未发现损坏块，无需修复");
+            Console.WriteLine("未发现损坏块，无需修复");
         }
         else
         {
-            logger.LogInformation("修复损坏块: {RepairedBlockCount}", result.RepairedBlocks);
+            Console.WriteLine($"修复损坏块: {result.RepairedBlocks}");
             foreach (var v in result.RepairedVolumes)
-                logger.LogInformation("修复卷: {VolumePath}", v);
+                Console.WriteLine($"修复卷: {v}");
         }
 
         return 0;

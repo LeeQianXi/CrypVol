@@ -1,7 +1,6 @@
-using System.Security.Cryptography;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -77,6 +76,8 @@ public class CrypVolEngineTests : IDisposable
         Assert.True(packResult.Success, packResult.Error);
         Assert.Single(packResult.VolumePaths);
         Assert.True(File.Exists(packResult.VolumePaths[0]));
+        var volumeBytes = await File.ReadAllBytesAsync(packResult.VolumePaths[0]);
+        Assert.NotEqual(0, volumeBytes[12] & (byte)FileEntryHeaderFlagsEnum.Compressed);
 
         var extractOpts = new ExtractOptions
         {

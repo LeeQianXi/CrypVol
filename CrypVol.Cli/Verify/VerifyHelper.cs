@@ -1,5 +1,4 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -23,7 +22,7 @@ public static class VerifyHelper
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            logger.LogWarning("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 2;
         }
 
@@ -48,7 +47,7 @@ public static class VerifyHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "密钥加载失败");
+                await Console.Error.WriteLineAsync($"密钥加载失败: {ex.Message}");
                 return 2;
             }
         else
@@ -70,7 +69,7 @@ public static class VerifyHelper
 
         if (!result.Success)
         {
-            logger.LogError("校验失败: {ResultError}", result.Error);
+            await Console.Error.WriteLineAsync($"校验失败: {result.Error}");
             return 2;
         }
 
@@ -101,7 +100,7 @@ public static class VerifyHelper
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "无法写入损坏报告: {RepairReportPath}", repairReport.FullName);
+                    await Console.Error.WriteLineAsync($"无法写入损坏报告 {repairReport.FullName}: {ex.Message}");
                     return 2;
                 }
 

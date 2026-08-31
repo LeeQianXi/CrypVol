@@ -76,7 +76,7 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
                             Directory.CreateDirectory(directory);
                         stream = new FileStream(context.OutputPath, FileMode.Create, FileAccess.Write,
                             FileShare.None, 4096 * 16, FileOptions.SequentialScan);
-                        Engine.LogTrace("创建卷: {Path}", context.OutputPath);
+                        Engine.LogDebug("创建卷: {Path}", context.OutputPath);
                     }
 
                     integrityLevel = (IntegrityLevel)(block.Metadata.Flags >> 3 & 3);
@@ -124,7 +124,7 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
                 await stream.WriteAsync(footer, cancellationToken);
             }
 
-            Engine.LogTrace("卷写入完成: {Path} {Blocks}块 {Bytes}字节",
+            Engine.LogDebug("卷写入完成: {Path} {Blocks}块 {Bytes}字节",
                 context.OutputPath, totalBlocks, position);
         }
         finally

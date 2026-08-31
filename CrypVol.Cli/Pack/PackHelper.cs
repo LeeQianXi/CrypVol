@@ -1,11 +1,8 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;
-using CrypVol.Lib.Volume;
-using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Pack;
 
@@ -19,7 +16,7 @@ public static class PackHelper
         var inputPath = args.GetRequiredValue(CommandDefinition.Pack.InputPath);
         if (!inputPath.Exists)
         {
-            logger.LogWarning("源路径不存在");
+            await Console.Error.WriteLineAsync("源路径不存在");
             return 1;
         }
 
@@ -30,27 +27,27 @@ public static class PackHelper
 
         if (keyFile is null && mode == EncryptionMode.Asymmetric && publicKeys.Count == 0)
         {
-            logger.LogWarning("参数错误：--mode Asymmetric 必须至少提供一个 --public-key；也可以改用 PlainKey 或 Password 模式。");
+            await Console.Error.WriteLineAsync("参数错误：--mode Asymmetric 必须至少提供一个 --public-key；也可以改用 PlainKey 或 Password 模式。");
             return 1;
         }
 
         var prefix = args.GetValue(CommandDefinition.Pack.OutputPrefix);
         if (string.IsNullOrWhiteSpace(prefix))
         {
-            logger.LogWarning("无效前缀");
+            await Console.Error.WriteLineAsync("无效前缀");
             return 1;
         }
 
         if (prefix.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || prefix.Contains(Path.DirectorySeparatorChar)
                                                                    || prefix.Contains(Path.AltDirectorySeparatorChar))
         {
-            logger.LogWarning("输出前缀不能包含路径分隔符或非法文件名字符");
+            await Console.Error.WriteLineAsync("输出前缀不能包含路径分隔符或非法文件名字符");
             return 1;
         }
 
         if (args.GetValue(CommandDefinition.Pack.VolumeSize) == 0)
         {
-            logger.LogWarning("卷切分目标必须大于 0 MiB");
+            await Console.Error.WriteLineAsync("卷切分目标必须大于 0 MiB");
             return 1;
         }
 
@@ -80,14 +77,14 @@ public static class PackHelper
 
         if (files.Count == 0)
         {
-            logger.LogWarning("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 1;
         }
 
         var chunkSizeMb = args.GetValue(CommandDefinition.Pack.ChunkSize);
         if (chunkSizeMb is < 1 or > 64)
         {
-            logger.LogWarning("块大小必须在 1–64 MiB 之间");
+            await Console.Error.WriteLineAsync("块大小必须在 1–64 MiB 之间");
             return 1;
         }
 
@@ -117,7 +114,7 @@ public static class PackHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "无法加载密钥文件");
+                await Console.Error.WriteLineAsync($"无法加载密钥文件: {ex.Message}");
                 return 1;
             }
         }
@@ -126,7 +123,7 @@ public static class PackHelper
             var password = args.GetValue(CommandDefinition.Pack.Password);
             if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
             {
-                logger.LogWarning("Password 模式需要 --password");
+                await Console.Error.WriteLineAsync("Password 模式需要 --password");
                 return 1;
             }
 
@@ -144,7 +141,7 @@ public static class PackHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "创建密钥文件失败");
+                await Console.Error.WriteLineAsync($"创建密钥文件失败: {ex.Message}");
                 return 1;
             }
         }
@@ -155,7 +152,7 @@ public static class PackHelper
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "无法创建输出目录");
+            await Console.Error.WriteLineAsync($"无法创建输出目录: {ex.Message}");
             return 1;
         }
 
@@ -171,8 +168,7 @@ public static class PackHelper
             OutputPrefix = prefix,
             VolumeSizeMb = args.GetValue(CommandDefinition.Pack.VolumeSize),
             ChunkSizeMb = chunkSizeMb,
-            EnableCompression = args.GetValue(CommandDefinition.Pack.Compress) &&
-                                !args.GetValue(CommandDefinition.Pack.NoCompress),
+            EnableCompression = !args.GetValue(CommandDefinition.Pack.NoCompress),
             CompressionLevel = args.GetValue(CommandDefinition.Pack.CompressionLevel),
             IntegrityLevel = args.GetValue(CommandDefinition.Pack.Integrity),
             Credentials = creds
@@ -180,12 +176,11 @@ public static class PackHelper
 
         if (!result.Success)
         {
-            logger.LogError("打包失败: {ResultError}", result.Error);
+            await Console.Error.WriteLineAsync($"打包失败: {result.Error}");
             return 1;
         }
 
-        logger.LogInformation("打包完成：{VolumeCount} 个卷 → {OutputDirectory}", result.VolumeCount,
-            outputDir.FullName);
+        Console.WriteLine($"打包完成：{result.VolumeCount} 个卷 → {outputDir.FullName}");
         return 0;
     }
 }

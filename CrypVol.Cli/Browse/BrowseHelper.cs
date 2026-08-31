@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.Text;
 using System.Text.Json;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -26,7 +25,7 @@ public static class BrowseHelper
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            logger.LogWarning("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 1;
         }
 
@@ -50,7 +49,7 @@ public static class BrowseHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "无法加载密钥");
+                await Console.Error.WriteLineAsync($"无法加载密钥: {ex.Message}");
                 return 1;
             }
         else
@@ -70,7 +69,7 @@ public static class BrowseHelper
         }, token);
         if (!result.Success)
         {
-            logger.LogWarning("错误: {ResultError}", result.Error);
+            await Console.Error.WriteLineAsync($"错误: {result.Error}");
             return 1;
         }
 
@@ -85,7 +84,7 @@ public static class BrowseHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "无法写入输出文件");
+                await Console.Error.WriteLineAsync($"无法写入输出文件: {ex.Message}");
                 return 1;
             }
         else

@@ -1,5 +1,4 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -25,7 +24,7 @@ public static class ExtractHelper
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            logger.LogWarning("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 1;
         }
 
@@ -50,7 +49,7 @@ public static class ExtractHelper
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "无法加载密钥文件");
+                await Console.Error.WriteLineAsync($"无法加载密钥文件: {ex.Message}");
                 return 1;
             }
         else
@@ -73,12 +72,11 @@ public static class ExtractHelper
 
         if (!result.Success)
         {
-            logger.LogError("提取失败: {ResultError}", result.Error);
+            await Console.Error.WriteLineAsync($"提取失败: {result.Error}");
             return 1;
         }
 
-        logger.LogInformation("提取完成：{FileCount} 个文件 → {OutputDirectory}", result.FileCount,
-            outputDir.FullName);
+        Console.WriteLine($"提取完成：{result.FileCount} 个文件 → {outputDir.FullName}");
         return 0;
     }
 }

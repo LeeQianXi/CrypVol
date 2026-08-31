@@ -9,7 +9,6 @@ using CrypVol.Cli.Pack;
 using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
@@ -93,7 +92,6 @@ public static class CommandDefinition
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<bool> Compress;
         public static readonly Option<CompressionLevel> CompressionLevel;
         public static readonly Option<bool> NoCompress;
         public static readonly Option<DirectoryInfo> KeyOutputPath;
@@ -230,11 +228,6 @@ public static class CommandDefinition
             }.AcceptExistingOnly();
 
             // ── 压缩选项 ──
-            Compress = new Option<bool>("--compress", "-c")
-            {
-                Description = "启用 GZip 数据压缩（默认已启用；保留此选项以兼容旧脚本）",
-                DefaultValueFactory = static _ => true
-            };
 
             NoCompress = new Option<bool>("--no-compress")
             {
@@ -330,7 +323,6 @@ public static class CommandDefinition
                 PublicKey,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Compress,
                 NoCompress,
                 CompressionLevel,
                 KeyOutputPath,

@@ -51,6 +51,8 @@ public abstract class VolumeDataReceiverBase : DataReceiverBase
                     if (context is not null)
                     {
                         _volumes.Add(context.VolumeIndex, context);
+                        Engine.LogDebug("Receiver {Receiver} 创建目标 {TargetIndex}: {OutputPath}", GetType().Name,
+                            context.VolumeIndex, context.OutputPath);
                         StartReceiver(context, receiveCancellation);
                     }
                 }
@@ -59,6 +61,9 @@ public abstract class VolumeDataReceiverBase : DataReceiverBase
                 {
                     try
                     {
+                        Engine.LogTrace("Receiver {Receiver} 路由块: {Path}, Seq={Sequence}, Target={TargetIndex}",
+                            GetType().Name, block.Metadata.RelativePath, block.Metadata.Sequence,
+                            context.VolumeIndex);
                         await context.OutputChannel.Writer.WriteAsync(block, receiveCancellation.Token);
                     }
                     catch
@@ -100,6 +105,8 @@ public abstract class VolumeDataReceiverBase : DataReceiverBase
     /// <summary>启动单个卷的写入任务，并在失败时中断整个接收阶段。</summary>
     private void StartReceiver(VolumeContext context, CancellationTokenSource receiveCancellation)
     {
+        Engine.LogDebug("Receiver {Receiver} 启动目标 {TargetIndex}: {OutputPath}", GetType().Name,
+            context.VolumeIndex, context.OutputPath);
         var task = ReceiveVolumeAsync(context, receiveCancellation.Token);
         _receiveTasks.Add(context.VolumeIndex, task);
         _ = task.ContinueWith(
