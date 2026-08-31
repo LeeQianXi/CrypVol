@@ -4,6 +4,8 @@ using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
+using CrypVol.Lib.Utility;
+using CrypVol.Lib.Volume;
 using Xunit;
 
 namespace CrypVol.Tests;
@@ -468,12 +470,14 @@ public class CrypVolEngineTests : IDisposable
             OutputDir = outDir,
             Credentials = credentials,
             VolumeSizeMb = 3,
-            ChunkSizeMb = 1
+            ChunkSizeMb = 1,
+            IntegrityLevel = IntegrityLevel.Volume
         };
 
         var packResult = await engine.PackAsync(packOpts);
         Assert.True(packResult.Success, packResult.Error);
         Assert.True(packResult.VolumeCount >= 3);
+        Assert.All(packResult.VolumePaths, path => Assert.True(VolumeIntegrityFooter.Verify(path)));
 
         var extractOpts = new ExtractOptions
         {
@@ -488,6 +492,312 @@ public class CrypVolEngineTests : IDisposable
         var restored = Path.Combine(restoreDir.FullName, "big.dat");
         Assert.True(File.Exists(restored));
         Assert.Equal(data, await File.ReadAllBytesAsync(restored));
+    }
+
+    /// <summary>File 级摘要应发现 CRC 被重新计算后的静默数据篡改。</summary>
+    [Fact]
+    public async Task Extract_FileIntegrity_DetectsPayloadTamperingWithValidCrc()
+    {
+        var data = RandomNumberGenerator.GetBytes(1_500_000);
+        MakeFile("protected.bin", data);
+        var outDir = _workDir.CreateSubdirectory("out");
+        var restoreDir = _workDir.CreateSubdirectory("restore");
+        var credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>());
+        var engine = new CrypVolHelper();
+
+        var packResult = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "protected.bin"))],
+            OutputDir = outDir,
+            Credentials = credentials,
+            ChunkSizeMb = 1,
+            IntegrityLevel = IntegrityLevel.File
+        });
+        Assert.True(packResult.Success, packResult.Error);
+
+        var fragment = VolumeScanner.Scan(CvpFiles(packResult)).Files["protected.bin"][0];
+        RewriteBlockWithValidCrc(fragment, buffer => buffer[0] ^= 0xFF);
+
+        var verifyResult = await engine.VerifyAsync(new VerifyOptions
+        {
+            VolumeFiles = CvpFiles(packResult),
+            Credentials = credentials
+        });
+        Assert.True(verifyResult.Success, verifyResult.Error);
+        Assert.Contains(verifyResult.CorruptedEntries, entry => entry.FilePath == "protected.bin");
+
+        var extractResult = await engine.ExtractAsync(new ExtractOptions
+        {
+            VolumeFiles = CvpFiles(packResult),
+            OutputDir = restoreDir,
+            Credentials = credentials
+        });
+
+        Assert.False(extractResult.Success);
+        Assert.Contains("SHA-256", extractResult.Error);
+    }
+
+    /// <summary>验证引擎应在同一轮运行中汇总多个 File 摘要失败，而非遇到首个失败即停止。</summary>
+    [Fact]
+    public async Task Verify_FileIntegrity_ReportsAllTamperedFiles()
+    {
+        MakeFile("first.bin", RandomNumberGenerator.GetBytes(8_192));
+        MakeFile("second.bin", RandomNumberGenerator.GetBytes(8_192));
+        var outDir = _workDir.CreateSubdirectory("out");
+        var credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>());
+        var engine = new CrypVolHelper();
+        var packResult = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles =
+            [
+                new FileInfo(Path.Combine(_workDir.FullName, "first.bin")),
+                new FileInfo(Path.Combine(_workDir.FullName, "second.bin"))
+            ],
+            OutputDir = outDir,
+            Credentials = credentials,
+            IntegrityLevel = IntegrityLevel.File
+        });
+        Assert.True(packResult.Success, packResult.Error);
+
+        var fragments = VolumeScanner.Scan(CvpFiles(packResult)).Files;
+        RewriteBlockWithValidCrc(fragments["first.bin"][0], buffer => buffer[0] ^= 0xFF);
+        RewriteBlockWithValidCrc(fragments["second.bin"][0], buffer => buffer[0] ^= 0xFF);
+
+        var verifyResult = await engine.VerifyAsync(new VerifyOptions
+        {
+            VolumeFiles = CvpFiles(packResult),
+            Credentials = credentials
+        });
+
+        Assert.True(verifyResult.Success, verifyResult.Error);
+        Assert.Equal(2, verifyResult.CorruptedFiles);
+        Assert.Equal(["first.bin", "second.bin"],
+            verifyResult.CorruptedEntries.Select(entry => entry.FilePath).OrderBy(path => path));
+    }
+
+    /// <summary>混合不同数据格式的卷不能被误当成同一归档并拆分为多条验证流水线。</summary>
+    [Fact]
+    public async Task Verify_MixedFormatVolumes_ReturnsConfigurationError()
+    {
+        MakeFile("block.bin", RandomNumberGenerator.GetBytes(1_024));
+        MakeFile("file.bin", RandomNumberGenerator.GetBytes(1_024));
+        var blockOutDir = _workDir.CreateSubdirectory("block-out");
+        var fileOutDir = _workDir.CreateSubdirectory("file-out");
+        var credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>());
+        var engine = new CrypVolHelper();
+
+        var blockPack = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "block.bin"))],
+            OutputDir = blockOutDir,
+            Credentials = credentials,
+            IntegrityLevel = IntegrityLevel.Block
+        });
+        var filePack = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "file.bin"))],
+            OutputDir = fileOutDir,
+            Credentials = credentials,
+            IntegrityLevel = IntegrityLevel.File
+        });
+        Assert.True(blockPack.Success, blockPack.Error);
+        Assert.True(filePack.Success, filePack.Error);
+
+        var verifyResult = await engine.VerifyAsync(new VerifyOptions
+        {
+            VolumeFiles = [.. CvpFiles(blockPack), .. CvpFiles(filePack)],
+            Credentials = credentials
+        });
+
+        Assert.False(verifyResult.Success);
+        Assert.Contains("配置不一致", verifyResult.Error);
+    }
+
+    /// <summary>Block 级 CRC 损坏应被定位；修复副本应重新通过 CRC 校验。</summary>
+    [Fact]
+    public async Task VerifyAndRepair_BlockIntegrity_DetectsAndRepairsCorruption()
+    {
+        var data = RandomNumberGenerator.GetBytes(16_384);
+        MakeFile("block.bin", data);
+        var outDir = _workDir.CreateSubdirectory("out");
+        var repairedDir = _workDir.CreateSubdirectory("repaired");
+        var credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>());
+        var engine = new CrypVolHelper();
+        var packResult = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "block.bin"))],
+            OutputDir = outDir,
+            Credentials = credentials,
+            IntegrityLevel = IntegrityLevel.Block
+        });
+        Assert.True(packResult.Success, packResult.Error);
+
+        var fragment = VolumeScanner.Scan(CvpFiles(packResult)).Files["block.bin"][0];
+        RewriteBlockWithValidCrc(fragment, buffer => buffer[0] ^= 0xFF, false);
+
+        var verifyResult = await engine.VerifyAsync(new VerifyOptions
+        {
+            VolumeFiles = CvpFiles(packResult),
+            Credentials = credentials
+        });
+        Assert.True(verifyResult.Success, verifyResult.Error);
+        var corruption = Assert.Single(verifyResult.CorruptedEntries);
+        Assert.Equal(fragment.CvpFile.FullName, corruption.VolumePath);
+        Assert.Equal(fragment.CvpOffset, corruption.CvpOffset);
+
+        var repairResult = await engine.RepairAsync(new RepairOptions
+        {
+            VolumeFiles = CvpFiles(packResult),
+            Credentials = credentials,
+            OutputDir = repairedDir
+        });
+        Assert.True(repairResult.Success, repairResult.Error);
+        Assert.Equal(1, repairResult.RepairedBlocks);
+
+        var repairedVerify = await engine.VerifyAsync(new VerifyOptions
+        {
+            VolumeFiles = repairResult.RepairedVolumes.Select(path => new FileInfo(path)).ToList(),
+            Credentials = credentials
+        });
+        Assert.True(repairedVerify.Success, repairedVerify.Error);
+        Assert.Empty(repairedVerify.CorruptedEntries);
+    }
+
+    /// <summary>Volume 卷尾摘要损坏后，校验和修复都应针对该卷生效。</summary>
+    [Fact]
+    public async Task VerifyAndRepair_VolumeIntegrity_DetectsAndRewritesFooter()
+    {
+        MakeFile("volume.bin", RandomNumberGenerator.GetBytes(16_384));
+        var outDir = _workDir.CreateSubdirectory("out");
+        var repairedDir = _workDir.CreateSubdirectory("repaired");
+        var credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>());
+        var engine = new CrypVolHelper();
+        var packResult = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "volume.bin"))],
+            OutputDir = outDir,
+            Credentials = credentials,
+            IntegrityLevel = IntegrityLevel.Volume
+        });
+        Assert.True(packResult.Success, packResult.Error);
+        var volume = CvpFiles(packResult).Single();
+        await using (var stream = new FileStream(volume.FullName, FileMode.Open, FileAccess.ReadWrite))
+        {
+            stream.Position = stream.Length - 1;
+            stream.WriteByte(0);
+        }
+
+        var verifyResult = await engine.VerifyAsync(new VerifyOptions
+        {
+            VolumeFiles = [volume],
+            Credentials = credentials
+        });
+        Assert.True(verifyResult.Success, verifyResult.Error);
+        Assert.Contains(verifyResult.CorruptedEntries, entry => entry.BlockSize == 0);
+
+        var repairResult = await engine.RepairAsync(new RepairOptions
+        {
+            VolumeFiles = [volume],
+            Credentials = credentials,
+            OutputDir = repairedDir
+        });
+        Assert.True(repairResult.Success, repairResult.Error);
+        var repairedVolume = Assert.Single(repairResult.RepairedVolumes);
+        Assert.True(VolumeIntegrityFooter.Verify(repairedVolume));
+    }
+
+    /// <summary>压缩、加密、多卷和 Volume 完整性组合后仍应完整还原。</summary>
+    [Fact]
+    public async Task PackExtract_CompressedEncryptedMultiVolume_RoundTrip()
+    {
+        var data = RandomNumberGenerator.GetBytes(3_500_000);
+        MakeFile("combined.bin", data);
+        var outDir = _workDir.CreateSubdirectory("out");
+        var restoreDir = _workDir.CreateSubdirectory("restore");
+        var credentials = new CvkCredentials(EncryptionMode.PlainKey, RandomNumberGenerator.GetBytes(32));
+        var engine = new CrypVolHelper();
+
+        var packResult = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "combined.bin"))],
+            OutputDir = outDir,
+            Credentials = credentials,
+            EnableCompression = true,
+            CompressionLevel = 9,
+            VolumeSizeMb = 2,
+            ChunkSizeMb = 1,
+            IntegrityLevel = IntegrityLevel.Volume
+        });
+        Assert.True(packResult.Success, packResult.Error);
+        Assert.True(packResult.VolumeCount >= 2);
+
+        var extractResult = await engine.ExtractAsync(new ExtractOptions
+        {
+            VolumeFiles = CvpFiles(packResult),
+            OutputDir = restoreDir,
+            Credentials = credentials
+        });
+        Assert.True(extractResult.Success, extractResult.Error);
+        Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(restoreDir.FullName, "combined.bin")));
+    }
+
+    /// <summary>缺失中间分卷时，不应输出看似完整的文件。</summary>
+    [Fact]
+    public async Task Extract_MissingIntermediateVolume_FailsWithoutRestoringPartialFile()
+    {
+        var data = RandomNumberGenerator.GetBytes(5_000_000);
+        MakeFile("split.bin", data);
+        var outDir = _workDir.CreateSubdirectory("out");
+        var restoreDir = _workDir.CreateSubdirectory("restore");
+        var credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>());
+        var engine = new CrypVolHelper();
+        var packResult = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "split.bin"))],
+            OutputDir = outDir,
+            Credentials = credentials,
+            VolumeSizeMb = 2,
+            ChunkSizeMb = 1
+        });
+        Assert.True(packResult.Success, packResult.Error);
+        Assert.True(packResult.VolumeCount >= 3);
+
+        var incompleteVolumes = CvpFiles(packResult)
+            .Where((_, index) => index != 1)
+            .ToList();
+        var extractResult = await engine.ExtractAsync(new ExtractOptions
+        {
+            VolumeFiles = incompleteVolumes,
+            OutputDir = restoreDir,
+            Credentials = credentials
+        });
+
+        Assert.False(extractResult.Success);
+        Assert.False(File.Exists(Path.Combine(restoreDir.FullName, "split.bin")));
+    }
+
+    /// <summary>辅助地篡改单个存储块，可选择同步更新 CRC。</summary>
+    private static void RewriteBlockWithValidCrc(VolumeScanner.Fragment fragment,
+        Action<byte[]> mutate, bool recomputeCrc = true)
+    {
+        var block = new byte[fragment.BlockSize];
+        using var stream = new FileStream(fragment.CvpFile.FullName, FileMode.Open, FileAccess.ReadWrite);
+        stream.Position = fragment.CvpOffset;
+        Assert.Equal(block.Length, stream.Read(block));
+        mutate(block);
+        if (recomputeCrc)
+            BitConverter.GetBytes(Crc32.Compute(block.AsSpan(0, block.Length - sizeof(uint))))
+                .CopyTo(block, block.Length - sizeof(uint));
+        stream.Position = fragment.CvpOffset;
+        stream.Write(block);
     }
 
     // ═══════════════════════════════════════════════════════

@@ -103,10 +103,8 @@ public static class CvkLoader
             var encryptedDek = reader.ReadBytes(encryptedDekLength);
             recipients.Add(new CvkPublicKeyRecipient(keyId, encryptedDek));
             if (dek is null)
-            {
                 try { dek = rsa.Decrypt(encryptedDek, RSAEncryptionPadding.OaepSHA256); }
                 catch (CryptographicException) { }
-            }
         }
 
         if (dek is null) throw new InvalidOperationException("没有匹配的私钥。");
@@ -132,7 +130,7 @@ public static class CvkLoader
 
     private static BinaryReader OpenPayload(byte[] data, out EnvelopeMode mode, out long payloadEnd)
     {
-        var stream = new MemoryStream(data, writable: false);
+        var stream = new MemoryStream(data, false);
         var reader = new BinaryReader(stream);
         if (Encoding.ASCII.GetString(reader.ReadBytes(4)) != "KEY0" || reader.ReadByte() != 1)
             throw new InvalidDataException("无效的密钥文件。");
@@ -144,6 +142,7 @@ public static class CvkLoader
         return reader;
     }
 
-    private sealed record PublicKeyPayload(byte[] Cek, byte[] Dek,
+    private sealed record PublicKeyPayload(byte[] Cek,
+        byte[] Dek,
         IReadOnlyList<CvkPublicKeyRecipient> Recipients);
 }

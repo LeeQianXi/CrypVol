@@ -172,7 +172,6 @@ public static class PackHelper
             ChunkSizeMb = chunkSizeMb,
             EnableCompression = args.GetValue(CommandDefinition.Pack.Compress),
             CompressionLevel = args.GetValue(CommandDefinition.Pack.CompressionLevel),
-            KeyOutputDir = args.GetValue(CommandDefinition.Pack.KeyOutputPath)!,
             IntegrityLevel = args.GetValue(CommandDefinition.Pack.Integrity),
             Credentials = creds
         }, token);

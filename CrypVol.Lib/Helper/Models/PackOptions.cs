@@ -13,14 +13,6 @@ public sealed record PackOptions
     /// <summary>输出目录</summary>
     public required DirectoryInfo OutputDir { get; init; }
 
-    /// <summary>.cvk 单独输出目录（null = 与 OutputDir 相同）</summary>
-    [field: AllowNull]
-    public DirectoryInfo KeyOutputDir
-    {
-        get => field ?? OutputDir;
-        init;
-    }
-
     /// <summary>文件名前缀</summary>
     [field: AllowNull]
     public string OutputPrefix
@@ -44,10 +36,10 @@ public sealed record PackOptions
     /// <summary>启用 GZip 压缩</summary>
     public bool EnableCompression { get; init; }
 
-    /// <summary>压缩级别 0-9</summary>
+    /// <summary>压缩等级 0–9；运行时按可用 GZip 档位映射。</summary>
     public int CompressionLevel { get; init; } = 6;
 
-    /// <summary>完整性校验级别</summary>
+    /// <summary>完整性校验级别。</summary>
     public IntegrityLevel IntegrityLevel { get; init; } = IntegrityLevel.File;
 }
 

@@ -31,6 +31,7 @@ public static class VolumeScanner
                 if (fs.Read(magicBuf) < 4) break;
                 var magic = BitConverter.ToUInt32(magicBuf);
 
+                if (VolumeIntegrityFooter.IsMagic(magicBuf)) break;
                 if (!FileEntryHeader.IsValidMagic(magic))
                     break;
 
@@ -97,6 +98,12 @@ public static class VolumeScanner
                     if (fs.Read(peekBuf) < 4) break;
 
                     var nextMagic = BitConverter.ToUInt32(peekBuf);
+                    if (VolumeIntegrityFooter.IsMagic(peekBuf))
+                    {
+                        pos = fs.Length;
+                        break;
+                    }
+
                     if (FileEntryHeader.IsValidMagic(nextMagic)) break;
 
                     var blockLen = BitConverter.ToInt32(peekBuf);

@@ -20,24 +20,40 @@ public sealed class ProcessingEngineTests
         var firstProcessor = new AppendProcessor(3);
         var secondProcessor = new AppendProcessor(4);
         var receiver = new CollectingReceiver();
+        var completedRecord = 0;
         var engine = ProcessingEngine.Builder()
             .UseProvider(provider)
             .AddProcessor(firstProcessor)
             .AddProcessor(secondProcessor)
             .UseReceiver(receiver)
             .Build();
+        engine.Completed += (sender, _) =>
+        {
+            var completedEngine = Assert.IsType<ProcessingEngine>(sender);
+            Assert.True(completedEngine.TryGetRecord("processed-blocks", out completedRecord));
+        };
 
         await engine.StartAsync();
 
         var received = Assert.Single(receiver.Blocks);
         Assert.Same(metadata, received.Metadata);
-        Assert.Equal(new byte[] { 1, 2, 3, 4 }, received.Data.ToArray());
-        Assert.Equal(new[] { "initialize", "validate", "prepare", "start", "process", "dispose" },
+        Assert.Equal(new byte[]
+        {
+            1, 2, 3, 4
+        }, received.Data.ToArray());
+        Assert.Equal(new[]
+            {
+                "initialize", "validate", "prepare", "start", "process", "dispose"
+            },
             firstProcessor.LifeCycle);
-        Assert.Equal(new[] { "initialize", "validate", "prepare", "start", "process", "dispose" },
+        Assert.Equal(new[]
+            {
+                "initialize", "validate", "prepare", "start", "process", "dispose"
+            },
             secondProcessor.LifeCycle);
         Assert.True(engine.TryGetRecord<int>("processed-blocks", out var processedBlocks));
         Assert.Equal(2, processedBlocks);
+        Assert.Equal(2, completedRecord);
         received.Dispose();
     }
 
@@ -57,7 +73,10 @@ public sealed class ProcessingEngineTests
 
         await engine.StartAsync();
 
-        Assert.Equal(new[] { "starting", "started", "completed", "stopped" }, events);
+        Assert.Equal(new[]
+        {
+            "starting", "started", "completed", "stopped"
+        }, events);
     }
 
     /// <summary>构造完成后 EngineBuilder 应锁定。</summary>
@@ -104,6 +123,104 @@ public sealed class ProcessingEngineTests
         Assert.True(receiver.Disposed);
     }
 
+    /// <summary>提供阶段失败时，接收阶段应被取消，且失败与停止事件各只触发一次。</summary>
+    [Fact]
+    public async Task StartAsync_ProviderFailure_InterruptsReceiverAndRaisesFailureEvents()
+    {
+        var provider = new FailingProvider();
+        var receiver = new CancellationObservingReceiver();
+        var events = new List<string>();
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(provider)
+            .UseReceiver(receiver)
+            .Build();
+        engine.Failed += (_, _) => events.Add("failed");
+        engine.Stopped += (_, _) => events.Add("stopped");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => engine.StartAsync());
+
+        Assert.Equal(ProcessingEngineState.Faulted, engine.State);
+        Assert.True(provider.Disposed);
+        Assert.True(receiver.Disposed);
+        Assert.Equal(["failed", "stopped"], events);
+    }
+
+    /// <summary>接收阶段失败时，提供阶段应停止等待并释放全部资源。</summary>
+    [Fact]
+    public async Task StartAsync_ReceiverFailure_InterruptsProvider()
+    {
+        var provider = new WaitingProvider(CreateMetadata());
+        var receiver = new FailingReceiver();
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(provider)
+            .UseReceiver(receiver)
+            .Build();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => engine.StartAsync());
+
+        Assert.Equal(ProcessingEngineState.Faulted, engine.State);
+        Assert.True(provider.Disposed);
+        Assert.True(receiver.Disposed);
+    }
+
+    /// <summary>外部取消应中断各阶段，并将引擎置为已取消状态。</summary>
+    [Fact]
+    public async Task StartAsync_ExternalCancellation_InterruptsAllStages()
+    {
+        var provider = new WaitingProvider(CreateMetadata());
+        var receiver = new CancellationObservingReceiver();
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(provider)
+            .UseReceiver(receiver)
+            .Build();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => engine.StartAsync(cancellation.Token));
+
+        Assert.Equal(ProcessingEngineState.Canceled, engine.State);
+        Assert.True(provider.Canceled);
+        Assert.True(provider.Disposed);
+        Assert.True(receiver.Canceled);
+        Assert.True(receiver.Disposed);
+    }
+
+    /// <summary>多个数据块经由有界通道时，接收顺序必须保持提供顺序。</summary>
+    [Fact]
+    public async Task StartAsync_PreservesOrderAcrossMultipleBlocks()
+    {
+        var receiver = new CollectingReceiver();
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(new MultipleBlockProvider(CreateMetadata(), 16))
+            .AddProcessor(new AppendProcessor(255))
+            .UseReceiver(receiver)
+            .Build();
+
+        await engine.StartAsync();
+
+        Assert.Equal(Enumerable.Range(0, 16).Select(i => (byte)i),
+            receiver.Blocks.Select(block => block.Data.Span[0]));
+        Assert.All(receiver.Blocks, block => Assert.Equal(255, block.Data.Span[1]));
+        foreach (var block in receiver.Blocks) block.Dispose();
+    }
+
+    /// <summary>无输出接收阶段应完整消费并释放数据流，使验证类流程能够正常完成。</summary>
+    [Fact]
+    public async Task StartAsync_NullDataReceiver_DrainsPipeline()
+    {
+        var processor = new AppendProcessor(7);
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(new MultipleBlockProvider(CreateMetadata(), 4))
+            .AddProcessor(processor)
+            .UseReceiver(new NullDataReceiver())
+            .Build();
+
+        await engine.StartAsync();
+
+        Assert.Equal(ProcessingEngineState.Completed, engine.State);
+        Assert.Equal(4, processor.LifeCycle.Count(stage => stage == "process"));
+        Assert.Contains("dispose", processor.LifeCycle);
+    }
+
     private static BlockMetadata CreateMetadata()
     {
         return new BlockMetadata
@@ -124,6 +241,41 @@ public sealed class ProcessingEngineTests
             var buffer = ArrayPool<byte>.Shared.Rent(length);
             for (var i = 0; i < length; i++) buffer[i] = (byte)(i + 1);
             await WriteAsync(new DataBlock(buffer, length, metadata), cancellationToken);
+        }
+    }
+
+    /// <summary>连续提供多个块的测试提供阶段。</summary>
+    private sealed class MultipleBlockProvider(BlockMetadata metadata, int count) : DataProviderBase
+    {
+        /// <inheritdoc />
+        protected override async Task ProduceCoreAsync(CancellationToken cancellationToken = default)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var buffer = ArrayPool<byte>.Shared.Rent(1);
+                buffer[0] = (byte)i;
+                await WriteAsync(new DataBlock(buffer, 1, metadata), cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>启动后立即失败的测试提供阶段。</summary>
+    private sealed class FailingProvider : DataProviderBase
+    {
+        /// <summary>是否已释放。</summary>
+        public bool Disposed { get; private set; }
+
+        /// <inheritdoc />
+        protected override Task ProduceCoreAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromException(new InvalidDataException("测试提供者失败。"));
+        }
+
+        /// <inheritdoc />
+        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        {
+            Disposed = true;
+            return Task.CompletedTask;
         }
     }
 
@@ -239,8 +391,10 @@ public sealed class ProcessingEngineTests
 
         /// <inheritdoc />
         protected override ValueTask<DataBlock?> ProcessBlockAsync(DataBlock block,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromException<DataBlock?>(new InvalidDataException("测试处理器失败。"));
+            CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromException<DataBlock?>(new InvalidDataException("测试处理器失败。"));
+        }
 
         /// <inheritdoc />
         public override Task DisposeAsync(CancellationToken cancellationToken = default)
@@ -272,6 +426,26 @@ public sealed class ProcessingEngineTests
                 Canceled = true;
                 throw;
             }
+        }
+
+        /// <inheritdoc />
+        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        {
+            Disposed = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>启动后立即失败的测试接收阶段。</summary>
+    private sealed class FailingReceiver : DataReceiverBase
+    {
+        /// <summary>是否已释放。</summary>
+        public bool Disposed { get; private set; }
+
+        /// <inheritdoc />
+        public override Task ReceiveAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromException(new InvalidDataException("测试接收者失败。"));
         }
 
         /// <inheritdoc />

@@ -39,7 +39,7 @@ public sealed class CvkDocumentTests
             document.Password = "new-password";
             await document.WriteAsync(file);
 
-            var loaded = await CvkLoader.LoadAsync(file, password: "new-password");
+            var loaded = await CvkLoader.LoadAsync(file, "new-password");
 
             Assert.Equal(document.Cek, loaded.Cek);
             Assert.Equal(EncryptionMode.Password, loaded.EncryptionMode);
@@ -113,8 +113,10 @@ public sealed class CvkDocumentTests
         }
     }
 
-    private static FileInfo CreateFile() =>
-        new(Path.Combine(Path.GetTempPath(), $"cvk-document-{Guid.NewGuid()}.cvk"));
+    private static FileInfo CreateFile()
+    {
+        return new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-document-{Guid.NewGuid()}.cvk"));
+    }
 
     private static void Delete(FileInfo file)
     {

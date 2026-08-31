@@ -87,15 +87,23 @@ public static class VerifyHelper
             Console.WriteLine($"损坏文件: {result.CorruptedFiles}");
             Console.WriteLine($"损坏数据块: {result.CorruptedBlocks}");
             foreach (var e in result.CorruptedEntries)
-                Console.WriteLine($"  {e.FilePath} offset={e.CvpOffset} size={e.BlockSize}");
+                Console.WriteLine($"  {e.FilePath} volume={e.VolumePath} offset={e.CvpOffset} size={e.BlockSize}");
 
             var repairReport = args.GetValue(CommandDefinition.Verify.RepairReport);
             if (repairReport is not null)
-            {
-                await File.WriteAllLinesAsync(repairReport.FullName,
-                    result.CorruptedEntries.Select(e => $"{e.FilePath}\t{e.CvpOffset}\t{e.BlockSize}"), token);
-                Console.WriteLine($"损坏报告: {repairReport.FullName}");
-            }
+                try
+                {
+                    repairReport.Directory?.Create();
+                    await File.WriteAllLinesAsync(repairReport.FullName,
+                        result.CorruptedEntries.Select(e =>
+                            $"{e.VolumePath}\t{e.CvpOffset}\t{e.BlockSize}\t{e.FilePath}"), token);
+                    Console.WriteLine($"损坏报告: {repairReport.FullName}");
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "无法写入损坏报告: {RepairReportPath}", repairReport.FullName);
+                    return 2;
+                }
 
             return 1;
         }

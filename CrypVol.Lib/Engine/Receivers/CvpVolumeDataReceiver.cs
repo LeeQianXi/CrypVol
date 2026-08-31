@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using CrypVol.Lib.Volume;
 
@@ -59,6 +60,8 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
     protected override async Task ReceiveVolumeAsync(VolumeContext context, CancellationToken cancellationToken)
     {
         FileStream? stream = null;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var integrityLevel = IntegrityLevel.None;
         try
         {
             long position = 0;
@@ -75,6 +78,8 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
                             FileShare.None, 4096 * 16, FileOptions.SequentialScan);
                         Engine.LogTrace("创建卷: {Path}", context.OutputPath);
                     }
+
+                    integrityLevel = (IntegrityLevel)(block.Metadata.Flags >> 3 & 3);
 
                     // 一个新卷中的首块必须有文件头，即使它是跨卷文件的续片。
                     if (totalBlocks == 0 || block.Metadata.IsFirstFragment)
@@ -93,6 +98,7 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
                             : header.ToBytes();
                         stream.Position = position;
                         await stream.WriteAsync(headerBytes, cancellationToken);
+                        hash.AppendData(headerBytes);
                         position += headerBytes.Length;
                         Engine.LogTrace("卷头: {Path} ({HeaderType})", block.Metadata.RelativePath,
                             _cek is not null ? "CVPE加密" : "CVPH明文");
@@ -102,6 +108,8 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
                     stream.Position = position;
                     await stream.WriteAsync(length, cancellationToken);
                     await stream.WriteAsync(block.Data, cancellationToken);
+                    hash.AppendData(length);
+                    hash.AppendData(block.Data.Span);
                     position += sizeof(int) + block.Length;
                     totalBlocks++;
                 }
@@ -109,6 +117,12 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
                 {
                     block.Dispose();
                 }
+
+            if (stream is not null && integrityLevel >= IntegrityLevel.Volume)
+            {
+                var footer = VolumeIntegrityFooter.Create(hash.GetHashAndReset());
+                await stream.WriteAsync(footer, cancellationToken);
+            }
 
             Engine.LogTrace("卷写入完成: {Path} {Blocks}块 {Bytes}字节",
                 context.OutputPath, totalBlocks, position);

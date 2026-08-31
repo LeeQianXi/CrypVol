@@ -31,4 +31,7 @@ public sealed class BlockMetadata
 
     /// <summary>是否在该块前写入 FileEntryHeader。</summary>
     public bool IsFirstFragment { get; init; }
+
+    /// <summary>File 完整性等级下，由末块承载的原始文件 SHA-256。</summary>
+    public byte[]? FileHash { get; set; }
 }

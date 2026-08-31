@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Security.Cryptography;
+using System.Text;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Volume;
 
@@ -8,23 +10,23 @@ namespace CrypVol.Lib.Engine.Providers;
 public sealed class SourceFileDataProvider : DataProviderBase
 {
     private const int LengthFieldSize = sizeof(int);
-    private readonly IReadOnlyList<FileInfo> _files;
-    private readonly DirectoryInfo _sourceDirectory;
     private readonly int _chunkSize;
-    private readonly long _volumeCapacity;
+    private readonly bool _enableCompression;
+    private readonly IReadOnlyList<FileInfo> _files;
     private readonly int _headerSize;
     private readonly IntegrityLevel _integrityLevel;
-    private readonly bool _enableCompression;
+    private readonly DirectoryInfo _sourceDirectory;
+    private readonly long _volumeCapacity;
+    private long _currentSequence;
     private int _currentVolume;
     private long _currentVolumeUsed;
-    private long _currentSequence;
 
     /// <summary>创建流式源文件提供者。</summary>
     public SourceFileDataProvider(IEnumerable<FileInfo> files, DirectoryInfo sourceDirectory, int chunkSize,
         long volumeCapacity, int headerSize, IntegrityLevel integrityLevel, bool enableCompression)
     {
         _files = files?.OrderBy(file => file.FullName, StringComparer.Ordinal).ToArray()
-            ?? throw new ArgumentNullException(nameof(files));
+                 ?? throw new ArgumentNullException(nameof(files));
         _sourceDirectory = sourceDirectory ?? throw new ArgumentNullException(nameof(sourceDirectory));
         _chunkSize = chunkSize;
         _volumeCapacity = volumeCapacity;
@@ -56,16 +58,17 @@ public sealed class SourceFileDataProvider : DataProviderBase
     private async Task ProduceFileAsync(FileInfo file, CancellationToken cancellationToken)
     {
         var relativePath = Path.GetRelativePath(_sourceDirectory.FullName, file.FullName);
-        if (System.Text.Encoding.UTF8.GetByteCount(relativePath) > 230)
+        if (Encoding.UTF8.GetByteCount(relativePath) > 230)
             throw new InvalidOperationException($"文件相对路径超过 CVP 头限制: {relativePath}");
 
         if (file.Length == 0)
         {
             await WriteBlockAsync(ArrayPool<byte>.Shared.Rent(0), 0, file, relativePath, 0, true, true,
-                cancellationToken);
+                SHA256.HashData([]), cancellationToken);
             return;
         }
 
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         await using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read,
             _chunkSize, FileOptions.SequentialScan);
         long offset = 0;
@@ -78,8 +81,10 @@ public sealed class SourceFileDataProvider : DataProviderBase
             {
                 var read = await ReadAtLeastAsync(stream, buffer, requested, cancellationToken);
                 if (read == 0) throw new EndOfStreamException($"读取源文件时遇到意外结尾: {file.FullName}");
+                hash.AppendData(buffer, 0, read);
+                var isLast = offset + read >= file.Length;
                 await WriteBlockAsync(buffer, read, file, relativePath, offset, isFirstFileBlock,
-                    offset + read >= file.Length, cancellationToken);
+                    isLast, isLast ? hash.GetHashAndReset() : null, cancellationToken);
                 buffer = null!;
                 offset += read;
                 isFirstFileBlock = false;
@@ -92,7 +97,7 @@ public sealed class SourceFileDataProvider : DataProviderBase
     }
 
     private async Task WriteBlockAsync(byte[] buffer, int length, FileInfo file, string relativePath, long offset,
-        bool isFirstFileBlock, bool isLastFileBlock, CancellationToken cancellationToken)
+        bool isFirstFileBlock, bool isLastFileBlock, byte[]? fileHash, CancellationToken cancellationToken)
     {
         var startsVolumeEntry = true;
         var initialCost = LengthFieldSize + length + _headerSize;
@@ -104,8 +109,10 @@ public sealed class SourceFileDataProvider : DataProviderBase
         }
 
         var fragmentFlags = isFirstFileBlock
-            ? (isLastFileBlock ? FileEntryHeaderFlagsEnum.Full : FileEntryHeaderFlagsEnum.CrossHead)
-            : (isLastFileBlock ? FileEntryHeaderFlagsEnum.CrossTail : FileEntryHeaderFlagsEnum.CrossMid);
+            ? isLastFileBlock ? FileEntryHeaderFlagsEnum.Full : FileEntryHeaderFlagsEnum.CrossHead
+            : isLastFileBlock
+                ? FileEntryHeaderFlagsEnum.CrossTail
+                : FileEntryHeaderFlagsEnum.CrossMid;
         var flags = (byte)fragmentFlags;
         flags |= (byte)(((int)_integrityLevel & 3) << 3);
         if (_enableCompression) flags |= (byte)FileEntryHeaderFlagsEnum.Compressed;
@@ -119,7 +126,8 @@ public sealed class SourceFileDataProvider : DataProviderBase
             Length = length,
             TotalFileSize = file.Length,
             Flags = flags,
-            IsFirstFragment = startsVolumeEntry
+            IsFirstFragment = startsVolumeEntry,
+            FileHash = fileHash
         };
 
         try
