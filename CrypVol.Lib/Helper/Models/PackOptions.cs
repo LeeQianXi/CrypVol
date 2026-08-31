@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using System.IO.Compression;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Volume;
 
 namespace CrypVol.Lib.Helper.Models;
 
@@ -33,11 +35,11 @@ public sealed record PackOptions
     /// <summary>已加载的 CEK 凭据（CLI 预加载后传入）</summary>
     public required CvkCredentials Credentials { get; init; }
 
-    /// <summary>启用 GZip 压缩</summary>
-    public bool EnableCompression { get; init; }
+    /// <summary>启用 GZip 压缩。</summary>
+    public bool EnableCompression { get; init; } = true;
 
-    /// <summary>压缩等级 0–9；运行时按可用 GZip 档位映射。</summary>
-    public int CompressionLevel { get; init; } = 6;
+    /// <summary>.NET GZip 压缩预设。</summary>
+    public CompressionLevel CompressionLevel { get; init; } = CompressionLevel.Optimal;
 
     /// <summary>完整性校验级别。</summary>
     public IntegrityLevel IntegrityLevel { get; init; } = IntegrityLevel.File;

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.IO.Compression;
 using System.Text;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
@@ -512,6 +513,7 @@ public class CrypVolEngineTests : IDisposable
             OutputDir = outDir,
             Credentials = credentials,
             ChunkSizeMb = 1,
+            EnableCompression = false,
             IntegrityLevel = IntegrityLevel.File
         });
         Assert.True(packResult.Success, packResult.Error);
@@ -557,6 +559,7 @@ public class CrypVolEngineTests : IDisposable
             ],
             OutputDir = outDir,
             Credentials = credentials,
+            EnableCompression = false,
             IntegrityLevel = IntegrityLevel.File
         });
         Assert.True(packResult.Success, packResult.Error);
@@ -730,7 +733,7 @@ public class CrypVolEngineTests : IDisposable
             OutputDir = outDir,
             Credentials = credentials,
             EnableCompression = true,
-            CompressionLevel = 9,
+            CompressionLevel = CompressionLevel.SmallestSize,
             VolumeSizeMb = 2,
             ChunkSizeMb = 1,
             IntegrityLevel = IntegrityLevel.Volume

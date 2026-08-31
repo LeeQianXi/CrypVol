@@ -4,6 +4,7 @@ using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;
+using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Pack;
@@ -170,7 +171,8 @@ public static class PackHelper
             OutputPrefix = prefix,
             VolumeSizeMb = args.GetValue(CommandDefinition.Pack.VolumeSize),
             ChunkSizeMb = chunkSizeMb,
-            EnableCompression = args.GetValue(CommandDefinition.Pack.Compress),
+            EnableCompression = args.GetValue(CommandDefinition.Pack.Compress) &&
+                                !args.GetValue(CommandDefinition.Pack.NoCompress),
             CompressionLevel = args.GetValue(CommandDefinition.Pack.CompressionLevel),
             IntegrityLevel = args.GetValue(CommandDefinition.Pack.Integrity),
             Credentials = creds

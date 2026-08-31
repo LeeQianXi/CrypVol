@@ -1,3 +1,4 @@
+using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Engine;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Engine.Processors;
@@ -69,7 +70,7 @@ public sealed class CrypVolHelper
             if (opts.IntegrityLevel is not IntegrityLevel.None)
                 builder.AddProcessor(new IntegrityAppendProcessor(opts.IntegrityLevel));
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
-            await pipeline.StartAsync(token);
+            await RunPipelineAsync(pipeline, token);
 
             var totalBytes = opts.SourceFiles.Sum(f => f.Length);
             var volumePaths = receiver.VolumePaths;
@@ -182,7 +183,7 @@ public sealed class CrypVolHelper
             if (isCompressed) builder.AddProcessor(new DecompressionProcessor());
             if (integrityLevel >= IntegrityLevel.File) builder.AddProcessor(new FileIntegrityVerificationProcessor());
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
-            await pipeline.StartAsync(token);
+            await RunPipelineAsync(pipeline, token);
 
             Logger?.LogInformation("提取完成: {FileCount} 文件", fileFragments.Count);
             return new ExtractResult
@@ -335,7 +336,7 @@ public sealed class CrypVolHelper
             if (newMode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(newCek));
             if (integrityLevel is not IntegrityLevel.None) builder.AddProcessor(new IntegrityAppendProcessor(integrityLevel));
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
-            await pipeline.StartAsync(token);
+            await RunPipelineAsync(pipeline, token);
 
             var volPaths = Enumerable.Range(0, newVolIdx)
                 .Select(i => Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp")).ToList();
@@ -477,38 +478,33 @@ public sealed class CrypVolHelper
                         .UseReceiver(new NullDataReceiver())
                         .WithLogger(Logger)
                         .Build();
-                    var failedPaths = new List<string>();
-                    Exception? pipelineFailure = null;
-                    pipeline.Completed += (sender, _) =>
-                    {
-                        if (sender is not ProcessingEngine completedEngine) return;
-                        if (completedEngine.TryGetRecord<List<string>>(
-                                FileIntegrityVerificationProcessor.FailuresRecordName, out var reportedPaths) &&
-                            reportedPaths is not null)
-                            failedPaths.AddRange(reportedPaths);
-                    };
-                    pipeline.Failed += (_, eventArgs) => pipelineFailure = eventArgs.Exception;
+                    using var observer = new ProcessingEngineObserver(pipeline);
+                    observer.Capture(EngineRecordKeys.FileIntegrityFailures);
                     try
                     {
-                        await pipeline.StartAsync(token);
+                        await observer.RunAsync(token);
                     }
                     catch (Exception ex)
                     {
-                        throw new InvalidDataException("File 完整性验证引擎失败。", pipelineFailure ?? ex);
+                        throw new InvalidDataException("File 完整性验证引擎失败。", observer.Exception ?? ex);
                     }
 
-                    foreach (var path in failedPaths)
+                    if (observer.TryGetCaptured(EngineRecordKeys.FileIntegrityFailures,
+                            out List<string>? failedPaths) && failedPaths is not null)
                     {
-                        var last = fileFragments[path][^1];
-                        corruptedBlocks++;
-                        corruptedFiles++;
-                        corruptedEntries.Add(new CorruptedBlock
+                        foreach (var path in failedPaths)
                         {
-                            VolumePath = last.CvpFile.FullName,
-                            FilePath = path,
-                            CvpOffset = last.CvpOffset,
-                            BlockSize = last.BlockSize
-                        });
+                            var last = fileFragments[path][^1];
+                            corruptedBlocks++;
+                            corruptedFiles++;
+                            corruptedEntries.Add(new CorruptedBlock
+                            {
+                                VolumePath = last.CvpFile.FullName,
+                                FilePath = path,
+                                CvpOffset = last.CvpOffset,
+                                BlockSize = last.BlockSize
+                            });
+                        }
                     }
                 }
             }
@@ -813,5 +809,14 @@ public sealed class CrypVolHelper
             Flags = fragment.Flags,
             IsFirstFragment = fragment.IsFirst
         };
+    }
+
+    /// <summary>以统一 Hook 观察方式运行已构造的数据引擎。</summary>
+    /// <param name="pipeline">已锁定的数据处理引擎。</param>
+    /// <param name="token">取消令牌。</param>
+    private static async Task RunPipelineAsync(ProcessingEngine pipeline, CancellationToken token)
+    {
+        using var observer = new ProcessingEngineObserver(pipeline);
+        await observer.RunAsync(token);
     }
 }

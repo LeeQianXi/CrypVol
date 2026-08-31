@@ -10,16 +10,10 @@ public sealed class CompressionProcessor : DataProcessorBase
     private readonly CompressionLevel _level;
 
     /// <summary>创建压缩处理器。</summary>
-    /// <param name="compressionLevel">压缩级别。</param>
-    public CompressionProcessor(int compressionLevel)
+    /// <param name="compressionLevel">.NET GZip 压缩预设。</param>
+    public CompressionProcessor(CompressionLevel compressionLevel)
     {
-        _level = compressionLevel switch
-        {
-            0 => CompressionLevel.NoCompression,
-            <= 3 => CompressionLevel.Fastest,
-            <= 6 => CompressionLevel.Optimal,
-            _ => CompressionLevel.SmallestSize
-        };
+        _level = compressionLevel;
     }
 
     /// <inheritdoc />

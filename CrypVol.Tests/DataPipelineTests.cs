@@ -221,6 +221,29 @@ public sealed class ProcessingEngineTests
         Assert.Contains("dispose", processor.LifeCycle);
     }
 
+    /// <summary>观察器应通过 Completed Hook 捕获强类型运行记录与运行状态。</summary>
+    [Fact]
+    public async Task Observer_CapturesTypedRecordFromCompletedHook()
+    {
+        var key = new EngineRecordKey<int>("processed-blocks");
+        var processor = new AppendProcessor(1);
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(new SingleBlockProvider(CreateMetadata(), 1))
+            .AddProcessor(processor)
+            .UseReceiver(new NullDataReceiver())
+            .Build();
+        using var observer = new ProcessingEngineObserver(engine);
+        observer.Capture(key);
+
+        await observer.RunAsync();
+
+        Assert.NotNull(observer.StartedAt);
+        Assert.NotNull(observer.StoppedAt);
+        Assert.Null(observer.Exception);
+        Assert.True(observer.TryGetCaptured(key, out var processedBlocks));
+        Assert.Equal(1, processedBlocks);
+    }
+
     private static BlockMetadata CreateMetadata()
     {
         return new BlockMetadata

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.IO.Compression;
 using CrypVol.Cli.Browse;
 using CrypVol.Cli.Convert;
 using CrypVol.Cli.Extract;
@@ -9,6 +10,8 @@ using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
 using CrypVol.Lib;
+using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli;
@@ -91,7 +94,8 @@ public static class CommandDefinition
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<bool> Compress;
-        public static readonly Option<int> CompressionLevel;
+        public static readonly Option<CompressionLevel> CompressionLevel;
+        public static readonly Option<bool> NoCompress;
         public static readonly Option<DirectoryInfo> KeyOutputPath;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
@@ -228,20 +232,25 @@ public static class CommandDefinition
             // ── 压缩选项 ──
             Compress = new Option<bool>("--compress", "-c")
             {
-                Description = "启用 GZip 数据压缩，减小卷文件体积（会略微增加 CPU 开销）"
+                Description = "启用 GZip 数据压缩（默认已启用；保留此选项以兼容旧脚本）",
+                DefaultValueFactory = static _ => true
             };
 
-            CompressionLevel = new Option<int>("--compression-level")
+            NoCompress = new Option<bool>("--no-compress")
+            {
+                Description = "禁用 GZip 数据压缩"
+            };
+
+            CompressionLevel = new Option<CompressionLevel>("--compression-level")
             {
                 Description =
                     """
-                    GZip 压缩级别：0 = 仅存储不压缩，9 = 最高压缩比。
-                    .NET 运行时会将 1–3、4–6、7–9 分别映射到最快、平衡、最高压缩档位。
-                    仅在启用 --compress 时生效。
+                    GZip 压缩预设：Fastest、Optimal、SmallestSize。
+                    默认 Optimal；仅在未指定 --no-compress 时生效。
                     """,
-                HelpName = "0-9",
-                DefaultValueFactory = static _ => 6
-            }.AcceptOnlyFromAmong("0", "1", "2", "3", "4", "5", "6", "7", "8", "9");
+                HelpName = "preset",
+                DefaultValueFactory = static _ => System.IO.Compression.CompressionLevel.Optimal
+            };
 
             // ── 密钥输出 ──
             KeyOutputPath = new Option<DirectoryInfo>("--key-output")
@@ -322,6 +331,7 @@ public static class CommandDefinition
                 PrivkeyKey,
                 PrivkeyKeyPass,
                 Compress,
+                NoCompress,
                 CompressionLevel,
                 KeyOutputPath,
                 Include,

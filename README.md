@@ -77,7 +77,7 @@ crypvol pack ./data -o ./archive --prefix backup \
 
 # 流式块大小 32 MiB、近似卷目标 512 MiB、启用压缩
 crypvol pack ./data -o ./archive --prefix backup \
-  --chunk-size 32 --volume-size 512 --compress --compression-level 6
+  --chunk-size 32 --volume-size 512 --compression-level Optimal
 ```
 
 未指定 `--key-file` 时，`pack` 按 `--mode` 创建新 CEK 和 CVK；指定 `--key-file` 时复用其中的 CEK，`--mode`、`--public-key` 和 `--comment` 不参与新 CVK 的创建。`--dry-run` 只根据原始大小和块大小给出近似卷数/块数，不写入数据或密钥文件。

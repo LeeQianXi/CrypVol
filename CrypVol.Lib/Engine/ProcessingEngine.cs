@@ -61,6 +61,13 @@ public sealed partial class ProcessingEngine
         _records[name] = value;
     }
 
+    /// <summary>使用强类型键记录当前运行可共享的命名值。</summary>
+    public void SetRecord<T>(EngineRecordKey<T> key, T value)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        SetRecord(key.Name, value);
+    }
+
     /// <summary>读取当前运行的命名记录。</summary>
     /// <typeparam name="T">记录值类型。</typeparam>
     /// <param name="name">记录名称。</param>
@@ -76,6 +83,13 @@ public sealed partial class ProcessingEngine
 
         value = default;
         return false;
+    }
+
+    /// <summary>使用强类型键读取当前运行记录。</summary>
+    public bool TryGetRecord<T>(EngineRecordKey<T> key, out T? value)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return TryGetRecord(key.Name, out value);
     }
 
     /// <summary>记录跟踪日志，供各阶段与事件处理器调用。</summary>

@@ -1,4 +1,4 @@
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Volume;
 
 /// <summary>
 ///     数据完整性校验级别

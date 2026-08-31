@@ -8,9 +8,6 @@ namespace CrypVol.Lib.Engine.Processors;
 /// <summary>在解密与解压后的原始文件数据上验证 File 级 SHA-256 摘要。</summary>
 public sealed class FileIntegrityVerificationProcessor : DataProcessorBase
 {
-    /// <summary>Engine 记录中保存 File 摘要失败路径的名称。</summary>
-    public const string FailuresRecordName = "file-integrity-failures";
-
     private readonly bool _continueOnFailure;
     private readonly Dictionary<string, IncrementalHash> _hashes = new(StringComparer.Ordinal);
 
@@ -25,7 +22,7 @@ public sealed class FileIntegrityVerificationProcessor : DataProcessorBase
     protected override Task OnInitializeAsync(CancellationToken cancellationToken = default)
     {
         if (_continueOnFailure)
-            Engine.SetRecord(FailuresRecordName, new List<string>());
+            Engine.SetRecord(EngineRecordKeys.FileIntegrityFailures, new List<string>());
         return Task.CompletedTask;
     }
 
@@ -48,7 +45,7 @@ public sealed class FileIntegrityVerificationProcessor : DataProcessorBase
             {
                 var error = new InvalidDataException($"文件 SHA-256 校验失败: {path}");
                 if (!_continueOnFailure) throw error;
-                if (!Engine.TryGetRecord<List<string>>(FailuresRecordName, out var failures) || failures is null)
+                if (!Engine.TryGetRecord(EngineRecordKeys.FileIntegrityFailures, out List<string>? failures) || failures is null)
                     throw new InvalidOperationException("File 完整性失败记录未初始化。", error);
                 failures.Add(path);
                 Engine.LogWarning("文件 SHA-256 校验失败: {Path}", path);

@@ -1,3 +1,5 @@
+using CrypVol.Lib.Volume;
+
 namespace CrypVol.Lib.Crypto;
 
 /// <summary>进入处理引擎的轻量加密凭据，仅携带运行所需的模式与 CEK。</summary>

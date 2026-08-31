@@ -2,6 +2,7 @@ using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Utility;
+using CrypVol.Lib.Volume;
 using Xunit;
 
 namespace CrypVol.Tests;

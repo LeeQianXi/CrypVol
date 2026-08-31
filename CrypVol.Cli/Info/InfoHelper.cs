@@ -1,6 +1,7 @@
 using System.CommandLine;
 using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Info;

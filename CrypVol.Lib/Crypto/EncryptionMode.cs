@@ -1,4 +1,4 @@
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Crypto;
 
 /// 密钥保护模式枚举
 public enum EncryptionMode
