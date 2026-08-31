@@ -606,7 +606,7 @@ public static class CommandDefinition
 
             Password = new Option<string>("--password", "-p")
             {
-                Description = "密钥文件解密密码。提供后将尝试验证密码并显示 CEK 指纹等额外信息",
+                Description = "密钥文件解密密码。成功解封后显示 CEK 指纹、注释等内容",
                 HelpName = "passphrase"
             };
 
@@ -627,8 +627,8 @@ public static class CommandDefinition
         {
             var cmd = new Command("info",
                 """
-                验证并显示密钥文件 (.cvk) 的保护模式与 CEK 指纹。
-                Password 或 Asymmetric 模式必须提供相应解封凭据。
+                显示密钥文件 (.cvk) 的信封编码模式；成功解封后显示 CEK 指纹、注释和公钥接收者。
+                即使未提供解封凭据也会输出信封模式，但 Password 或 Asymmetric CVK 将以失败退出。
 
                 示例：
                   crypvol info ./archive.cvk

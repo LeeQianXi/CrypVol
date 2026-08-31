@@ -4,6 +4,7 @@ using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Repair;
 
@@ -14,13 +15,15 @@ public static class RepairHelper
         var rawInput = args.GetRequiredValue(CommandDefinition.Repair.VolFiles);
 
         var loggerFactory = Program.LoggerFactory;
+        var logger = loggerFactory.CreateLogger(nameof(RepairHelper));
+        var discoveryLogger = loggerFactory.CreateLogger("VolumeDiscovery");
 
         // 1. 发现所有卷文件
-        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+        var volFiles = VolumeDiscovery.Discover(rawInput, discoveryLogger).ToList()
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.Error.WriteLine("无可处理文件");
+            logger.LogWarning("无可处理文件");
             return 1;
         }
 
@@ -29,9 +32,9 @@ public static class RepairHelper
         var keyFile = args.GetValue(CommandDefinition.Repair.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, discoveryLogger);
             if (keyFile is not null)
-                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+                discoveryLogger.LogInformation("自动发现密钥文件: {KeyFileFullName}", keyFile.FullName);
         }
 
         if (keyFile is not null)
@@ -45,7 +48,7 @@ public static class RepairHelper
             }
             catch (Exception ex)
             {
-                await Console.Error.WriteLineAsync($"密钥加载失败: {ex.Message}");
+                logger.LogError(ex, "密钥加载失败");
                 return 1;
             }
         else
@@ -67,19 +70,19 @@ public static class RepairHelper
 
         if (!result.Success)
         {
-            await Console.Error.WriteLineAsync($"错误: {result.Error}");
+            logger.LogError("修复失败: {ResultError}", result.Error);
             return 1;
         }
 
         if (result.RepairedBlocks == 0)
         {
-            Console.WriteLine("未发现损坏块，无需修复");
+            logger.LogInformation("未发现损坏块，无需修复");
         }
         else
         {
-            Console.WriteLine($"修复损坏块: {result.RepairedBlocks}");
+            logger.LogInformation("修复损坏块: {RepairedBlockCount}", result.RepairedBlocks);
             foreach (var v in result.RepairedVolumes)
-                Console.WriteLine($"  {v}");
+                logger.LogInformation("修复卷: {VolumePath}", v);
         }
 
         return 0;

@@ -4,6 +4,7 @@ using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Pack;
 
@@ -12,11 +13,12 @@ public static class PackHelper
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
         var loggerFactory = Program.LoggerFactory;
+        var logger = loggerFactory.CreateLogger(nameof(PackHelper));
 
         var inputPath = args.GetRequiredValue(CommandDefinition.Pack.InputPath);
         if (!inputPath.Exists)
         {
-            Console.Error.WriteLine("源路径不存在");
+            logger.LogWarning("源路径不存在");
             return 1;
         }
 
@@ -25,18 +27,20 @@ public static class PackHelper
         var prefix = args.GetValue(CommandDefinition.Pack.OutputPrefix);
         if (string.IsNullOrWhiteSpace(prefix))
         {
-            Console.Error.WriteLine("无效前缀");
+            logger.LogWarning("无效前缀");
             return 1;
         }
+
         if (prefix.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || prefix.Contains(Path.DirectorySeparatorChar)
-            || prefix.Contains(Path.AltDirectorySeparatorChar))
+                                                                   || prefix.Contains(Path.AltDirectorySeparatorChar))
         {
-            Console.Error.WriteLine("输出前缀不能包含路径分隔符或非法文件名字符");
+            logger.LogWarning("输出前缀不能包含路径分隔符或非法文件名字符");
             return 1;
         }
+
         if (args.GetValue(CommandDefinition.Pack.VolumeSize) == 0)
         {
-            Console.Error.WriteLine("卷切分目标必须大于 0 MiB");
+            logger.LogWarning("卷切分目标必须大于 0 MiB");
             return 1;
         }
 
@@ -66,14 +70,14 @@ public static class PackHelper
 
         if (files.Count == 0)
         {
-            Console.Error.WriteLine("无可处理文件");
+            logger.LogWarning("无可处理文件");
             return 1;
         }
 
         var chunkSizeMb = args.GetValue(CommandDefinition.Pack.ChunkSize);
         if (chunkSizeMb is < 1 or > 64)
         {
-            Console.Error.WriteLine("块大小必须在 1–64 MiB 之间");
+            logger.LogWarning("块大小必须在 1–64 MiB 之间");
             return 1;
         }
 
@@ -105,7 +109,7 @@ public static class PackHelper
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message);
+                logger.LogError(ex, "无法加载密钥文件");
                 return 1;
             }
         }
@@ -115,12 +119,13 @@ public static class PackHelper
             var publicKeys = args.GetValue(CommandDefinition.Pack.PublicKey)?.ToList() ?? [];
             if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
             {
-                Console.Error.WriteLine("Password 模式需要 --password");
+                logger.LogWarning("Password 模式需要 --password");
                 return 1;
             }
+
             if (mode == EncryptionMode.Asymmetric && publicKeys.Count == 0)
             {
-                Console.Error.WriteLine("Asymmetric 模式需要 --public-key");
+                logger.LogWarning("Asymmetric 模式需要 --public-key");
                 return 1;
             }
 
@@ -138,7 +143,7 @@ public static class PackHelper
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"创建密钥文件失败: {ex.Message}");
+                logger.LogError(ex, "创建密钥文件失败");
                 return 1;
             }
         }
@@ -149,7 +154,7 @@ public static class PackHelper
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"无法创建输出目录：{ex.Message}");
+            logger.LogError(ex, "无法创建输出目录");
             return 1;
         }
 
@@ -174,11 +179,12 @@ public static class PackHelper
 
         if (!result.Success)
         {
-            Console.Error.WriteLine($"错误: {result.Error}");
+            logger.LogError("打包失败: {ResultError}", result.Error);
             return 1;
         }
 
-        Console.WriteLine($"打包完成：{result.VolumeCount} 个卷 → {outputDir.FullName}");
+        logger.LogInformation("打包完成：{VolumeCount} 个卷 → {OutputDirectory}", result.VolumeCount,
+            outputDir.FullName);
         return 0;
     }
 }

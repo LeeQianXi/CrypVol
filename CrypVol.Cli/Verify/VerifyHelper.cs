@@ -4,6 +4,7 @@ using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Verify;
 
@@ -14,13 +15,15 @@ public static class VerifyHelper
         var rawInput = args.GetRequiredValue(CommandDefinition.Verify.VolFiles);
 
         var loggerFactory = Program.LoggerFactory;
+        var logger = loggerFactory.CreateLogger(nameof(VerifyHelper));
+        var discoveryLogger = loggerFactory.CreateLogger("VolumeDiscovery");
 
         // 1. 发现所有卷文件
-        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+        var volFiles = VolumeDiscovery.Discover(rawInput, discoveryLogger).ToList()
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.Error.WriteLine("无可处理文件");
+            logger.LogWarning("无可处理文件");
             return 2;
         }
 
@@ -29,9 +32,9 @@ public static class VerifyHelper
         var keyFile = args.GetValue(CommandDefinition.Verify.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, discoveryLogger);
             if (keyFile is not null)
-                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+                discoveryLogger.LogInformation("自动发现密钥文件: {KeyFileFullName}", keyFile.FullName);
         }
 
         if (keyFile is not null)
@@ -45,7 +48,7 @@ public static class VerifyHelper
             }
             catch (Exception ex)
             {
-                await Console.Error.WriteLineAsync($"密钥加载失败: {ex.Message}");
+                logger.LogError(ex, "密钥加载失败");
                 return 2;
             }
         else
@@ -67,7 +70,7 @@ public static class VerifyHelper
 
         if (!result.Success)
         {
-            await Console.Error.WriteLineAsync($"错误: {result.Error}");
+            logger.LogError("校验失败: {ResultError}", result.Error);
             return 2;
         }
 

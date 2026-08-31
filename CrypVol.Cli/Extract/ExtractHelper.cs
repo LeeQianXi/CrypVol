@@ -4,6 +4,7 @@ using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Extract;
 
@@ -15,14 +16,16 @@ public static class ExtractHelper
         var outputDir = args.GetValue(CommandDefinition.Extract.Output)!;
 
         var loggerFactory = Program.LoggerFactory;
+        var logger = loggerFactory.CreateLogger(nameof(ExtractHelper));
+        var discoveryLogger = loggerFactory.CreateLogger("VolumeDiscovery");
 
         // 1. 快速校验 + 解析卷文件
         if (!outputDir.Exists) outputDir.Create();
-        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+        var volFiles = VolumeDiscovery.Discover(rawInput, discoveryLogger).ToList()
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.Error.WriteLine("无可处理文件");
+            logger.LogWarning("无可处理文件");
             return 1;
         }
 
@@ -31,9 +34,9 @@ public static class ExtractHelper
         var keyFile = args.GetValue(CommandDefinition.Extract.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, discoveryLogger);
             if (keyFile is not null)
-                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+                discoveryLogger.LogInformation("自动发现密钥文件: {KeyFileFullName}", keyFile.FullName);
         }
 
         if (keyFile is not null)
@@ -47,7 +50,7 @@ public static class ExtractHelper
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message);
+                logger.LogError(ex, "无法加载密钥文件");
                 return 1;
             }
         else
@@ -70,11 +73,12 @@ public static class ExtractHelper
 
         if (!result.Success)
         {
-            Console.Error.WriteLine($"错误: {result.Error}");
+            logger.LogError("提取失败: {ResultError}", result.Error);
             return 1;
         }
 
-        Console.WriteLine($"提取完成：{result.FileCount} 个文件 → {outputDir.FullName}");
+        logger.LogInformation("提取完成：{FileCount} 个文件 → {OutputDirectory}", result.FileCount,
+            outputDir.FullName);
         return 0;
     }
 }
