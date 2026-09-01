@@ -53,6 +53,24 @@ public sealed class CvkDocumentTests
         finally { Delete(file); }
     }
 
+    /// <summary>CVK 任一段被篡改时，加载器应在解封前拒绝文件。</summary>
+    [Fact]
+    public async Task TamperedContainer_IsRejectedByIntegrityCheck()
+    {
+        var file = CreateFile();
+        try
+        {
+            var source = CvkDocument.CreateNew(EncryptionMode.PlainKey);
+            await source.WriteAsync(file);
+            var bytes = Convert.FromBase64String((await File.ReadAllTextAsync(file.FullName)).Trim());
+            bytes[bytes.Length - 40] ^= 0x5A;
+            await File.WriteAllTextAsync(file.FullName, Convert.ToBase64String(bytes));
+
+            await Assert.ThrowsAsync<CryptographicException>(() => CvkLoader.LoadAsync(file));
+        }
+        finally { Delete(file); }
+    }
+
     [Fact]
     public async Task ChangePasswordAndPayload_BuildsLoadableDocument()
     {

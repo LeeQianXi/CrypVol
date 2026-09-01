@@ -260,12 +260,12 @@ public static class CvkLoader
 }
 
 /// <summary>只读的 CVK 明文元数据视图。</summary>
-public sealed record CvkMetadataView(CvkMetadataPayload Metadata, int KeyBodyLength, byte[] Integrity)
+public sealed record CvkMetadataView(CvkMetadataPayload Metadata, int KeyBodyLength, ReadOnlyMemory<byte> Integrity)
 {
     /// <summary>CEK 保护模式。</summary>
     public EncryptionMode ProtectionMode => Metadata.ProtectionMode;
     /// <summary>使用的密码学算法。</summary>
     public EncryptionAlgorithm Algorithm => Metadata.Algorithm;
     /// <summary>接收者标识。</summary>
-    public IReadOnlyList<string> KeyIds => Metadata.KeyIds;
+    public IReadOnlyList<string> KeyIds => Metadata.KeyIds.ToArray();
 }
