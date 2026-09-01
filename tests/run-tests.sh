@@ -162,13 +162,13 @@ check     "--key-file 复用"     run pack "$TMP/pack-reuse/input" \
 CMP_DIR="$TMP/pack-compress"
 mkdir -p "$CMP_DIR/input" "$CMP_DIR/output"
 mk_files "$CMP_DIR/input"
-check     "-c 压缩"             run pack "$CMP_DIR/input" -m PlainKey -c -o "$CMP_DIR/output"
-check     "--compression-level SmallestSize" run pack "$CMP_DIR/input" -m PlainKey -c --compression-level SmallestSize -o "$TMP/pack-cmp9"
-check     "--compression-level Fastest" run pack "$CMP_DIR/input" -m PlainKey -c --compression-level Fastest -o "$TMP/pack-cmp5"
+check     "默认压缩"             run pack "$CMP_DIR/input" -m PlainKey -o "$CMP_DIR/output"
+check     "--compression-level SmallestSize" run pack "$CMP_DIR/input" -m PlainKey --compression-level SmallestSize -o "$TMP/pack-cmp9"
+check     "--compression-level Fastest" run pack "$CMP_DIR/input" -m PlainKey --compression-level Fastest -o "$TMP/pack-cmp5"
 check     "--integrity File" run pack "$CMP_DIR/input" -m PlainKey --integrity File -o "$TMP/pack-integrity-file"
 check     "integrity File verify" run verify "$TMP/pack-integrity-file" -k "$TMP/pack-integrity-file/input.cvk"
 check_fail "--chunk-size 0" run pack "$CMP_DIR/input" -m None --chunk-size 0 -o "$TMP/pack-invalid-chunk"
-check_fail "--compression-level 非法预设" run pack "$CMP_DIR/input" -m PlainKey -c --compression-level 10 -o "$TMP/pack-invalid-compression"
+check_fail "--compression-level 非法预设" run pack "$CMP_DIR/input" -m PlainKey --compression-level 10 -o "$TMP/pack-invalid-compression"
 
 # --include
 mkdir -p "$TMP/pack-filter/input" "$TMP/pack-filter/output"
