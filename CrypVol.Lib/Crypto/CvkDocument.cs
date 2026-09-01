@@ -38,7 +38,7 @@ public sealed class CvkDocument
     /// <summary>已存在的公钥接收者槽位；可在缺少原始公钥文件时保留或删除。</summary>
     public IList<CvkPublicKeyRecipient> PublicKeyRecipients { get; } = new List<CvkPublicKeyRecipient>();
 
-    /// <summary>待新增的 RSA 公钥文件；构建时会生成新的接收者槽位。</summary>
+    /// <summary>待新增的公钥文件；构建时按当前封装模式生成接收者槽位。</summary>
     public IReadOnlyList<FileInfo> NewPublicKeyFiles => _newPublicKeyFiles;
 
     /// <summary>可选注释。</summary>

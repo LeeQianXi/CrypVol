@@ -64,6 +64,7 @@ public static class RekeyHelper
             return 1;
         }
 
+        var sourceMode = document.EncryptionMode;
         document.EncryptionMode = toMode;
         switch (toMode)
         {
@@ -78,6 +79,9 @@ public static class RekeyHelper
             case EncryptionMode.Asymmetric:
             case EncryptionMode.Ecc:
                 document.Password = null;
+                // RSA 与 ECC 接收者槽位格式不同，跨算法切换时不能复用旧槽位。
+                if (sourceMode != toMode)
+                    document.ClearPublicKeys();
                 foreach (var publicKey in publicKeys) document.AddPublicKey(publicKey);
                 if (document.PublicKeyRecipients.Count == 0 && document.NewPublicKeyFiles.Count == 0)
                 {
