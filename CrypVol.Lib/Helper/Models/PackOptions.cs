@@ -42,7 +42,7 @@ public sealed record PackOptions
     public CompressionLevel CompressionLevel { get; init; } = CompressionLevel.Optimal;
 
     /// <summary>完整性校验级别。</summary>
-    public IntegrityLevel IntegrityLevel { get; init; } = IntegrityLevel.File;
+    public IntegrityLevel IntegrityLevel { get; init; } = IntegrityLevel.Block;
 }
 
 public sealed record PackResult

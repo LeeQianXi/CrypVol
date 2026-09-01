@@ -1,5 +1,6 @@
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Engine.Models;
+using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;
 using CrypVol.Lib.Volume;
 using Xunit;
@@ -88,6 +89,21 @@ public class IntegrityLevelTests
     public void IntegrityLevel_HasAllValues()
     {
         Assert.Equal(4, Enum.GetValues<IntegrityLevel>().Length);
+    }
+
+    /// <summary>库直接调用 Pack 时应与 CLI 保持相同的块级完整性默认值。</summary>
+    [Fact]
+    public void PackOptions_DefaultIntegrityLevel_IsBlock()
+    {
+        var options = new PackOptions
+        {
+            SourceFolder = new DirectoryInfo(Path.GetTempPath()),
+            SourceFiles = Array.Empty<FileInfo>(),
+            OutputDir = new DirectoryInfo(Path.GetTempPath()),
+            Credentials = new CvkCredentials(EncryptionMode.None, Array.Empty<byte>())
+        };
+
+        Assert.Equal(IntegrityLevel.Block, options.IntegrityLevel);
     }
 }
 
