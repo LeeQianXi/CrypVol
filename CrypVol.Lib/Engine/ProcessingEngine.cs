@@ -259,14 +259,17 @@ public sealed partial class ProcessingEngine
         ]);
     }
 
-    private Task StartStagesAsync(CancellationToken cancellationToken)
+    private async Task StartStagesAsync(CancellationToken cancellationToken)
     {
-        return Task.WhenAll([
-            RunLifecycleAsync("启动", "Provider", _provider, () => _provider.StartAsync(cancellationToken)),
-            RunLifecycleAsync("启动", "Receiver", _receiver, () => _receiver.StartAsync(cancellationToken)),
-            .. _processors.Select((processor, index) => RunLifecycleAsync("启动", $"Processor#{index}", processor,
-                () => processor.StartAsync(cancellationToken)))
-        ]);
+        await RunLifecycleAsync("启动", "Receiver", _receiver, () => _receiver.StartAsync(cancellationToken));
+        for (var index = _processors.Count - 1; index >= 0; index--)
+        {
+            var processor = _processors[index];
+            await RunLifecycleAsync("启动", $"Processor#{index}", processor,
+                () => processor.StartAsync(cancellationToken));
+        }
+
+        await RunLifecycleAsync("启动", "Provider", _provider, () => _provider.StartAsync(cancellationToken));
     }
 
     private Task DisposeStagesAsync(CancellationToken cancellationToken)

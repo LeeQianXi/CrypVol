@@ -79,6 +79,23 @@ public sealed class ProcessingEngineTests
         }, events);
     }
 
+    /// <summary>启动阶段必须先让下游就绪，再启动上游生产阶段。</summary>
+    [Fact]
+    public async Task StartAsync_StartsStagesFromReceiverToProvider()
+    {
+        var order = new List<string>();
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(new StartOrderProvider(order))
+            .AddProcessor(new StartOrderProcessor(order, "processor-1"))
+            .AddProcessor(new StartOrderProcessor(order, "processor-2"))
+            .UseReceiver(new StartOrderReceiver(order))
+            .Build();
+
+        await engine.StartAsync();
+
+        Assert.Equal(["receiver", "processor-2", "processor-1", "provider"], order);
+    }
+
     /// <summary>构造完成后 EngineBuilder 应锁定。</summary>
     [Fact]
     public void Build_LocksBuilder()
@@ -369,6 +386,58 @@ public sealed class ProcessingEngineTests
         {
             await foreach (var block in ReadAsync(cancellationToken))
                 Blocks.Add(block);
+        }
+    }
+
+    /// <summary>记录启动顺序的空提供阶段。</summary>
+    private sealed class StartOrderProvider(List<string> order) : DataProviderBase
+    {
+        /// <inheritdoc />
+        public override Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            order.Add("provider");
+            return Task.CompletedTask;
+        }
+
+        /// <inheritdoc />
+        protected override Task ProduceCoreAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>记录启动顺序的空处理阶段。</summary>
+    private sealed class StartOrderProcessor(List<string> order, string name) : DataProcessorBase
+    {
+        /// <inheritdoc />
+        public override Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            order.Add(name);
+            return Task.CompletedTask;
+        }
+
+        /// <inheritdoc />
+        protected override ValueTask<DataBlock?> ProcessBlockAsync(DataBlock block,
+            CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult<DataBlock?>(null);
+        }
+    }
+
+    /// <summary>记录启动顺序的空接收阶段。</summary>
+    private sealed class StartOrderReceiver(List<string> order) : DataReceiverBase
+    {
+        /// <inheritdoc />
+        public override Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            order.Add("receiver");
+            return Task.CompletedTask;
+        }
+
+        /// <inheritdoc />
+        public override async Task ReceiveAsync(CancellationToken cancellationToken = default)
+        {
+            await foreach (var block in ReadAsync(cancellationToken)) block.Dispose();
         }
     }
 
