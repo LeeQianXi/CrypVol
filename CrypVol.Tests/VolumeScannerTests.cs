@@ -88,7 +88,7 @@ public class VolumeScannerTests
             Assert.Equal(data.Length, fragments[0].BlockSize);
             Assert.Equal(data.Length, fragments[0].TotalFileSize);
             Assert.Equal(0, fragments[0].Flags);
-            Assert.True(fragments[0].IsFirst);
+            Assert.True(fragments[0].StartsEntry);
         }
         finally
         {
@@ -139,6 +139,48 @@ public class VolumeScannerTests
             {
                 // ignored
             }
+        }
+    }
+
+    /// <summary>同一条目中的后续块不应重复声明起始头，且扫描结果必须保留物理顺序。</summary>
+    [Fact]
+    public void Scan_PlainMode_MultipleBlocksInEntry_PreservesEntryBoundaryAndOrder()
+    {
+        var dir = new DirectoryInfo(TempDir());
+        try
+        {
+            dir.Create();
+            var path = Path.Combine(dir.FullName, "archive.0.cvp");
+            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write))
+            {
+                var header = new FileEntryHeader
+                {
+                    FileId = 1,
+                    Flags = 0,
+                    FragmentIndex = 0,
+                    SizeOrTotal = 3
+                };
+                header.SetFilePath("joined.bin");
+                stream.Write(header.ToBytes());
+                stream.Write(BitConverter.GetBytes(2));
+                stream.Write([1, 2]);
+                stream.Write(BitConverter.GetBytes(1));
+                stream.Write([3]);
+            }
+
+            var result = VolumeScanner.Scan([new FileInfo(path)]);
+
+            var fragments = result.Files["joined.bin"];
+            Assert.Equal(2, fragments.Count);
+            Assert.True(fragments[0].StartsEntry);
+            Assert.False(fragments[1].StartsEntry);
+            Assert.Equal(["joined.bin", "joined.bin"], result.OrderedBlocks.Select(block => block.RelativePath));
+            Assert.Equal(fragments, result.OrderedBlocks.Select(block => block.Fragment));
+        }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
         }
     }
 
@@ -264,7 +306,7 @@ public class VolumeScannerTests
         Assert.Equal(100, fragment.BlockSize);
         Assert.Equal(5000, fragment.TotalFileSize);
         Assert.Equal(1, fragment.Flags);
-        Assert.True(fragment.IsFirst);
+        Assert.True(fragment.StartsEntry);
     }
 
     // ── Scan: multiple volumes ──

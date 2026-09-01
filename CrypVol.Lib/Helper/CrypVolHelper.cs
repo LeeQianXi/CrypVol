@@ -149,7 +149,7 @@ public sealed class CrypVolHelper
                         Length = f.BlockSize,
                         TotalFileSize = f.TotalFileSize,
                         Flags = f.Flags,
-                        IsFirstFragment = f.IsFirst
+                        IsFirstFragment = f.StartsEntry
                     });
             }
 
@@ -284,27 +284,31 @@ public sealed class CrypVolHelper
                 };
 
             var fileFragments = scanResult.Files;
-            var items = new List<BlockMetadata>();
+            var items = new List<BlockMetadata>(scanResult.OrderedBlocks.Count);
             var volMap = new Dictionary<int, int>();
+            var sequenceByVolume = new Dictionary<int, long>();
             var newVolIdx = 0;
 
-            foreach (var (relPath, fragments) in fileFragments)
-            foreach (var f in fragments)
+            foreach (var scannedBlock in scanResult.OrderedBlocks)
             {
+                var relPath = scannedBlock.RelativePath;
+                var f = scannedBlock.Fragment;
                 var oldVol = Path.GetFileNameWithoutExtension(f.CvpFile.Name).Split('.').Last();
                 if (!int.TryParse(oldVol, out var ov)) ov = 0;
                 if (!volMap.TryGetValue(ov, out var nv)) volMap[ov] = nv = newVolIdx++;
+                var sequence = sequenceByVolume.TryGetValue(nv, out var currentSequence) ? currentSequence : 0;
+                sequenceByVolume[nv] = sequence + 1;
                 items.Add(new BlockMetadata
                 {
                     RelativePath = relPath,
                     SourceFullPath = f.CvpFile.FullName,
                     TargetIndex = nv,
-                    Sequence = items.Count(i => i.TargetIndex == nv),
+                    Sequence = sequence,
                     SourceOffset = f.CvpOffset,
                     Length = f.BlockSize,
                     TotalFileSize = f.TotalFileSize,
                     Flags = f.Flags,
-                    IsFirstFragment = f.IsFirst
+                    IsFirstFragment = f.StartsEntry
                 });
             }
 
@@ -757,12 +761,10 @@ public sealed class CrypVolHelper
                 continue;
             }
 
-            var hasCrossHead = fragments.Any(f => f.IsFirst &&
-                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
-                                                  or FileEntryHeaderFlagsEnum.CrossHead);
-            var hasCrossTail = fragments.Any(f => !f.IsFirst &&
-                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
-                                                  or FileEntryHeaderFlagsEnum.CrossTail);
+            var firstType = (FileEntryHeaderFlagsEnum)(fragments[0].Flags & 3);
+            var lastType = (FileEntryHeaderFlagsEnum)(fragments[^1].Flags & 3);
+            var hasCrossHead = firstType is FileEntryHeaderFlagsEnum.Full or FileEntryHeaderFlagsEnum.CrossHead;
+            var hasCrossTail = lastType is FileEntryHeaderFlagsEnum.Full or FileEntryHeaderFlagsEnum.CrossTail;
             if (!hasCrossHead || !hasCrossTail)
                 incomplete.Add(path);
         }
@@ -805,7 +807,7 @@ public sealed class CrypVolHelper
             Length = fragment.BlockSize,
             TotalFileSize = fragment.TotalFileSize,
             Flags = fragment.Flags,
-            IsFirstFragment = fragment.IsFirst
+            IsFirstFragment = fragment.StartsEntry
         };
     }
 

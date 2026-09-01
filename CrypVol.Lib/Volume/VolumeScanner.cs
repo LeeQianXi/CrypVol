@@ -12,6 +12,7 @@ public static class VolumeScanner
         GlobMatcher? filter = null, ILogger? logger = null)
     {
         var files = new Dictionary<string, List<Fragment>>();
+        var orderedBlocks = new List<ScannedBlock>();
         var possiblyEncrypted = false;
 
         Span<byte> magicBuf = stackalloc byte[4];
@@ -89,8 +90,7 @@ public static class VolumeScanner
                 }
 
                 var flags = (FileEntryHeaderFlagsEnum)hdr.Flags;
-                var isFirst = !flags.HasFlag(FileEntryHeaderFlagsEnum.CrossMid)
-                              && !flags.HasFlag(FileEntryHeaderFlagsEnum.CrossTail);
+                var startsEntry = true;
 
                 while (pos + 4 <= fs.Length)
                 {
@@ -113,8 +113,11 @@ public static class VolumeScanner
                     if (!files.TryGetValue(relPath, out var list))
                         files[relPath] = list = [];
 
-                    list.Add(new Fragment(cvp, pos, blockLen, hdr.SizeOrTotal,
-                        hdr.Flags, isFirst && list.Count == 0, hdr.FragmentIndex));
+                    var fragment = new Fragment(cvp, pos, blockLen, hdr.SizeOrTotal,
+                        hdr.Flags, startsEntry, hdr.FragmentIndex);
+                    list.Add(fragment);
+                    orderedBlocks.Add(new ScannedBlock(relPath, fragment));
+                    startsEntry = false;
 
                     pos += blockLen;
                 }
@@ -126,6 +129,7 @@ public static class VolumeScanner
         return new ScanResult
         {
             Files = files,
+            OrderedBlocks = orderedBlocks,
             PossiblyEncrypted = possiblyEncrypted
         };
     }
@@ -144,12 +148,19 @@ public static class VolumeScanner
         int BlockSize,
         long TotalFileSize,
         byte Flags,
-        bool IsFirst,
+        bool StartsEntry,
         uint FragmentIndex);
+
+    /// <summary>保留卷内物理顺序的已扫描数据块。</summary>
+    /// <param name="RelativePath">所属文件的相对路径。</param>
+    /// <param name="Fragment">数据块及其来源信息。</param>
+    public sealed record ScannedBlock(string RelativePath, Fragment Fragment);
 
     public sealed class ScanResult
     {
         public required Dictionary<string, List<Fragment>> Files { get; init; }
+        /// <summary>按输入卷与卷内出现顺序排列的数据块，适用于格式保真的重写流程。</summary>
+        public required IReadOnlyList<ScannedBlock> OrderedBlocks { get; init; }
         public bool PossiblyEncrypted { get; init; }
     }
 }

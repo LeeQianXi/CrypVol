@@ -364,6 +364,61 @@ public class CrypVolEngineTests : IDisposable
         Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(restoreDir.FullName, "data.bin")));
     }
 
+    /// <summary>转换必须保留多块、跨卷文件的条目边界和物理写入顺序。</summary>
+    [Fact]
+    public async Task Convert_MultiBlockCrossVolumeFile_RoundTrip()
+    {
+        var data = RandomNumberGenerator.GetBytes(4_500_000);
+        MakeFile("large.bin", data);
+        var packedDirectory = _workDir.CreateSubdirectory("packed");
+        var convertedDirectory = _workDir.CreateSubdirectory("converted");
+        var restoredDirectory = _workDir.CreateSubdirectory("restored");
+        var engine = new CrypVolHelper();
+        var oldCredentials = new CvkCredentials(EncryptionMode.PlainKey, RandomNumberGenerator.GetBytes(32));
+        var newCredentials = new CvkCredentials(EncryptionMode.PlainKey, RandomNumberGenerator.GetBytes(32));
+
+        var packResult = await engine.PackAsync(new PackOptions
+        {
+            SourceFolder = _workDir,
+            SourceFiles = [new FileInfo(Path.Combine(_workDir.FullName, "large.bin"))],
+            OutputDir = packedDirectory,
+            Credentials = oldCredentials,
+            EnableCompression = false,
+            IntegrityLevel = IntegrityLevel.File,
+            ChunkSizeMb = 1,
+            VolumeSizeMb = 3
+        });
+        Assert.True(packResult.Success, packResult.Error);
+        Assert.True(packResult.VolumeCount > 1);
+
+        var convertResult = await engine.ConvertAsync(new ConvertOptions
+        {
+            VolumeFiles = CvpFiles(packResult),
+            OutputDir = convertedDirectory,
+            OutputPrefix = "converted",
+            OldCredentials = oldCredentials,
+            NewCredentials = newCredentials
+        });
+        Assert.True(convertResult.Success, convertResult.Error);
+
+        var verifyResult = await engine.VerifyAsync(new VerifyOptions
+        {
+            VolumeFiles = convertResult.VolumePaths.Select(path => new FileInfo(path)).ToList(),
+            Credentials = newCredentials
+        });
+        Assert.True(verifyResult.Success, verifyResult.Error);
+        Assert.Empty(verifyResult.CorruptedEntries);
+
+        var extractResult = await engine.ExtractAsync(new ExtractOptions
+        {
+            VolumeFiles = convertResult.VolumePaths.Select(path => new FileInfo(path)).ToList(),
+            OutputDir = restoredDirectory,
+            Credentials = newCredentials
+        });
+        Assert.True(extractResult.Success, extractResult.Error);
+        Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(restoredDirectory.FullName, "large.bin")));
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Pack → Extract with include/exclude glob
     // ═══════════════════════════════════════════════════════
