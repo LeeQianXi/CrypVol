@@ -250,14 +250,15 @@ public sealed class CvkDocumentTests
                 await File.WriteAllTextAsync(privateKey.FullName, key.ExportECPrivateKeyPem());
             }
 
-            var source = CvkDocument.CreateNew(EncryptionMode.Ecc);
+            var source = CvkDocument.CreateNew(EncryptionMode.Asymmetric, EncryptionAlgorithm.Ecc);
             source.AddPublicKey(publicKey);
             var file = new FileInfo(Path.Combine(directory.FullName, "ecc.cvk"));
             await source.WriteAsync(file);
 
             var loaded = await CvkLoader.LoadAsync(file, privateKeyFile: privateKey);
             Assert.Equal(source.Cek, loaded.Cek);
-            Assert.Equal(EncryptionMode.Ecc, loaded.EncryptionMode);
+            Assert.Equal(EncryptionMode.Asymmetric, loaded.EncryptionMode);
+            Assert.Equal(EncryptionAlgorithm.Ecc, loaded.EncryptionAlgorithm);
             Assert.Equal(EnvelopeMode.EccPublicKey, CvkLoader.ReadMode(file.FullName));
             Assert.Equal("device", Assert.Single(loaded.PublicKeyRecipients).KeyId);
         }

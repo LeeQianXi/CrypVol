@@ -16,10 +16,11 @@ public sealed class CvkDocument
     /// <summary>创建 CVK 内容模型。</summary>
     /// <param name="cek">要由 CVK 封装的 32 字节内容加密密钥。</param>
     /// <param name="encryptionMode">CEK 封装模式。</param>
-    public CvkDocument(byte[] cek, EncryptionMode encryptionMode)
+    public CvkDocument(byte[] cek, EncryptionMode encryptionMode, EncryptionAlgorithm encryptionAlgorithm = EncryptionAlgorithm.AesGcm)
     {
         Cek = cek ?? throw new ArgumentNullException(nameof(cek));
         EncryptionMode = encryptionMode;
+        EncryptionAlgorithm = encryptionAlgorithm;
     }
 
     /// <summary>CVK 载荷，即解包后可直接用于内容加密的 CEK。</summary>
@@ -31,6 +32,9 @@ public sealed class CvkDocument
 
     /// <summary>CEK 的封装模式。</summary>
     public EncryptionMode EncryptionMode { get; set; }
+
+    /// <summary>CVK 使用的密码学算法，与 CEK 保护模式分离。</summary>
+    public EncryptionAlgorithm EncryptionAlgorithm { get; set; }
 
     /// <summary>密码封装时用于派生密钥的密码。</summary>
     public string? Password { get; set; }
@@ -59,9 +63,10 @@ public sealed class CvkDocument
     /// <summary>创建带随机 CEK 的 CVK 内容模型。</summary>
     /// <param name="encryptionMode">CEK 封装模式。</param>
     /// <returns>可编辑的 CVK 内容模型。</returns>
-    public static CvkDocument CreateNew(EncryptionMode encryptionMode)
+    public static CvkDocument CreateNew(EncryptionMode encryptionMode,
+        EncryptionAlgorithm encryptionAlgorithm = EncryptionAlgorithm.AesGcm)
     {
-        return new CvkDocument(RandomNumberGenerator.GetBytes(32), encryptionMode)
+        return new CvkDocument(RandomNumberGenerator.GetBytes(32), encryptionMode, encryptionAlgorithm)
         {
             CreatedAt = DateTimeOffset.UtcNow,
             Generator = "CrypVol"
@@ -138,8 +143,8 @@ public sealed class CvkDocument
         {
             EncryptionMode.PlainKey => EnvelopeMode.Plain,
             EncryptionMode.Password => EnvelopeMode.Password,
+            EncryptionMode.Asymmetric when EncryptionAlgorithm == EncryptionAlgorithm.Ecc => EnvelopeMode.EccPublicKey,
             EncryptionMode.Asymmetric => EnvelopeMode.PublicKey,
-            EncryptionMode.Ecc => EnvelopeMode.EccPublicKey,
             _ => throw new InvalidOperationException("不支持的 CVK 封装模式。")
         }));
         var payloadLengthPosition = stream.Position;
@@ -153,11 +158,11 @@ public sealed class CvkDocument
             case EncryptionMode.Password:
                 WritePasswordPayload(writer);
                 break;
+            case EncryptionMode.Asymmetric when EncryptionAlgorithm == EncryptionAlgorithm.Ecc:
+                WriteEccPublicKeyPayload(writer);
+                break;
             case EncryptionMode.Asymmetric:
                 WritePublicKeyPayload(writer);
-                break;
-            case EncryptionMode.Ecc:
-                WriteEccPublicKeyPayload(writer);
                 break;
         }
 

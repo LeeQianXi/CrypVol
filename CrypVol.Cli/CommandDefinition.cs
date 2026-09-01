@@ -88,6 +88,7 @@ public static class CommandDefinition
         public static readonly Option<uint> ChunkSize;
         public static readonly Option<FileInfo> KeyFile;
         public static readonly Option<EncryptionMode> Mode;
+        public static readonly Option<EncryptionAlgorithm> Algorithm;
         public static readonly Option<string> Password;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<FileInfo> PrivkeyKey;
@@ -201,9 +202,15 @@ public static class CommandDefinition
                     None       —— 不加密，不生成 .cvk 文件
                     PlainKey   —— CEK 明文存储在 .cvk 中（默认）
                     Password   —— CEK 经 Argon2id + AES-256-GCM 加密，需密码解密
-                    Asymmetric —— CEK 经 RSA 公钥加密，需对应私钥解密
+                    Asymmetric —— CEK 经公钥加密，需对应私钥解密
                     """,
                 DefaultValueFactory = static _ => EncryptionMode.PlainKey
+            };
+
+            Algorithm = new Option<EncryptionAlgorithm>("--algorithm")
+            {
+                Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
+                DefaultValueFactory = static _ => EncryptionAlgorithm.AesGcm
             };
 
             Password = new Option<string>("--password", "-p")
@@ -319,6 +326,7 @@ public static class CommandDefinition
                 ChunkSize,
                 KeyFile,
                 Mode,
+                Algorithm,
                 Password,
                 PublicKey,
                 PrivkeyKey,
@@ -911,6 +919,7 @@ public static class CommandDefinition
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<FileInfo?> Output;
         public static readonly Option<EncryptionMode> ToMode;
+        public static readonly Option<EncryptionAlgorithm> Algorithm;
         public static readonly Option<string> NewPassword;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<bool> Backup;
@@ -939,6 +948,12 @@ public static class CommandDefinition
                     Asymmetric —— 用公钥包裹 CEK
                     （必需指定）
                     """
+            };
+
+            Algorithm = new Option<EncryptionAlgorithm>("--algorithm")
+            {
+                Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
+                DefaultValueFactory = static _ => EncryptionAlgorithm.AesGcm
             };
 
             Password = new Option<string>("--password", "-p")
@@ -997,6 +1012,7 @@ public static class CommandDefinition
                 CvkFile,
                 Output,
                 ToMode,
+                Algorithm,
                 Password,
                 NewPassword,
                 PublicKey,
@@ -1168,6 +1184,7 @@ public static class CommandDefinition
         public static readonly Option<DirectoryInfo> Output;
         public static readonly Option<string> Name;
         public static readonly Option<EncryptionMode> Mode;
+        public static readonly Option<EncryptionAlgorithm> Algorithm;
         public static readonly Option<string> Password;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<string> Comment;

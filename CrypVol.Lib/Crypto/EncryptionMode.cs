@@ -1,6 +1,6 @@
 namespace CrypVol.Lib.Crypto;
 
-/// 密钥保护模式枚举
+/// <summary>CVK 中 CEK 的保护模式；不表示数据加密算法。</summary>
 public enum EncryptionMode
 {
     /// 无加密：数据为明文或仅经 GZip 压缩，不生成 .cvk 文件
@@ -12,9 +12,16 @@ public enum EncryptionMode
     /// 密码包裹：CEK 经 Argon2id + AES-GCM 加密存储在 .cvk，解密需密码
     Password,
 
-    /// 公钥包裹：CEK 经 RSA 公钥加密存储在 .cvk，解密需对应私钥
+    /// 公钥包裹：CEK 经公钥加密存储在 .cvk，解密需对应私钥
     Asymmetric,
+}
 
-    /// ECC 公钥包裹：CEK 经 P-256 ECDH 派生密钥封装，需对应 EC 私钥解密
+/// <summary>CVK 使用的密码学算法；与 CEK 保护模式正交。</summary>
+public enum EncryptionAlgorithm
+{
+    /// <summary>AES-256-GCM，对称数据加密。</summary>
+    AesGcm,
+
+    /// <summary>P-256 ECDH，用于公钥密钥体封装。</summary>
     Ecc
 }

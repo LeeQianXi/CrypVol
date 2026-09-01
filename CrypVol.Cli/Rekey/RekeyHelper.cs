@@ -10,6 +10,7 @@ public static class RekeyHelper
     {
         var cvkFile = args.GetRequiredValue(CommandDefinition.Rekey.CvkFile);
         var toMode = args.GetValue(CommandDefinition.Rekey.ToMode);
+        var algorithm = args.GetValue(CommandDefinition.Rekey.Algorithm);
         var newPassword = args.GetValue(CommandDefinition.Rekey.NewPassword);
         var publicKeys = args.GetValue(CommandDefinition.Rekey.PublicKey)?.ToList() ?? [];
         var logger = Program.LoggerFactory.CreateLogger(nameof(RekeyHelper));
@@ -48,7 +49,7 @@ public static class RekeyHelper
             return 1;
         }
 
-        if (toMode is not (EncryptionMode.Asymmetric or EncryptionMode.Ecc) && publicKeys.Count > 0)
+        if (toMode != EncryptionMode.Asymmetric && publicKeys.Count > 0)
         {
             await Console.Error.WriteLineAsync("--public-key 仅可与公钥封装模式一起使用。");
             return 1;
@@ -77,8 +78,8 @@ public static class RekeyHelper
                 document.ClearPublicKeys();
                 break;
             case EncryptionMode.Asymmetric:
-            case EncryptionMode.Ecc:
                 document.Password = null;
+                document.EncryptionAlgorithm = algorithm;
                 // RSA 与 ECC 接收者槽位格式不同，跨算法切换时不能复用旧槽位。
                 if (sourceMode != toMode)
                     document.ClearPublicKeys();

@@ -10,6 +10,7 @@ public static class GenKeyHelper
         var outputDir = args.GetValue(CommandDefinition.GenKey.Output)!;
         var name = args.GetValue(CommandDefinition.GenKey.Name)!;
         var mode = args.GetValue(CommandDefinition.GenKey.Mode);
+        var algorithm = args.GetValue(CommandDefinition.GenKey.Algorithm);
         var password = args.GetValue(CommandDefinition.GenKey.Password);
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
         // 1. 快速校验
@@ -34,7 +35,7 @@ public static class GenKeyHelper
             return 1;
         }
 
-        if (mode is (EncryptionMode.Asymmetric or EncryptionMode.Ecc) && !pubKeys.Any())
+        if (mode == EncryptionMode.Asymmetric && !pubKeys.Any())
         {
             await Console.Error.WriteLineAsync("Asymmetric 模式需要 --public-key");
             return 1;
@@ -44,7 +45,7 @@ public static class GenKeyHelper
         try
         {
             outputDir.Create();
-            var cvk = CvkDocument.CreateNew(mode);
+        var cvk = CvkDocument.CreateNew(mode, algorithm);
             cvk.Password = password;
             cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
             foreach (var publicKey in pubKeys) cvk.AddPublicKey(publicKey);

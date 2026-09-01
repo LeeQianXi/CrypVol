@@ -62,7 +62,7 @@ public static class CvkLoader
             case EnvelopeMode.EccPublicKey:
                 var eccPayload = await ReadEccPublicKeyPayloadAsync(reader, privateKeyFile, payloadEnd,
                     cancellationToken, logger);
-                document = new CvkDocument(eccPayload.Cek, EncryptionMode.Ecc);
+                document = new CvkDocument(eccPayload.Cek, EncryptionMode.Asymmetric, EncryptionAlgorithm.Ecc);
                 document.LoadPublicKeyRecipients(eccPayload.Recipients, eccPayload.Dek);
                 break;
             default:

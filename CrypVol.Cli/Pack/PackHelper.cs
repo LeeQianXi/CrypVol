@@ -22,10 +22,11 @@ public static class PackHelper
 
         var outputDir = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
         var mode = args.GetValue(CommandDefinition.Pack.Mode);
+        var algorithm = args.GetValue(CommandDefinition.Pack.Algorithm);
         var keyFile = args.GetValue(CommandDefinition.Pack.KeyFile);
         var publicKeys = args.GetValue(CommandDefinition.Pack.PublicKey)?.ToList() ?? [];
 
-        if (keyFile is null && mode is (EncryptionMode.Asymmetric or EncryptionMode.Ecc) && publicKeys.Count == 0)
+        if (keyFile is null && mode == EncryptionMode.Asymmetric && publicKeys.Count == 0)
         {
             await Console.Error.WriteLineAsync("参数错误：公钥模式必须至少提供一个 --public-key；也可以改用 PlainKey 或 Password 模式。");
             return 1;
@@ -130,7 +131,7 @@ public static class PackHelper
             try
             {
                 outputDir.Create();
-                var cvk = CvkDocument.CreateNew(mode);
+                var cvk = CvkDocument.CreateNew(mode, algorithm);
                 cvk.Password = password;
                 cvk.Comment = args.GetValue(CommandDefinition.Pack.Comment);
                 foreach (var publicKey in publicKeys) cvk.AddPublicKey(publicKey);
