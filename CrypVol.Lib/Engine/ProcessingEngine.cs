@@ -158,7 +158,7 @@ public sealed partial class ProcessingEngine
 
             await StartStagesAsync(linkedCancellation.Token);
             State = ProcessingEngineState.Running;
-            Started?.Invoke(this, new ProcessingEngineEventArgs());
+            InvokeObserverHooks(Started, new ProcessingEngineEventArgs(), nameof(Started));
 
             var tasks = new List<Task>(_processors.Count + 2)
             {
@@ -169,7 +169,7 @@ public sealed partial class ProcessingEngine
             await Task.WhenAll(tasks);
 
             State = ProcessingEngineState.Completed;
-            Completed?.Invoke(this, new ProcessingEngineEventArgs());
+            InvokeObserverHooks(Completed, new ProcessingEngineEventArgs(), nameof(Completed));
             LogInformation("数据流程完成");
         }
         catch (Exception ex)
@@ -178,7 +178,7 @@ public sealed partial class ProcessingEngine
             State = ex is OperationCanceledException
                 ? ProcessingEngineState.Canceled
                 : ProcessingEngineState.Faulted;
-            Failed?.Invoke(this, new ProcessingEngineEventArgs(ex));
+            InvokeObserverHooks(Failed, new ProcessingEngineEventArgs(ex), nameof(Failed));
             LogError(ex, "数据流程失败");
             throw;
         }
@@ -191,7 +191,7 @@ public sealed partial class ProcessingEngine
             }
             finally
             {
-                Stopped?.Invoke(this, new ProcessingEngineEventArgs());
+                InvokeObserverHooks(Stopped, new ProcessingEngineEventArgs(), nameof(Stopped));
             }
         }
     }
@@ -369,6 +369,26 @@ public sealed partial class ProcessingEngine
         foreach (var channel in Channels)
             while (channel.Reader.TryRead(out var block))
                 block.Dispose();
+    }
+
+    /// <summary>执行观测型引擎事件，避免单个订阅者破坏主流程或掩盖原始异常。</summary>
+    /// <param name="handlers">待执行的事件处理器。</param>
+    /// <param name="eventArgs">事件参数。</param>
+    /// <param name="eventName">事件名称，用于日志定位。</param>
+    private void InvokeObserverHooks(EventHandler<ProcessingEngineEventArgs>? handlers,
+        ProcessingEngineEventArgs eventArgs, string eventName)
+    {
+        if (handlers is null) return;
+
+        foreach (EventHandler<ProcessingEngineEventArgs> handler in handlers.GetInvocationList())
+            try
+            {
+                handler(this, eventArgs);
+            }
+            catch (Exception exception)
+            {
+                LogError(exception, "引擎观测事件 {EventName} 的处理器失败", eventName);
+            }
     }
 
     public static EngineBuilder Builder()

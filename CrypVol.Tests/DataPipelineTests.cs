@@ -96,6 +96,28 @@ public sealed class ProcessingEngineTests
         Assert.Equal(["receiver", "processor-2", "processor-1", "provider"], order);
     }
 
+    /// <summary>观测事件处理器失败不得阻断其他观察器、完成状态或资源释放。</summary>
+    [Fact]
+    public async Task StartAsync_ObserverHookFailure_DoesNotBreakPipeline()
+    {
+        var events = new List<string>();
+        var engine = ProcessingEngine.Builder()
+            .UseProvider(new SingleBlockProvider(CreateMetadata(), 1))
+            .UseReceiver(new NullDataReceiver())
+            .Build();
+        engine.Started += (_, _) => throw new InvalidOperationException("started hook");
+        engine.Started += (_, _) => events.Add("started");
+        engine.Completed += (_, _) => throw new InvalidOperationException("completed hook");
+        engine.Completed += (_, _) => events.Add("completed");
+        engine.Stopped += (_, _) => throw new InvalidOperationException("stopped hook");
+        engine.Stopped += (_, _) => events.Add("stopped");
+
+        await engine.StartAsync();
+
+        Assert.Equal(ProcessingEngineState.Completed, engine.State);
+        Assert.Equal(["started", "completed", "stopped"], events);
+    }
+
     /// <summary>构造完成后 EngineBuilder 应锁定。</summary>
     [Fact]
     public void Build_LocksBuilder()
