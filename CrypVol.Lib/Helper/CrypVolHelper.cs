@@ -1,3 +1,4 @@
+using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Engine;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Engine.Processors;
@@ -29,25 +30,34 @@ public sealed class CrypVolHelper
         {
             var prefix = opts.OutputPrefix;
             if (opts.SourceFiles.Count == 0)
-                return new PackResult { Error = "无工作项" };
+                return new PackResult
+                {
+                    Error = "无工作项"
+                };
 
             if (opts.ChunkSizeMb is < 1 or > 64)
-                return new PackResult { Error = "块大小必须在 1–64 MiB 之间" };
+                return new PackResult
+                {
+                    Error = "块大小必须在 1–64 MiB 之间"
+                };
 
             var capacity = checked((long)opts.VolumeSizeMb * 1024 * 1024);
             var (mode, cek) = opts.Credentials;
             var headerSize = mode is EncryptionMode.None ? FileEntryHeader.HeaderSize : FileEntryHeader.EncryptedHeaderSize;
             var maxChunkSize = capacity - headerSize - sizeof(int);
             if (maxChunkSize <= 0)
-                return new PackResult { Error = "卷容量不足以容纳文件头和数据块长度字段" };
+                return new PackResult
+                {
+                    Error = "卷容量不足以容纳文件头和数据块长度字段"
+                };
             var chunkSize = (int)Math.Min(checked((long)opts.ChunkSizeMb * 1024 * 1024), maxChunkSize);
 
-            var compressing = mode != EncryptionMode.None && opts.EnableCompression;
+            var compressing = opts.EnableCompression;
             Logger?.LogInformation(
                 "Pack 开始: 流式块大小 {ChunkSize} 字节, {FileCount} 文件, {TotalBytes} 字节, 加密={Encrypted}, 压缩={Compressed}",
                 chunkSize, opts.SourceFiles.Count, opts.SourceFiles.Sum(f => f.Length),
                 mode != EncryptionMode.None ? "是" : "否",
-                compressing ? $"是 (L{opts.CompressionLevel})" : "否");
+                compressing ? $"是 ({opts.CompressionLevel})" : "否");
 
             var encryptHeaders = mode != EncryptionMode.None;
 
@@ -56,9 +66,11 @@ public sealed class CrypVolHelper
                 headerSize, opts.IntegrityLevel, opts.EnableCompression);
             var builder = ProcessingEngine.Builder().UseProvider(provider);
             if (opts.EnableCompression) builder.AddProcessor(new CompressionProcessor(opts.CompressionLevel));
-            if (mode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(cek, opts.IntegrityLevel));
+            if (mode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(cek));
+            if (opts.IntegrityLevel is not IntegrityLevel.None)
+                builder.AddProcessor(new IntegrityAppendProcessor(opts.IntegrityLevel));
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
-            await pipeline.StartAsync(token);
+            await RunPipelineAsync(pipeline, token);
 
             var totalBytes = opts.SourceFiles.Sum(f => f.Length);
             var volumePaths = receiver.VolumePaths;
@@ -137,7 +149,7 @@ public sealed class CrypVolHelper
                         Length = f.BlockSize,
                         TotalFileSize = f.TotalFileSize,
                         Flags = f.Flags,
-                        IsFirstFragment = f.IsFirst
+                        IsFirstFragment = f.StartsEntry
                     });
             }
 
@@ -166,10 +178,12 @@ public sealed class CrypVolHelper
 
             if (!opts.OutputDir.Exists) opts.OutputDir.Create();
             var builder = ProcessingEngine.Builder().UseProvider(new CvpFileDataProvider(items));
-            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek, integrityLevel));
+            if (integrityLevel is not IntegrityLevel.None) builder.AddProcessor(new IntegrityStripProcessor(integrityLevel));
+            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek));
             if (isCompressed) builder.AddProcessor(new DecompressionProcessor());
+            if (integrityLevel >= IntegrityLevel.File) builder.AddProcessor(new FileIntegrityVerificationProcessor());
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
-            await pipeline.StartAsync(token);
+            await RunPipelineAsync(pipeline, token);
 
             Logger?.LogInformation("提取完成: {FileCount} 文件", fileFragments.Count);
             return new ExtractResult
@@ -197,7 +211,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (_, cek) = opts.Credentials;
+            var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null, Logger);
@@ -270,27 +284,31 @@ public sealed class CrypVolHelper
                 };
 
             var fileFragments = scanResult.Files;
-            var items = new List<BlockMetadata>();
+            var items = new List<BlockMetadata>(scanResult.OrderedBlocks.Count);
             var volMap = new Dictionary<int, int>();
+            var sequenceByVolume = new Dictionary<int, long>();
             var newVolIdx = 0;
 
-            foreach (var (relPath, fragments) in fileFragments)
-            foreach (var f in fragments)
+            foreach (var scannedBlock in scanResult.OrderedBlocks)
             {
+                var relPath = scannedBlock.RelativePath;
+                var f = scannedBlock.Fragment;
                 var oldVol = Path.GetFileNameWithoutExtension(f.CvpFile.Name).Split('.').Last();
                 if (!int.TryParse(oldVol, out var ov)) ov = 0;
                 if (!volMap.TryGetValue(ov, out var nv)) volMap[ov] = nv = newVolIdx++;
+                var sequence = sequenceByVolume.TryGetValue(nv, out var currentSequence) ? currentSequence : 0;
+                sequenceByVolume[nv] = sequence + 1;
                 items.Add(new BlockMetadata
                 {
                     RelativePath = relPath,
                     SourceFullPath = f.CvpFile.FullName,
                     TargetIndex = nv,
-                    Sequence = items.Count(i => i.TargetIndex == nv),
+                    Sequence = sequence,
                     SourceOffset = f.CvpOffset,
                     Length = f.BlockSize,
                     TotalFileSize = f.TotalFileSize,
                     Flags = f.Flags,
-                    IsFirstFragment = f.IsFirst
+                    IsFirstFragment = f.StartsEntry
                 });
             }
 
@@ -317,10 +335,12 @@ public sealed class CrypVolHelper
 
             var builder = ProcessingEngine.Builder()
                 .UseProvider(new CvpFileDataProvider(items));
-            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek, integrityLevel));
-            if (newMode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(newCek, integrityLevel));
+            if (integrityLevel is not IntegrityLevel.None) builder.AddProcessor(new IntegrityStripProcessor(integrityLevel));
+            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek));
+            if (newMode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(newCek));
+            if (integrityLevel is not IntegrityLevel.None) builder.AddProcessor(new IntegrityAppendProcessor(integrityLevel));
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
-            await pipeline.StartAsync(token);
+            await RunPipelineAsync(pipeline, token);
 
             var volPaths = Enumerable.Range(0, newVolIdx)
                 .Select(i => Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp")).ToList();
@@ -350,7 +370,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (_, cek) = opts.Credentials;
+            var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null, Logger);
@@ -370,10 +390,24 @@ public sealed class CrypVolHelper
                     Error = "未发现可识别的文件条目"
                 };
 
+            var formatProfiles = fileFragments.Values.SelectMany(fragments => fragments)
+                .Select(fragment => (
+                    Integrity: (IntegrityLevel)(fragment.Flags >> 3 & 3),
+                    Compressed: (fragment.Flags & (byte)FileEntryHeaderFlagsEnum.Compressed) != 0))
+                .Distinct()
+                .ToList();
+            if (formatProfiles.Count != 1)
+                return new VerifyResult
+                {
+                    Error = "输入卷的完整性或压缩配置不一致，无法作为同一归档进行校验。"
+                };
+            var formatProfile = formatProfiles[0];
+
             var totalBlocks = 0;
             var corruptedBlocks = 0;
             var corruptedFiles = 0;
             var corruptedEntries = new List<CorruptedBlock>();
+            var blockCorruptedPaths = new HashSet<string>(StringComparer.Ordinal);
 
             Logger?.LogInformation("校验开始: {FileCount} 文件, Quick={Quick}", fileFragments.Count, opts.Quick);
 
@@ -413,6 +447,7 @@ public sealed class CrypVolHelper
                     corruptedBlocks++;
                     corruptedEntries.Add(new CorruptedBlock
                     {
+                        VolumePath = f.CvpFile.FullName,
                         FilePath = path,
                         CvpOffset = f.CvpOffset,
                         BlockSize = f.BlockSize
@@ -421,9 +456,80 @@ public sealed class CrypVolHelper
                     if (!fileCorrupted)
                     {
                         fileCorrupted = true;
+                        blockCorruptedPaths.Add(path);
                         corruptedFiles++;
                     }
                 }
+            }
+
+            if (!opts.Quick)
+            {
+                var items = formatProfile.Integrity >= IntegrityLevel.File
+                    ? fileFragments
+                        .Where(entry => !blockCorruptedPaths.Contains(entry.Key))
+                        .SelectMany(entry => entry.Value.Select((fragment, sequence) =>
+                            CreateVerificationItem(entry.Key, fragment, sequence)))
+                        .ToList()
+                    : [];
+                if (items.Count > 0)
+                {
+                    var builder = ProcessingEngine.Builder()
+                        .UseProvider(new CvpFileDataProvider(items))
+                        .AddProcessor(new IntegrityStripProcessor(formatProfile.Integrity));
+                    if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek));
+                    if (formatProfile.Compressed) builder.AddProcessor(new DecompressionProcessor());
+                    var pipeline = builder.AddProcessor(new FileIntegrityVerificationProcessor(true))
+                        .UseReceiver(new NullDataReceiver())
+                        .WithLogger(Logger)
+                        .Build();
+                    using var observer = new ProcessingEngineObserver(pipeline);
+                    observer.Capture(EngineRecordKeys.FileIntegrityFailures);
+                    try
+                    {
+                        await observer.RunAsync(token);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidDataException("File 完整性验证引擎失败。", observer.Exception ?? ex);
+                    }
+
+                    if (observer.TryGetCaptured(EngineRecordKeys.FileIntegrityFailures,
+                            out var failedPaths) && failedPaths is not null)
+                        foreach (var path in failedPaths)
+                        {
+                            var last = fileFragments[path][^1];
+                            corruptedBlocks++;
+                            corruptedFiles++;
+                            corruptedEntries.Add(new CorruptedBlock
+                            {
+                                VolumePath = last.CvpFile.FullName,
+                                FilePath = path,
+                                CvpOffset = last.CvpOffset,
+                                BlockSize = last.BlockSize
+                            });
+                        }
+                }
+            }
+
+            foreach (var volume in opts.VolumeFiles)
+            {
+                var requiresVolumeHash = fileFragments.Values.SelectMany(fragments => fragments)
+                    .Any(fragment => string.Equals(fragment.CvpFile.FullName, volume.FullName,
+                                         OperatingSystem.IsWindows()
+                                             ? StringComparison.OrdinalIgnoreCase
+                                             : StringComparison.Ordinal) &&
+                                     (IntegrityLevel)(fragment.Flags >> 3 & 3) >= IntegrityLevel.Volume);
+                if (!requiresVolumeHash || VolumeIntegrityFooter.Verify(volume.FullName)) continue;
+
+                corruptedBlocks++;
+                corruptedFiles++;
+                corruptedEntries.Add(new CorruptedBlock
+                {
+                    VolumePath = volume.FullName,
+                    FilePath = "[卷尾 SHA-256]",
+                    CvpOffset = 0,
+                    BlockSize = 0
+                });
             }
 
             Logger?.LogInformation("校验完成: 总计{TotalBlocks}块, 损坏{CorruptedBlocks}块({CorruptedFiles}文件)",
@@ -486,15 +592,20 @@ public sealed class CrypVolHelper
                 foreach (var line in lines)
                 {
                     var parts = line.Split('\t');
-                    if (parts.Length >= 2 &&
+                    if (parts.Length >= 3 &&
                         long.TryParse(parts[1], out var off) &&
-                        int.TryParse(parts.Length >= 3 ? parts[2] : "0", out var sz))
+                        int.TryParse(parts[2], out var sz))
                     {
-                        var cvp = fileFragments.Values
-                            .SelectMany(f => f)
-                            .FirstOrDefault(f => f.CvpOffset == off)?.CvpFile;
-                        if (cvp is not null)
-                            corrupted.Add((cvp, off, sz));
+                        var allFragments = fileFragments.Values.SelectMany(f => f);
+                        var fragment = parts.Length >= 4
+                            ? allFragments.FirstOrDefault(candidate =>
+                                string.Equals(Path.GetFullPath(candidate.CvpFile.FullName), Path.GetFullPath(parts[0]),
+                                    OperatingSystem.IsWindows()
+                                        ? StringComparison.OrdinalIgnoreCase
+                                        : StringComparison.Ordinal) && candidate.CvpOffset == off)
+                            : allFragments.Where(candidate => candidate.CvpOffset == off)
+                                .GroupBy(candidate => candidate.CvpFile.FullName).SingleOrDefault()?.FirstOrDefault();
+                        if (fragment is not null) corrupted.Add((fragment.CvpFile, off, sz));
                     }
                 }
             }
@@ -527,6 +638,18 @@ public sealed class CrypVolHelper
                     corrupted1:
                     corrupted.Add((f.CvpFile, f.CvpOffset, f.BlockSize));
                 }
+
+                foreach (var volume in opts.VolumeFiles)
+                {
+                    var requiresVolumeHash = fileFragments.Values.SelectMany(fragments => fragments)
+                        .Any(fragment => string.Equals(fragment.CvpFile.FullName, volume.FullName,
+                                             OperatingSystem.IsWindows()
+                                                 ? StringComparison.OrdinalIgnoreCase
+                                                 : StringComparison.Ordinal) &&
+                                         (IntegrityLevel)(fragment.Flags >> 3 & 3) >= IntegrityLevel.Volume);
+                    if (requiresVolumeHash && !VolumeIntegrityFooter.Verify(volume.FullName))
+                        corrupted.Add((volume, 0, 0));
+                }
             }
 
             if (corrupted.Count == 0)
@@ -557,18 +680,32 @@ public sealed class CrypVolHelper
                     File.Copy(srcPath, dstPath, true);
                 }
 
-                await using var fs = new FileStream(dstPath, FileMode.Open, FileAccess.ReadWrite);
-                foreach (var (_, offset, size) in group)
+                await using (var fs = new FileStream(dstPath, FileMode.Open, FileAccess.ReadWrite))
                 {
-                    var zeros = new byte[size];
-                    fs.Position = offset;
-                    await fs.WriteAsync(zeros, token);
+                    foreach (var (_, offset, size) in group)
+                    {
+                        if (size == 0) continue;
+                        var zeros = new byte[size];
+                        fs.Position = offset;
+                        await fs.WriteAsync(zeros, token);
 
-                    var crc = Crc32.Compute(zeros.AsSpan(0, size - 4));
-                    var crcBytes = BitConverter.GetBytes(crc);
-                    fs.Position = offset + size - 4;
-                    await fs.WriteAsync(crcBytes, token);
+                        var crc = Crc32.Compute(zeros.AsSpan(0, size - 4));
+                        var crcBytes = BitConverter.GetBytes(crc);
+                        fs.Position = offset + size - 4;
+                        await fs.WriteAsync(crcBytes, token);
+                    }
+
+                    await fs.FlushAsync(token);
                 }
+
+                var requiresVolumeHash = fileFragments.Values.SelectMany(fragments => fragments)
+                    .Any(fragment => string.Equals(fragment.CvpFile.FullName, srcPath,
+                                         OperatingSystem.IsWindows()
+                                             ? StringComparison.OrdinalIgnoreCase
+                                             : StringComparison.Ordinal) &&
+                                     (IntegrityLevel)(fragment.Flags >> 3 & 3) >= IntegrityLevel.Volume);
+                if (requiresVolumeHash)
+                    VolumeIntegrityFooter.Rewrite(dstPath);
 
                 repairedVolumes.Add(dstPath);
             }
@@ -611,17 +748,38 @@ public sealed class CrypVolHelper
                 continue;
             }
 
-            var hasCrossHead = fragments.Any(f => f.IsFirst &&
-                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
-                                                  or FileEntryHeaderFlagsEnum.CrossHead);
-            var hasCrossTail = fragments.Any(f => !f.IsFirst &&
-                                                  (FileEntryHeaderFlagsEnum)(f.Flags & 3) is FileEntryHeaderFlagsEnum.Full
-                                                  or FileEntryHeaderFlagsEnum.CrossTail);
+            var volumeNumbers = fragments
+                .Select(fragment => TryGetVolumeNumber(fragment.CvpFile))
+                .Where(number => number.HasValue)
+                .Select(number => number!.Value)
+                .Distinct()
+                .OrderBy(number => number)
+                .ToArray();
+            if (volumeNumbers.Length > 1 && volumeNumbers[^1] - volumeNumbers[0] + 1 != volumeNumbers.Length)
+            {
+                incomplete.Add(path);
+                continue;
+            }
+
+            var firstType = (FileEntryHeaderFlagsEnum)(fragments[0].Flags & 3);
+            var lastType = (FileEntryHeaderFlagsEnum)(fragments[^1].Flags & 3);
+            var hasCrossHead = firstType is FileEntryHeaderFlagsEnum.Full or FileEntryHeaderFlagsEnum.CrossHead;
+            var hasCrossTail = lastType is FileEntryHeaderFlagsEnum.Full or FileEntryHeaderFlagsEnum.CrossTail;
             if (!hasCrossHead || !hasCrossTail)
                 incomplete.Add(path);
         }
 
         return incomplete;
+    }
+
+    /// <summary>从标准 <c>prefix.index.cvp</c> 文件名中读取卷编号。</summary>
+    /// <param name="file">卷文件。</param>
+    /// <returns>可识别的卷编号；不符合标准命名时返回 <see langword="null" />。</returns>
+    private static int? TryGetVolumeNumber(FileInfo file)
+    {
+        var name = Path.GetFileNameWithoutExtension(file.Name);
+        var separator = name.LastIndexOf('.');
+        return separator >= 0 && int.TryParse(name[(separator + 1)..], out var number) ? number : null;
     }
 
     private static GlobMatcher BuildGlobMatcher(string? include, string? exclude)
@@ -630,5 +788,35 @@ public sealed class CrypVolHelper
         if (!string.IsNullOrWhiteSpace(include)) m.AddInclude(include);
         if (!string.IsNullOrWhiteSpace(exclude)) m.AddExclude(exclude);
         return m;
+    }
+
+    /// <summary>将扫描到的卷片段转换为验证引擎的输入元数据。</summary>
+    /// <param name="path">文件相对路径。</param>
+    /// <param name="fragment">源卷片段。</param>
+    /// <param name="sequence">文件内片段顺序。</param>
+    /// <returns>可供 <see cref="CvpFileDataProvider" /> 读取的块元数据。</returns>
+    private static BlockMetadata CreateVerificationItem(string path, VolumeScanner.Fragment fragment, int sequence)
+    {
+        return new BlockMetadata
+        {
+            RelativePath = path,
+            SourceFullPath = fragment.CvpFile.FullName,
+            TargetIndex = 0,
+            Sequence = sequence,
+            SourceOffset = fragment.CvpOffset,
+            Length = fragment.BlockSize,
+            TotalFileSize = fragment.TotalFileSize,
+            Flags = fragment.Flags,
+            IsFirstFragment = fragment.StartsEntry
+        };
+    }
+
+    /// <summary>以统一 Hook 观察方式运行已构造的数据引擎。</summary>
+    /// <param name="pipeline">已锁定的数据处理引擎。</param>
+    /// <param name="token">取消令牌。</param>
+    private static async Task RunPipelineAsync(ProcessingEngine pipeline, CancellationToken token)
+    {
+        using var observer = new ProcessingEngineObserver(pipeline);
+        await observer.RunAsync(token);
     }
 }

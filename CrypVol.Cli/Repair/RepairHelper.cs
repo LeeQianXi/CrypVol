@@ -1,9 +1,9 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Repair;
 
@@ -14,13 +14,15 @@ public static class RepairHelper
         var rawInput = args.GetRequiredValue(CommandDefinition.Repair.VolFiles);
 
         var loggerFactory = Program.LoggerFactory;
+        var logger = loggerFactory.CreateLogger(nameof(RepairHelper));
+        var discoveryLogger = loggerFactory.CreateLogger("VolumeDiscovery");
 
         // 1. 发现所有卷文件
-        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+        var volFiles = VolumeDiscovery.Discover(rawInput, discoveryLogger).ToList()
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.Error.WriteLine("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 1;
         }
 
@@ -29,9 +31,9 @@ public static class RepairHelper
         var keyFile = args.GetValue(CommandDefinition.Repair.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, discoveryLogger);
             if (keyFile is not null)
-                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+                discoveryLogger.LogInformation("自动发现密钥文件: {KeyFileFullName}", keyFile.FullName);
         }
 
         if (keyFile is not null)
@@ -40,7 +42,7 @@ public static class RepairHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Repair.Password),
                     args.GetValue(CommandDefinition.Repair.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Repair.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)
@@ -67,7 +69,7 @@ public static class RepairHelper
 
         if (!result.Success)
         {
-            await Console.Error.WriteLineAsync($"错误: {result.Error}");
+            await Console.Error.WriteLineAsync($"修复失败: {result.Error}");
             return 1;
         }
 
@@ -79,7 +81,7 @@ public static class RepairHelper
         {
             Console.WriteLine($"修复损坏块: {result.RepairedBlocks}");
             foreach (var v in result.RepairedVolumes)
-                Console.WriteLine($"  {v}");
+                Console.WriteLine($"修复卷: {v}");
         }
 
         return 0;

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Crypto;
 
@@ -24,10 +25,11 @@ public static class CvkLoader
     /// <param name="privateKeyFile">公钥封装时的匹配私钥。</param>
     /// <param name="privateKeyPassword">加密私钥的密码。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="logger">自动发现私钥时使用的可选日志记录器。</param>
     /// <returns>包含解包 CEK 与原有模式、注释的可编辑对象。</returns>
     public static async Task<CvkDocument> LoadAsync(FileInfo file, string? password = null,
         FileInfo? privateKeyFile = null, string? privateKeyPassword = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(file);
         if (!file.Exists) throw new FileNotFoundException("密钥文件不存在", file.FullName);
@@ -45,7 +47,7 @@ public static class CvkLoader
                 break;
             case EnvelopeMode.PublicKey:
                 var payload = await ReadPublicKeyPayloadAsync(reader, privateKeyFile, privateKeyPassword,
-                    cancellationToken);
+                    cancellationToken, logger);
                 document = new CvkDocument(payload.Cek, EncryptionMode.Asymmetric);
                 document.LoadPublicKeyRecipients(payload.Recipients, payload.Dek);
                 break;
@@ -83,17 +85,9 @@ public static class CvkLoader
     }
 
     private static async Task<PublicKeyPayload> ReadPublicKeyPayloadAsync(BinaryReader reader, FileInfo? privateKeyFile,
-        string? privateKeyPassword, CancellationToken cancellationToken)
+        string? privateKeyPassword, CancellationToken cancellationToken, ILogger? logger)
     {
-        if (privateKeyFile is null)
-            throw new InvalidOperationException("密钥受公钥保护，请提供私钥。");
-        using var rsa = RSA.Create();
-        var pem = await File.ReadAllTextAsync(privateKeyFile.FullName, cancellationToken);
-        if (privateKeyPassword is null) rsa.ImportFromPem(pem);
-        else rsa.ImportFromEncryptedPem(pem, privateKeyPassword);
-
         var count = BinaryPrimitives.ReverseEndianness(reader.ReadUInt16());
-        byte[]? dek = null;
         var recipients = new List<CvkPublicKeyRecipient>(count);
         for (var index = 0; index < count; index++)
         {
@@ -102,14 +96,13 @@ public static class CvkLoader
             var encryptedDekLength = BinaryPrimitives.ReverseEndianness(reader.ReadUInt16());
             var encryptedDek = reader.ReadBytes(encryptedDekLength);
             recipients.Add(new CvkPublicKeyRecipient(keyId, encryptedDek));
-            if (dek is null)
-            {
-                try { dek = rsa.Decrypt(encryptedDek, RSAEncryptionPadding.OaepSHA256); }
-                catch (CryptographicException) { }
-            }
         }
 
-        if (dek is null) throw new InvalidOperationException("没有匹配的私钥。");
+        var dek = privateKeyFile is not null
+            ? await TryDecryptDekAsync(privateKeyFile, recipients, privateKeyPassword, false, cancellationToken)
+            : await FindDekFromUserSshKeysAsync(recipients, privateKeyPassword, cancellationToken, logger);
+        if (dek is null)
+            throw new InvalidOperationException("未找到可用私钥。请通过 --privkey-key 明确指定匹配的 RSA 私钥。");
         var nonce = reader.ReadBytes(12);
         var tag = reader.ReadBytes(16);
         var ciphertext = reader.ReadBytes(32);
@@ -117,6 +110,52 @@ public static class CvkLoader
         using var aes = new AesGcm(dek, 16);
         aes.Decrypt(nonce, ciphertext, tag, cek);
         return new PublicKeyPayload(cek, dek, recipients);
+    }
+
+    private static async Task<byte[]?> FindDekFromUserSshKeysAsync(IReadOnlyList<CvkPublicKeyRecipient> recipients,
+        string? privateKeyPassword, CancellationToken cancellationToken, ILogger? logger)
+    {
+        foreach (var privateKeyFile in SshPrivateKeyDiscovery.DiscoverUserPrivateKeys())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var dek = await TryDecryptDekAsync(privateKeyFile, recipients, privateKeyPassword, true, cancellationToken);
+            if (dek is not null)
+            {
+                logger?.LogInformation("已自动发现并使用 SSH 私钥 {PrivateKeyPath}", privateKeyFile.FullName);
+                return dek;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<byte[]?> TryDecryptDekAsync(FileInfo privateKeyFile,
+        IReadOnlyList<CvkPublicKeyRecipient> recipients, string? privateKeyPassword, bool suppressCandidateErrors,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var pem = await File.ReadAllTextAsync(privateKeyFile.FullName, cancellationToken);
+            using var rsa = RsaKeyLoader.LoadPrivateKey(pem, privateKeyPassword);
+
+            foreach (var recipient in recipients)
+                try { return rsa.Decrypt(recipient.EncryptedDek, RSAEncryptionPadding.OaepSHA256); }
+                catch (CryptographicException) { }
+
+            return null;
+        }
+        catch (Exception exception) when (suppressCandidateErrors && IsUnreadableOrUnsupportedKey(exception))
+        {
+            return null;
+        }
+    }
+
+    private static bool IsUnreadableOrUnsupportedKey(Exception exception)
+    {
+        return exception is CryptographicException
+            or IOException
+            or UnauthorizedAccessException
+            or ArgumentException;
     }
 
     private static string? ReadComment(BinaryReader reader, long payloadEnd)
@@ -132,7 +171,7 @@ public static class CvkLoader
 
     private static BinaryReader OpenPayload(byte[] data, out EnvelopeMode mode, out long payloadEnd)
     {
-        var stream = new MemoryStream(data, writable: false);
+        var stream = new MemoryStream(data, false);
         var reader = new BinaryReader(stream);
         if (Encoding.ASCII.GetString(reader.ReadBytes(4)) != "KEY0" || reader.ReadByte() != 1)
             throw new InvalidDataException("无效的密钥文件。");
@@ -144,6 +183,7 @@ public static class CvkLoader
         return reader;
     }
 
-    private sealed record PublicKeyPayload(byte[] Cek, byte[] Dek,
+    private sealed record PublicKeyPayload(byte[] Cek,
+        byte[] Dek,
         IReadOnlyList<CvkPublicKeyRecipient> Recipients);
 }

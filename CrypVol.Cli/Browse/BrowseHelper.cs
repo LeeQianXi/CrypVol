@@ -1,11 +1,11 @@
 using System.CommandLine;
 using System.Text;
 using System.Text.Json;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Browse;
 
@@ -17,15 +17,15 @@ public static class BrowseHelper
         var fmt = args.GetValue(CommandDefinition.Browse.OutputFormat);
         var longFormat = args.GetValue(CommandDefinition.Browse.LongFormat);
         var outputFile = args.GetValue(CommandDefinition.Browse.Output);
-
         var loggerFactory = Program.LoggerFactory;
+        var logger = loggerFactory.CreateLogger(nameof(BrowseHelper));
 
         // 1. 解析卷文件 + 密钥加载
-        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+        var volFiles = VolumeDiscovery.Discover(rawInput, logger).ToList()
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.Error.WriteLine("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 1;
         }
 
@@ -33,9 +33,9 @@ public static class BrowseHelper
         var keyFile = args.GetValue(CommandDefinition.Browse.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, logger);
             if (keyFile is not null)
-                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+                logger.LogInformation("自动发现密钥文件: {KeyFileFullName}", keyFile.FullName);
         }
 
         if (keyFile is not null)
@@ -44,12 +44,12 @@ public static class BrowseHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Browse.Password),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message);
+                await Console.Error.WriteLineAsync($"无法加载密钥: {ex.Message}");
                 return 1;
             }
         else
@@ -58,7 +58,7 @@ public static class BrowseHelper
         // 2. Engine
         var engine = new CrypVolHelper
         {
-            Logger = loggerFactory.CreateLogger("CrypVol")
+            Logger = Program.LoggerFactory.CreateLogger(nameof(CrypVol))
         };
         var result = await engine.BrowseAsync(new BrowseOptions
         {
@@ -69,7 +69,7 @@ public static class BrowseHelper
         }, token);
         if (!result.Success)
         {
-            Console.Error.WriteLine($"错误: {result.Error}");
+            await Console.Error.WriteLineAsync($"错误: {result.Error}");
             return 1;
         }
 
@@ -84,7 +84,7 @@ public static class BrowseHelper
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"无法写入输出文件：{ex.Message}");
+                await Console.Error.WriteLineAsync($"无法写入输出文件: {ex.Message}");
                 return 1;
             }
         else
@@ -141,7 +141,6 @@ public static class BrowseHelper
             foreach (var f in files)
             {
                 var size = Fmt(f.Size);
-                var vols = string.Join(",", f.Volumes);
                 var cross = f.FragmentCount > 1 ? $"是 ({string.Join("->", f.Volumes)})" : "-";
                 var status = f.IsComplete ? "" : "不完整";
                 sb.AppendLine($"{size,-10} {f.FragmentCount,-6} {cross,-16} {status,-8} {f.Path}");

@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using CrypVol.Lib.Engine.Models;
-using CrypVol.Lib.Utility;
 
 namespace CrypVol.Lib.Engine.Processors;
 
@@ -9,17 +8,14 @@ namespace CrypVol.Lib.Engine.Processors;
 public sealed class DecryptionProcessor : DataProcessorBase
 {
     private readonly byte[] _cek;
-    private readonly bool _enableCrc32;
     private readonly bool _rescue;
 
     /// <summary>创建解密处理器。</summary>
     /// <param name="cek">内容加密密钥。</param>
-    /// <param name="integrityLevel">完整性级别。</param>
     /// <param name="rescue">校验或解密失败时是否输出零填充数据。</param>
-    public DecryptionProcessor(byte[] cek, IntegrityLevel integrityLevel = IntegrityLevel.None, bool rescue = false)
+    public DecryptionProcessor(byte[] cek, bool rescue = false)
     {
         _cek = cek ?? throw new ArgumentNullException(nameof(cek));
-        _enableCrc32 = integrityLevel >= IntegrityLevel.Block;
         _rescue = rescue;
     }
 
@@ -28,19 +24,6 @@ public sealed class DecryptionProcessor : DataProcessorBase
         CancellationToken cancellationToken = default)
     {
         var length = block.Length;
-        if (_enableCrc32)
-        {
-            var expected = BitConverter.ToUInt32(block.Buffer, length - 4);
-            var actual = Crc32.Compute(block.Buffer.AsSpan(0, length - 4));
-            if (expected != actual)
-            {
-                if (!_rescue) throw new InvalidDataException($"CRC32 校验失败: 期望 {expected:X8}, 实际 {actual:X8}");
-                return ValueTask.FromResult<DataBlock?>(CreateZeroBlock(block, length - 32));
-            }
-
-            length -= 4;
-        }
-
         var cipherLength = length - 12 - 16;
         var buffer = ArrayPool<byte>.Shared.Rent(cipherLength);
         try

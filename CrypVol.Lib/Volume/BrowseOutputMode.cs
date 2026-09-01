@@ -1,4 +1,4 @@
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Volume;
 
 /// <summary>浏览输出格式</summary>
 public enum BrowseOutputMode

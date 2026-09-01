@@ -38,7 +38,7 @@
 | `None` | 数据明文，无 `.cvk`         | — |
 | `PlainKey` | CEK 明文存 `.cvk`           | `.cvk` 文件 |
 | `Password` | Argon2id + AES-256-GCM 包裹 | 密码 |
-| `Asymmetric` | RSA/ECC 公钥包裹            | 对应私钥 |
+| `Asymmetric` | RSA 公钥包裹                | 对应私钥 |
 
 ## 文件格式
 

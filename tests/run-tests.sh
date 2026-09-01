@@ -162,8 +162,13 @@ check     "--key-file 复用"     run pack "$TMP/pack-reuse/input" \
 CMP_DIR="$TMP/pack-compress"
 mkdir -p "$CMP_DIR/input" "$CMP_DIR/output"
 mk_files "$CMP_DIR/input"
-check     "-c 压缩"             run pack "$CMP_DIR/input" -m PlainKey -c -o "$CMP_DIR/output"
-check     "--compression-level 9" run pack "$CMP_DIR/input" -m PlainKey -c --compression-level 9 -o "$TMP/pack-cmp9"
+check     "默认压缩"             run pack "$CMP_DIR/input" -m PlainKey -o "$CMP_DIR/output"
+check     "--compression-level SmallestSize" run pack "$CMP_DIR/input" -m PlainKey --compression-level SmallestSize -o "$TMP/pack-cmp9"
+check     "--compression-level Fastest" run pack "$CMP_DIR/input" -m PlainKey --compression-level Fastest -o "$TMP/pack-cmp5"
+check     "--integrity File" run pack "$CMP_DIR/input" -m PlainKey --integrity File -o "$TMP/pack-integrity-file"
+check     "integrity File verify" run verify "$TMP/pack-integrity-file" -k "$TMP/pack-integrity-file/input.cvk"
+check_fail "--chunk-size 0" run pack "$CMP_DIR/input" -m None --chunk-size 0 -o "$TMP/pack-invalid-chunk"
+check_fail "--compression-level 非法预设" run pack "$CMP_DIR/input" -m PlainKey --compression-level 10 -o "$TMP/pack-invalid-compression"
 
 # --include
 mkdir -p "$TMP/pack-filter/input" "$TMP/pack-filter/output"
@@ -247,11 +252,27 @@ check     "browse --exclude"           run browse "$B" --exclude "nonexistent*"
 check_fail "browse 不存在目录"           run browse "$TMP/_noexist"
 
 # ═══════════════════════════════════════
-section "5. info — 密钥信息"
+section "5. verify / repair — 报告定位"
+# ═══════════════════════════════════════
+printf '\245' | dd of="$SPLIT_DIR/output/split.1.cvp" bs=1 seek=600 count=1 conv=notrunc status=none
+REPORT="$TMP/reports/nested/damage.txt"
+check_fail "verify 写入嵌套报告" run verify "$SPLIT_DIR/output/split.1.cvp" \
+    -k "$SPLIT_DIR/output/split.cvk" --repair-report "$REPORT"
+check      "损坏报告已创建"    test -s "$REPORT"
+check      "repair 按卷定位"   run repair "$SPLIT_DIR/output/split.1.cvp" \
+    -k "$SPLIT_DIR/output/split.cvk" --verify-report "$REPORT" -o "$TMP/repaired-report"
+check      "报告修复输出"      test -f "$TMP/repaired-report/split.1.cvp"
+check      "修复后 CRC 校验"   run verify "$TMP/repaired-report/split.1.cvp" \
+    -k "$SPLIT_DIR/output/split.cvk"
+
+# ═══════════════════════════════════════
+section "6. info — 密钥信息"
 # ═══════════════════════════════════════
 check_out "info PlainKey"   "明文"     run info "$TMP/k-plain.cvk"
 check_out "info Password"   "密码保护" run info "$TMP/k-pass.cvk" -p "pwd123"
+check_out "info 编码模式"   "封装模式: 密码保护" run info "$TMP/k-pass.cvk" -p "pwd123"
 check_out "info -p 正确密码" "CEK"     run info "$TMP/k-pass.cvk" -p "pwd123"
+check_out "info 注释内容"   "注释: test" run info "$TMP/k-cmt.cvk" -p "pwd"
 check_fail "info 非法文件"             run info "$TMP/not-a-key.txt"
 check_fail "info 不存在文件"           run info "$TMP/_nokey.cvk"
 
@@ -260,7 +281,7 @@ if [ -f "$TMP/k-asym.cvk" ]; then
 fi
 
 # ═══════════════════════════════════════
-section "6. rekey — 密钥重包装"
+section "7. rekey — 密钥重包装"
 # ═══════════════════════════════════════
 check     "Plain→Password"    run rekey "$TMP/k-plain.cvk" --to-mode Password --new-password "rp" -o "$TMP/k-rp.cvk"
 check     "Password→Plain"    run rekey "$TMP/k-pass.cvk" -p "pwd123" --to-mode PlainKey -o "$TMP/k-back.cvk"
@@ -284,7 +305,7 @@ verify_extract "rekey后extract" "${PACK_DIR[PlainKey]}/output" "$TMP/ext-rekey"
 check     "rekey --backup"    run rekey "$TMP/k-rp2.cvk" --to-mode Password --new-password "bp" -b
 
 # ═══════════════════════════════════════
-section "7. convert — 块级密钥轮换"
+section "8. convert — 块级密钥轮换"
 # ═══════════════════════════════════════
 CV_DIR="$TMP/convert"
 mkdir -p "$CV_DIR/input" "$CV_DIR/output" "$CV_DIR/conv" "$CV_DIR/restored"
@@ -317,7 +338,7 @@ check     "convert --backup"   run convert "$CV2_DIR/out" \
     --key-file "$TMP/k-plain.cvk" -o "$TMP/conv-bak" -b
 
 # ═══════════════════════════════════════
-section "8. 凭据校验"
+section "9. 凭据校验"
 # ═══════════════════════════════════════
 PD="${PACK_DIR[Password]}/output"
 check_fail "extract 缺密码"    run extract "$PD" -k "$PD/Password.cvk" -o "$TMP/_nopwd"
@@ -330,7 +351,7 @@ check_out  "info 正确密码" "CEK" run info "$TMP/k-pass.cvk" -p "pwd123"
 check_fail "rekey 错旧密码"    run rekey "$TMP/k-pass.cvk" -p "bad" --to-mode PlainKey -o "$TMP/_"
 
 # ═══════════════════════════════════════
-section "9. 大文件 100MB"
+section "10. 大文件 100MB"
 # ═══════════════════════════════════════
 BIG_DIR="$TMP/big"
 mkdir -p "$BIG_DIR/input" "$BIG_DIR/output" "$BIG_DIR/restored"
@@ -340,7 +361,7 @@ verify_extract "100MB extract" "$BIG_DIR/output" "$BIG_DIR/restored" "$BIG_DIR/i
     "-k $BIG_DIR/output/input.cvk"
 
 # ═══════════════════════════════════════
-section "10. 边界场景"
+section "11. 边界场景"
 # ═══════════════════════════════════════
 
 # 空目录

@@ -33,6 +33,9 @@ public sealed record VerifyResult
 
 public sealed record CorruptedBlock
 {
+    /// <summary>损坏数据块所在 CVP 卷的完整路径。</summary>
+    public required string VolumePath { get; init; }
+
     public required string FilePath { get; init; }
     public long CvpOffset { get; init; }
     public int BlockSize { get; init; }

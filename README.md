@@ -28,6 +28,18 @@ cd CrypVol
 dotnet build -c Release
 ```
 
+本地发布 CLI 与 GUI：
+
+```bash
+bash scripts/publish-local.sh
+```
+
+默认输出为 `publish/local/linux-x64`。可传入目标目录与 RID：
+
+```bash
+bash scripts/publish-local.sh /opt/crypvol-publish linux-x64
+```
+
 开发环境需要 .NET SDK 10。CLI 项目为 `CrypVol.Cli`；构建后可通过 `dotnet run --project CrypVol.Cli -- <命令>` 使用。以下示例以已安装到 PATH 的 `crypvol` 表示。
 
 ```bash
@@ -77,7 +89,7 @@ crypvol pack ./data -o ./archive --prefix backup \
 
 # 流式块大小 32 MiB、近似卷目标 512 MiB、启用压缩
 crypvol pack ./data -o ./archive --prefix backup \
-  --chunk-size 32 --volume-size 512 --compress --compression-level 6
+  --chunk-size 32 --volume-size 512 --compression-level Optimal
 ```
 
 未指定 `--key-file` 时，`pack` 按 `--mode` 创建新 CEK 和 CVK；指定 `--key-file` 时复用其中的 CEK，`--mode`、`--public-key` 和 `--comment` 不参与新 CVK 的创建。`--dry-run` 只根据原始大小和块大小给出近似卷数/块数，不写入数据或密钥文件。
@@ -100,7 +112,9 @@ crypvol browse ./archive/backup.0.cvp --format Json --output files.json
 crypvol verify ./archive/backup.0.cvp --repair-report damage-report.txt
 ```
 
-加密卷会自动尝试发现同目录、同前缀的 `.cvk`。若无法发现或需指定其他位置，请传入 `--key-file`；Password 模式配合 `--password`，Asymmetric 模式配合 `--privkey-key`，加密私钥另可使用 `--key-pass`。
+加密卷会自动尝试发现同目录、同前缀的 `.cvk`。若无法发现或需指定其他位置，请传入 `--key-file`；Password 模式配合 `--password`。Asymmetric 模式会自动尝试当前用户 `~/.ssh` 中与同名 `.pub` 文件成对的私钥，也可用 `--privkey-key` 明确指定；加密私钥另可使用 `--key-pass`。
+
+Asymmetric 模式仅使用 RSA：公钥支持 PEM 与 OpenSSH 的 `ssh-rsa` 单行格式；私钥支持 PKCS#1/PKCS#8 PEM、OpenSSH（含密码保护）、ssh.com 和 PuTTY PPK 格式。
 
 ### 3. 修复
 

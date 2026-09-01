@@ -1,4 +1,4 @@
-namespace CrypVol.Lib;
+namespace CrypVol.Lib.Crypto;
 
 /// 密钥保护模式枚举
 public enum EncryptionMode
@@ -12,6 +12,6 @@ public enum EncryptionMode
     /// 密码包裹：CEK 经 Argon2id + AES-GCM 加密存储在 .cvk，解密需密码
     Password,
 
-    /// 公钥包裹：CEK 经 RSA/ECC 公钥加密存储在 .cvk，解密需对应私钥
+    /// 公钥包裹：CEK 经 RSA 公钥加密存储在 .cvk，解密需对应私钥
     Asymmetric
 }

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.IO.Compression;
 using CrypVol.Cli.Browse;
 using CrypVol.Cli.Convert;
 using CrypVol.Cli.Extract;
@@ -8,7 +9,8 @@ using CrypVol.Cli.Pack;
 using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
-using CrypVol.Lib;
+using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli;
@@ -90,8 +92,8 @@ public static class CommandDefinition
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
-        public static readonly Option<bool> Compress;
-        public static readonly Option<int> CompressionLevel;
+        public static readonly Option<CompressionLevel> CompressionLevel;
+        public static readonly Option<bool> NoCompress;
         public static readonly Option<DirectoryInfo> KeyOutputPath;
         public static readonly Option<string> Include;
         public static readonly Option<string> Exclude;
@@ -163,7 +165,7 @@ public static class CommandDefinition
             };
 
             // ── 加密选项：两种模式互斥 ──
-            //   A) 指定 --key-file → 复用已有 .cvk 的 CEK（--mode/--password/--public-key 忽略）
+            //   A) 指定 --key-file → 复用已有 .cvk 的 CEK（--mode/--public-key 忽略）
             //   B) 不指定       → 生成新 CEK + 新 .cvk（--mode 等必需）
 
             KeyFile = new Option<FileInfo>("--key-file", "-k")
@@ -171,7 +173,8 @@ public static class CommandDefinition
                 Description =
                     """
                     指定已有 .cvk 密钥文件，直接使用其 CEK 加密数据。
-                    提供此选项时，--mode / --password / --public-key 均被忽略。
+                    Password 模式的 CVK 仍须通过 --password 解封；Asymmetric 模式会自动尝试 ~/.ssh 中的私钥，也可通过 --privkey-key 指定。
+                    提供此选项时，--mode / --public-key / --comment 不参与新密钥创建。
                     不提供时，需通过 --mode 等选项配置新密钥的生成方式。
                     """,
                 HelpName = "cvk-file"
@@ -217,7 +220,7 @@ public static class CommandDefinition
             {
                 Description =
                     """
-                    RSA/ECC 公钥文件（PEM 格式）。仅在未指定 --key-file 且 --mode Asymmetric 时生效。
+                    RSA 公钥文件（PEM 或 OpenSSH ssh-rsa 格式）。仅在未指定 --key-file 且 --mode Asymmetric 时生效。
                     可多次指定以支持多个接收者。
                     KeyID 默认为文件名（不含扩展名），用于标识密钥。
                     """,
@@ -225,21 +228,22 @@ public static class CommandDefinition
             }.AcceptExistingOnly();
 
             // ── 压缩选项 ──
-            Compress = new Option<bool>("--compress", "-c")
+
+            NoCompress = new Option<bool>("--no-compress")
             {
-                Description = "启用 GZip 数据压缩，减小卷文件体积（会略微增加 CPU 开销）"
+                Description = "禁用 GZip 数据压缩"
             };
 
-            CompressionLevel = new Option<int>("--compression-level")
+            CompressionLevel = new Option<CompressionLevel>("--compression-level")
             {
                 Description =
                     """
-                    GZip 压缩级别：0 = 仅存储不压缩，9 = 最高压缩比。
-                    仅在启用 --compress 时生效。
+                    GZip 压缩预设：Fastest、Optimal、SmallestSize。
+                    默认 Optimal；仅在未指定 --no-compress 时生效。
                     """,
-                HelpName = "0-9",
-                DefaultValueFactory = static _ => 6
-            }.AcceptOnlyFromAmong("0", "1", "2", "3", "4", "5", "6", "7", "8", "9");
+                HelpName = "preset",
+                DefaultValueFactory = static _ => System.IO.Compression.CompressionLevel.Optimal
+            };
 
             // ── 密钥输出 ──
             KeyOutputPath = new Option<DirectoryInfo>("--key-output")
@@ -271,6 +275,8 @@ public static class CommandDefinition
 
                     None  —— 不嵌入校验数据
                     Block —— 每个数据块附带 CRC32（默认），可检测磁盘静默损坏
+                    File  —— 每个文件附带 SHA-256 校验值
+                    Volume —— 每个卷附带 SHA-256 校验值（含块级校验）
                     """,
                 DefaultValueFactory = static _ => IntegrityLevel.Block
             };
@@ -317,7 +323,7 @@ public static class CommandDefinition
                 PublicKey,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Compress,
+                NoCompress,
                 CompressionLevel,
                 KeyOutputPath,
                 Include,
@@ -391,7 +397,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "RSA/ECC 私钥文件路径（Asymmetric 模式必需）",
+                Description = "RSA 私钥文件路径（Asymmetric 模式会自动尝试 ~/.ssh；指定后优先使用）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -510,7 +516,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "RSA/ECC 私钥文件路径",
+                Description = "RSA 私钥文件路径",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -606,13 +612,13 @@ public static class CommandDefinition
 
             Password = new Option<string>("--password", "-p")
             {
-                Description = "密钥文件解密密码。提供后将尝试验证密码并显示 CEK 指纹等额外信息",
+                Description = "密钥文件解密密码。成功解封后显示 CEK 指纹、注释等内容",
                 HelpName = "passphrase"
             };
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "RSA/ECC 私钥文件路径。提供后将尝试验证并显示额外信息",
+                Description = "RSA 私钥文件路径。提供后将尝试验证并显示额外信息",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -627,8 +633,8 @@ public static class CommandDefinition
         {
             var cmd = new Command("info",
                 """
-                验证并显示密钥文件 (.cvk) 的保护模式与 CEK 指纹。
-                Password 或 Asymmetric 模式必须提供相应解封凭据。
+                显示密钥文件 (.cvk) 的信封编码模式；成功解封后显示 CEK 指纹、注释和公钥接收者。
+                即使未提供解封凭据也会输出信封模式，但 Password 或 Asymmetric CVK 将以失败退出。
 
                 示例：
                   crypvol info ./archive.cvk
@@ -691,7 +697,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "RSA/ECC 私钥文件路径",
+                Description = "RSA 私钥文件路径",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -828,7 +834,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "RSA/ECC 私钥文件路径",
+                Description = "RSA 私钥文件路径",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -955,7 +961,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "当前 .cvk 的解密私钥（当前为 Asymmetric 模式时必需）",
+                Description = "当前 .cvk 的解密私钥（Asymmetric 模式会自动尝试 ~/.ssh；指定后优先使用）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -1103,7 +1109,7 @@ public static class CommandDefinition
 
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
-                Description = "解封目标 --key-file 的私钥（目标 CVK 为 Asymmetric 模式时必需）",
+                Description = "解封目标 --key-file 的私钥（Asymmetric 模式会自动尝试 ~/.ssh；指定后优先使用）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -1202,7 +1208,7 @@ public static class CommandDefinition
 
             PublicKey = new Option<IEnumerable<FileInfo>>("--public-key")
             {
-                Description = "RSA/ECC 公钥 PEM 文件（Asymmetric 模式必需）",
+                Description = "RSA 公钥文件（PEM 或 OpenSSH ssh-rsa；Asymmetric 模式必需）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 

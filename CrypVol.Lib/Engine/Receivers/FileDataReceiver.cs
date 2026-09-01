@@ -1,3 +1,5 @@
+using CrypVol.Lib.Volume;
+
 namespace CrypVol.Lib.Engine.Receivers;
 
 /// <summary>将处理后的数据块写入普通文件的接收阶段。</summary>
@@ -18,9 +20,7 @@ public sealed class DataFileReciver : VolumeDataReceiverBase
     /// <inheritdoc />
     protected override async Task ReceiveVolumeAsync(VolumeContext context, CancellationToken cancellationToken)
     {
-        var fullPath = context.OutputPath;
-        if (!Path.IsPathFullyQualified(fullPath))
-            fullPath = Path.Combine(_outputDirectory, fullPath);
+        var fullPath = VolumePathSafety.ResolveUnderRoot(_outputDirectory, context.OutputPath);
 
         if (!_overwrite && File.Exists(fullPath))
         {
@@ -45,7 +45,7 @@ public sealed class DataFileReciver : VolumeDataReceiverBase
                     {
                         stream = new FileStream(fullPath, FileMode.Create, FileAccess.Write,
                             FileShare.None, 4096 * 16, FileOptions.SequentialScan);
-                        Engine.LogTrace("创建文件: {Path}", fullPath);
+                        Engine.LogDebug("创建文件: {Path}", fullPath);
                     }
 
                     stream.Position = position;
@@ -58,7 +58,7 @@ public sealed class DataFileReciver : VolumeDataReceiverBase
                     block.Dispose();
                 }
 
-            Engine.LogTrace("文件写入完成: {Path} {Bytes}字节", fullPath, totalBytes);
+            Engine.LogDebug("文件写入完成: {Path} {Bytes}字节", fullPath, totalBytes);
         }
         finally
         {

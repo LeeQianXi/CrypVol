@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using System.IO.Compression;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Volume;
 
 namespace CrypVol.Lib.Helper.Models;
 
@@ -13,14 +15,6 @@ public sealed record PackOptions
     /// <summary>输出目录</summary>
     public required DirectoryInfo OutputDir { get; init; }
 
-    /// <summary>.cvk 单独输出目录（null = 与 OutputDir 相同）</summary>
-    [field: AllowNull]
-    public DirectoryInfo KeyOutputDir
-    {
-        get => field ?? OutputDir;
-        init;
-    }
-
     /// <summary>文件名前缀</summary>
     [field: AllowNull]
     public string OutputPrefix
@@ -29,7 +23,7 @@ public sealed record PackOptions
         init;
     }
 
-    /// <summary>单卷大小上限（MiB）</summary>
+    /// <summary>单卷近似切分目标（MiB）；处理后的块可能因压缩、加密或完整性数据略有偏差。</summary>
     public uint VolumeSizeMb { get; init; } = 1024;
 
     /// <summary>
@@ -41,14 +35,14 @@ public sealed record PackOptions
     /// <summary>已加载的 CEK 凭据（CLI 预加载后传入）</summary>
     public required CvkCredentials Credentials { get; init; }
 
-    /// <summary>启用 GZip 压缩</summary>
-    public bool EnableCompression { get; init; }
+    /// <summary>启用 GZip 压缩。</summary>
+    public bool EnableCompression { get; init; } = true;
 
-    /// <summary>压缩级别 0-9</summary>
-    public int CompressionLevel { get; init; } = 6;
+    /// <summary>.NET GZip 压缩预设。</summary>
+    public CompressionLevel CompressionLevel { get; init; } = CompressionLevel.Optimal;
 
-    /// <summary>完整性校验级别</summary>
-    public IntegrityLevel IntegrityLevel { get; init; } = IntegrityLevel.File;
+    /// <summary>完整性校验级别。</summary>
+    public IntegrityLevel IntegrityLevel { get; init; } = IntegrityLevel.Block;
 }
 
 public sealed record PackResult

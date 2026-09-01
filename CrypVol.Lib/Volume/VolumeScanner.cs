@@ -8,10 +8,11 @@ namespace CrypVol.Lib.Volume;
 /// <summary>扫描 .cvp 卷头，构建文件→片段映射。魔数自动识别明文(CVPH)/加密(CVPE)头。filter 非 null 时跳过不匹配的文件。</summary>
 public static class VolumeScanner
 {
-    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null,
+    public static ScanResult Scan(IReadOnlyCollection<FileInfo> volumes, byte[]? cek = null,
         GlobMatcher? filter = null, ILogger? logger = null)
     {
         var files = new Dictionary<string, List<Fragment>>();
+        var orderedBlocks = new List<ScannedBlock>();
         var possiblyEncrypted = false;
 
         Span<byte> magicBuf = stackalloc byte[4];
@@ -31,6 +32,7 @@ public static class VolumeScanner
                 if (fs.Read(magicBuf) < 4) break;
                 var magic = BitConverter.ToUInt32(magicBuf);
 
+                if (VolumeIntegrityFooter.IsMagic(magicBuf)) break;
                 if (!FileEntryHeader.IsValidMagic(magic))
                     break;
 
@@ -69,6 +71,8 @@ public static class VolumeScanner
                 try { relPath = ReadPath(hdr); }
                 catch { break; }
 
+                VolumePathSafety.ValidateRelativePath(relPath);
+
                 pos += headerLen;
 
                 var includeFile = filter is null || filter.IsMatch(relPath);
@@ -79,17 +83,15 @@ public static class VolumeScanner
                         fs.Position = pos;
                         if (fs.Read(peekBuf) < 4) break;
                         if (FileEntryHeader.IsValidMagic(BitConverter.ToUInt32(peekBuf))) break;
-                        var skipLen = BitConverter.ToInt32(peekBuf);
-                        if (skipLen < 0) break;
-                        pos += 4 + skipLen;
+                        var skipLen = ReadBlockLength(peekBuf, fs.Length, pos, cvp);
+                        pos += sizeof(int) + (long)skipLen;
                     }
 
                     continue;
                 }
 
                 var flags = (FileEntryHeaderFlagsEnum)hdr.Flags;
-                var isFirst = !flags.HasFlag(FileEntryHeaderFlagsEnum.CrossMid)
-                              && !flags.HasFlag(FileEntryHeaderFlagsEnum.CrossTail);
+                var startsEntry = true;
 
                 while (pos + 4 <= fs.Length)
                 {
@@ -97,17 +99,25 @@ public static class VolumeScanner
                     if (fs.Read(peekBuf) < 4) break;
 
                     var nextMagic = BitConverter.ToUInt32(peekBuf);
+                    if (VolumeIntegrityFooter.IsMagic(peekBuf))
+                    {
+                        pos = fs.Length;
+                        break;
+                    }
+
                     if (FileEntryHeader.IsValidMagic(nextMagic)) break;
 
-                    var blockLen = BitConverter.ToInt32(peekBuf);
-                    if (blockLen < 0) break;
+                    var blockLen = ReadBlockLength(peekBuf, fs.Length, pos, cvp);
                     pos += 4;
 
                     if (!files.TryGetValue(relPath, out var list))
                         files[relPath] = list = [];
 
-                    list.Add(new Fragment(cvp, pos, blockLen, hdr.SizeOrTotal,
-                        hdr.Flags, isFirst && list.Count == 0, hdr.FragmentIndex));
+                    var fragment = new Fragment(cvp, pos, blockLen, hdr.SizeOrTotal,
+                        hdr.Flags, startsEntry, hdr.FragmentIndex);
+                    list.Add(fragment);
+                    orderedBlocks.Add(new ScannedBlock(relPath, fragment));
+                    startsEntry = false;
 
                     pos += blockLen;
                 }
@@ -119,6 +129,7 @@ public static class VolumeScanner
         return new ScanResult
         {
             Files = files,
+            OrderedBlocks = orderedBlocks,
             PossiblyEncrypted = possiblyEncrypted
         };
     }
@@ -132,17 +143,43 @@ public static class VolumeScanner
         return Encoding.UTF8.GetString(bytes, start, end - start);
     }
 
+    /// <summary>读取并验证当前位置的块长度，确保块完整位于当前卷文件中。</summary>
+    /// <param name="lengthBytes">长度字段的四个字节。</param>
+    /// <param name="fileLength">当前卷文件长度。</param>
+    /// <param name="lengthOffset">长度字段在卷中的偏移。</param>
+    /// <param name="cvp">当前卷文件。</param>
+    /// <returns>已验证的块长度。</returns>
+    private static int ReadBlockLength(ReadOnlySpan<byte> lengthBytes, long fileLength, long lengthOffset,
+        FileInfo cvp)
+    {
+        var length = BitConverter.ToInt32(lengthBytes);
+        var remaining = fileLength - lengthOffset - sizeof(int);
+        if (length < 0 || length > remaining)
+            throw new InvalidDataException(
+                $"CVP 数据块长度无效: {cvp.FullName} offset=0x{lengthOffset:X}, length={length}");
+        return length;
+    }
+
     public record Fragment(FileInfo CvpFile,
         long CvpOffset,
         int BlockSize,
         long TotalFileSize,
         byte Flags,
-        bool IsFirst,
+        bool StartsEntry,
         uint FragmentIndex);
+
+    /// <summary>保留卷内物理顺序的已扫描数据块。</summary>
+    /// <param name="RelativePath">所属文件的相对路径。</param>
+    /// <param name="Fragment">数据块及其来源信息。</param>
+    public sealed record ScannedBlock(string RelativePath, Fragment Fragment);
 
     public sealed class ScanResult
     {
         public required Dictionary<string, List<Fragment>> Files { get; init; }
+
+        /// <summary>按输入卷与卷内出现顺序排列的数据块，适用于格式保真的重写流程。</summary>
+        public required IReadOnlyList<ScannedBlock> OrderedBlocks { get; init; }
+
         public bool PossiblyEncrypted { get; init; }
     }
 }

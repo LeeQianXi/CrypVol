@@ -88,7 +88,7 @@ public class VolumeScannerTests
             Assert.Equal(data.Length, fragments[0].BlockSize);
             Assert.Equal(data.Length, fragments[0].TotalFileSize);
             Assert.Equal(0, fragments[0].Flags);
-            Assert.True(fragments[0].IsFirst);
+            Assert.True(fragments[0].StartsEntry);
         }
         finally
         {
@@ -142,6 +142,48 @@ public class VolumeScannerTests
         }
     }
 
+    /// <summary>同一条目中的后续块不应重复声明起始头，且扫描结果必须保留物理顺序。</summary>
+    [Fact]
+    public void Scan_PlainMode_MultipleBlocksInEntry_PreservesEntryBoundaryAndOrder()
+    {
+        var dir = new DirectoryInfo(TempDir());
+        try
+        {
+            dir.Create();
+            var path = Path.Combine(dir.FullName, "archive.0.cvp");
+            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write))
+            {
+                var header = new FileEntryHeader
+                {
+                    FileId = 1,
+                    Flags = 0,
+                    FragmentIndex = 0,
+                    SizeOrTotal = 3
+                };
+                header.SetFilePath("joined.bin");
+                stream.Write(header.ToBytes());
+                stream.Write(BitConverter.GetBytes(2));
+                stream.Write([1, 2]);
+                stream.Write(BitConverter.GetBytes(1));
+                stream.Write([3]);
+            }
+
+            var result = VolumeScanner.Scan([new FileInfo(path)]);
+
+            var fragments = result.Files["joined.bin"];
+            Assert.Equal(2, fragments.Count);
+            Assert.True(fragments[0].StartsEntry);
+            Assert.False(fragments[1].StartsEntry);
+            Assert.Equal(["joined.bin", "joined.bin"], result.OrderedBlocks.Select(block => block.RelativePath));
+            Assert.Equal(fragments, result.OrderedBlocks.Select(block => block.Fragment));
+        }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
+    }
+
     [Fact]
     public void Scan_PlainMode_EmptyFile_ReturnsEmpty()
     {
@@ -188,6 +230,69 @@ public class VolumeScannerTests
                 // ignored
             }
         }
+    }
+
+    /// <summary>不可信卷头不得通过父目录跳出解包根目录。</summary>
+    [Fact]
+    public void Scan_PlainMode_ParentDirectoryPath_ThrowsInvalidDataException()
+    {
+        var dir = new DirectoryInfo(TempDir());
+        try
+        {
+            dir.Create();
+            var cvp = WritePlainCvp(dir, "archive.0.cvp", "../outside.txt", [1]);
+
+            Assert.Throws<InvalidDataException>(() => VolumeScanner.Scan([cvp]));
+        }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
+    }
+
+    /// <summary>长度字段超出卷剩余内容时，扫描器必须在创建片段前拒绝该卷。</summary>
+    [Fact]
+    public void Scan_PlainMode_TruncatedBlock_ThrowsInvalidDataException()
+    {
+        var dir = new DirectoryInfo(TempDir());
+        try
+        {
+            dir.Create();
+            var path = Path.Combine(dir.FullName, "truncated.0.cvp");
+            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write))
+            {
+                var header = new FileEntryHeader
+                {
+                    FileId = 1,
+                    Flags = 0,
+                    FragmentIndex = 0,
+                    SizeOrTotal = 100
+                };
+                header.SetFilePath("truncated.bin");
+                stream.Write(header.ToBytes());
+                stream.Write(BitConverter.GetBytes(100));
+                stream.Write([1]);
+            }
+
+            Assert.Throws<InvalidDataException>(() => VolumeScanner.Scan([new FileInfo(path)]));
+        }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
+    }
+
+    /// <summary>输出解析必须拒绝越出根目录的绝对路径与相对路径。</summary>
+    [Fact]
+    public void VolumePathSafety_ResolveUnderRoot_RejectsEscapingPath()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"cvp-output-{Guid.NewGuid()}");
+
+        Assert.Throws<InvalidDataException>(() => VolumePathSafety.ResolveUnderRoot(root, "../outside.txt"));
+        Assert.Throws<InvalidDataException>(() => VolumePathSafety.ResolveUnderRoot(root, Path.GetTempPath()));
+        Assert.Equal(Path.Combine(root, "safe.txt"), VolumePathSafety.ResolveUnderRoot(root, "safe.txt"));
     }
 
     // ── Scan: Encrypted mode ──
@@ -264,7 +369,7 @@ public class VolumeScannerTests
         Assert.Equal(100, fragment.BlockSize);
         Assert.Equal(5000, fragment.TotalFileSize);
         Assert.Equal(1, fragment.Flags);
-        Assert.True(fragment.IsFirst);
+        Assert.True(fragment.StartsEntry);
     }
 
     // ── Scan: multiple volumes ──

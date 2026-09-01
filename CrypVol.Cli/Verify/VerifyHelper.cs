@@ -1,9 +1,9 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
+using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Verify;
 
@@ -14,13 +14,15 @@ public static class VerifyHelper
         var rawInput = args.GetRequiredValue(CommandDefinition.Verify.VolFiles);
 
         var loggerFactory = Program.LoggerFactory;
+        var logger = loggerFactory.CreateLogger(nameof(VerifyHelper));
+        var discoveryLogger = loggerFactory.CreateLogger("VolumeDiscovery");
 
         // 1. 发现所有卷文件
-        var volFiles = VolumeDiscovery.Discover(rawInput, loggerFactory.CreateLogger("VolumeDiscovery")).ToList()
+        var volFiles = VolumeDiscovery.Discover(rawInput, discoveryLogger).ToList()
             .AsReadOnly();
         if (volFiles.Count is 0)
         {
-            Console.Error.WriteLine("无可处理文件");
+            await Console.Error.WriteLineAsync("无可处理文件");
             return 2;
         }
 
@@ -29,9 +31,9 @@ public static class VerifyHelper
         var keyFile = args.GetValue(CommandDefinition.Verify.KeyFile);
         if (keyFile is null)
         {
-            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, loggerFactory.CreateLogger("VolumeDiscovery"));
+            keyFile = VolumeDiscovery.DiscoverKeyFile(volFiles, discoveryLogger);
             if (keyFile is not null)
-                Console.WriteLine($"自动发现密钥文件: {keyFile.FullName}");
+                discoveryLogger.LogInformation("自动发现密钥文件: {KeyFileFullName}", keyFile.FullName);
         }
 
         if (keyFile is not null)
@@ -40,7 +42,7 @@ public static class VerifyHelper
                 var cvk = await CvkLoader.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Verify.Password),
                     args.GetValue(CommandDefinition.Verify.PrivkeyKey),
-                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass), token);
+                    args.GetValue(CommandDefinition.Verify.PrivkeyKeyPass), token, logger);
                 creds = cvk.ToCredentials();
             }
             catch (Exception ex)
@@ -67,7 +69,7 @@ public static class VerifyHelper
 
         if (!result.Success)
         {
-            await Console.Error.WriteLineAsync($"错误: {result.Error}");
+            await Console.Error.WriteLineAsync($"校验失败: {result.Error}");
             return 2;
         }
 
@@ -84,15 +86,23 @@ public static class VerifyHelper
             Console.WriteLine($"损坏文件: {result.CorruptedFiles}");
             Console.WriteLine($"损坏数据块: {result.CorruptedBlocks}");
             foreach (var e in result.CorruptedEntries)
-                Console.WriteLine($"  {e.FilePath} offset={e.CvpOffset} size={e.BlockSize}");
+                Console.WriteLine($"  {e.FilePath} volume={e.VolumePath} offset={e.CvpOffset} size={e.BlockSize}");
 
             var repairReport = args.GetValue(CommandDefinition.Verify.RepairReport);
             if (repairReport is not null)
-            {
-                await File.WriteAllLinesAsync(repairReport.FullName,
-                    result.CorruptedEntries.Select(e => $"{e.FilePath}\t{e.CvpOffset}\t{e.BlockSize}"), token);
-                Console.WriteLine($"损坏报告: {repairReport.FullName}");
-            }
+                try
+                {
+                    repairReport.Directory?.Create();
+                    await File.WriteAllLinesAsync(repairReport.FullName,
+                        result.CorruptedEntries.Select(e =>
+                            $"{e.VolumePath}\t{e.CvpOffset}\t{e.BlockSize}\t{e.FilePath}"), token);
+                    Console.WriteLine($"损坏报告: {repairReport.FullName}");
+                }
+                catch (Exception ex)
+                {
+                    await Console.Error.WriteLineAsync($"无法写入损坏报告 {repairReport.FullName}: {ex.Message}");
+                    return 2;
+                }
 
             return 1;
         }

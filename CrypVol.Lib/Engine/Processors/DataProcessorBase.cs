@@ -63,11 +63,26 @@ public abstract class DataProcessorBase : IDataProcessor
                 DataBlock? output = null;
                 try
                 {
+                    Engine.LogTrace(
+                        "Processor {Processor} 接收块: {Path}, Seq={Sequence}, Target={TargetIndex}, Length={Length}, Flags=0x{Flags:X2}",
+                        GetType().Name, block.Metadata.RelativePath, block.Metadata.Sequence, block.Metadata.TargetIndex,
+                        block.Length, block.Metadata.Flags);
                     output = await ProcessBlockAsync(block, cancellationToken);
+                    if (ReferenceEquals(output, block))
+                        throw new InvalidOperationException("Processor 不能将输入 DataBlock 作为输出转交。");
                     if (output is not null)
                     {
+                        Engine.LogTrace(
+                            "Processor {Processor} 输出块: {Path}, Seq={Sequence}, Target={TargetIndex}, Length={Length}, Flags=0x{Flags:X2}",
+                            GetType().Name, output.Metadata.RelativePath, output.Metadata.Sequence,
+                            output.Metadata.TargetIndex, output.Length, output.Metadata.Flags);
                         await writer.WriteAsync(output, cancellationToken);
                         output = null;
+                    }
+                    else
+                    {
+                        Engine.LogTrace("Processor {Processor} 过滤块: {Path}, Seq={Sequence}", GetType().Name,
+                            block.Metadata.RelativePath, block.Metadata.Sequence);
                     }
                 }
                 finally
@@ -85,6 +100,10 @@ public abstract class DataProcessorBase : IDataProcessor
         finally
         {
             writer.TryComplete(error);
+            if (error is null) Engine.LogDebug("Processor {Processor} 已完成输出通道", GetType().Name);
+            else
+                Engine.LogDebug("Processor {Processor} 因 {ExceptionType} 完成输出通道", GetType().Name,
+                    error.GetType().Name);
         }
     }
 

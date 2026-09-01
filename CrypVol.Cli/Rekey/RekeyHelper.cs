@@ -1,5 +1,4 @@
 using System.CommandLine;
-using CrypVol.Lib;
 using CrypVol.Lib.Crypto;
 
 namespace CrypVol.Cli.Rekey;
@@ -12,6 +11,7 @@ public static class RekeyHelper
         var toMode = args.GetValue(CommandDefinition.Rekey.ToMode);
         var newPassword = args.GetValue(CommandDefinition.Rekey.NewPassword);
         var publicKeys = args.GetValue(CommandDefinition.Rekey.PublicKey)?.ToList() ?? [];
+        var logger = Program.LoggerFactory.CreateLogger(nameof(RekeyHelper));
 
         // 1. 加载完整文档，保留注释和已有的公钥接收者槽位。
         CvkDocument document;
@@ -20,36 +20,36 @@ public static class RekeyHelper
             document = await CvkLoader.LoadAsync(cvkFile,
                 args.GetValue(CommandDefinition.Rekey.Password),
                 args.GetValue(CommandDefinition.Rekey.PrivkeyKey),
-                args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass), token);
+                args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass), token, logger);
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"无法加载 CVK：{ex.Message}");
+            await Console.Error.WriteLineAsync($"无法加载 CVK: {ex.Message}");
             return 1;
         }
 
         // 2. 在任何写入前完成参数校验并构建内容，避免无效参数造成备份或覆写。
         if (toMode is EncryptionMode.None || !Enum.IsDefined(toMode))
         {
-            Console.Error.WriteLine("rekey 的目标模式必须是 PlainKey、Password 或 Asymmetric。");
+            await Console.Error.WriteLineAsync("rekey 的目标模式必须是 PlainKey、Password 或 Asymmetric。");
             return 1;
         }
 
         if (toMode == EncryptionMode.Password && string.IsNullOrWhiteSpace(newPassword))
         {
-            Console.Error.WriteLine("Password 模式需要 --new-password。");
+            await Console.Error.WriteLineAsync("Password 模式需要 --new-password。");
             return 1;
         }
 
         if (toMode != EncryptionMode.Password && !string.IsNullOrWhiteSpace(newPassword))
         {
-            Console.Error.WriteLine("--new-password 仅可与 --to-mode Password 一起使用。");
+            await Console.Error.WriteLineAsync("--new-password 仅可与 --to-mode Password 一起使用。");
             return 1;
         }
 
         if (toMode != EncryptionMode.Asymmetric && publicKeys.Count > 0)
         {
-            Console.Error.WriteLine("--public-key 仅可与 --to-mode Asymmetric 一起使用。");
+            await Console.Error.WriteLineAsync("--public-key 仅可与 --to-mode Asymmetric 一起使用。");
             return 1;
         }
 
@@ -59,7 +59,7 @@ public static class RekeyHelper
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
         if (!sameAsSource && outputFile.Exists)
         {
-            Console.Error.WriteLine($"输出文件已存在：{outputFile.FullName}");
+            await Console.Error.WriteLineAsync($"输出文件已存在：{outputFile.FullName}");
             return 1;
         }
 
@@ -79,9 +79,10 @@ public static class RekeyHelper
                 foreach (var publicKey in publicKeys) document.AddPublicKey(publicKey);
                 if (document.PublicKeyRecipients.Count == 0 && document.NewPublicKeyFiles.Count == 0)
                 {
-                    Console.Error.WriteLine("Asymmetric 模式至少需要一个现有或通过 --public-key 指定的接收者。");
+                    await Console.Error.WriteLineAsync("Asymmetric 模式至少需要一个现有或通过 --public-key 指定的接收者。");
                     return 1;
                 }
+
                 break;
         }
 
@@ -92,7 +93,7 @@ public static class RekeyHelper
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"无法构建 CVK：{ex.Message}");
+            await Console.Error.WriteLineAsync($"无法构建 CVK: {ex.Message}");
             return 1;
         }
 
@@ -102,7 +103,7 @@ public static class RekeyHelper
         {
             if (backupFile.Exists)
             {
-                Console.Error.WriteLine($"备份文件已存在，拒绝覆盖：{backupFile.FullName}");
+                await Console.Error.WriteLineAsync($"备份文件已存在，拒绝覆盖：{backupFile.FullName}");
                 return 1;
             }
 
@@ -112,7 +113,7 @@ public static class RekeyHelper
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"无法创建备份：{ex.Message}");
+                await Console.Error.WriteLineAsync($"无法创建备份: {ex.Message}");
                 return 1;
             }
         }
@@ -120,7 +121,7 @@ public static class RekeyHelper
         var outputDirectory = outputFile.Directory;
         if (outputDirectory is null)
         {
-            Console.Error.WriteLine("输出文件路径无效。");
+            await Console.Error.WriteLineAsync("输出文件路径无效。");
             return 1;
         }
 
@@ -133,7 +134,7 @@ public static class RekeyHelper
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"无法写入 CVK：{ex.Message}");
+            await Console.Error.WriteLineAsync($"无法写入 CVK: {ex.Message}");
             return 1;
         }
         finally

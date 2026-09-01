@@ -1,4 +1,3 @@
-using CrypVol.Lib;
 using CrypVol.Lib.Volume;
 using Xunit;
 
@@ -20,7 +19,10 @@ public class FileEntryHeaderIntegrityTests
     [Fact]
     public void SetIntegrityLevel_PreservesFragmentFlags()
     {
-        var header = new FileEntryHeader { Flags = 3 };
+        var header = new FileEntryHeader
+        {
+            Flags = 3
+        };
         header.SetIntegrityLevel(IntegrityLevel.Block);
 
         Assert.Equal(3, header.Flags & 3);

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading.Channels;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Engine.Processors;
@@ -61,6 +62,13 @@ public sealed partial class ProcessingEngine
         _records[name] = value;
     }
 
+    /// <summary>使用强类型键记录当前运行可共享的命名值。</summary>
+    public void SetRecord<T>(EngineRecordKey<T> key, T value)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        SetRecord(key.Name, value);
+    }
+
     /// <summary>读取当前运行的命名记录。</summary>
     /// <typeparam name="T">记录值类型。</typeparam>
     /// <param name="name">记录名称。</param>
@@ -78,12 +86,27 @@ public sealed partial class ProcessingEngine
         return false;
     }
 
+    /// <summary>使用强类型键读取当前运行记录。</summary>
+    public bool TryGetRecord<T>(EngineRecordKey<T> key, out T? value)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return TryGetRecord(key.Name, out value);
+    }
+
     /// <summary>记录跟踪日志，供各阶段与事件处理器调用。</summary>
     /// <param name="message">日志模板。</param>
     /// <param name="args">日志参数。</param>
     public void LogTrace(string message, params object?[] args)
     {
         _logger?.LogTrace(message, args);
+    }
+
+    /// <summary>记录调试日志，供各阶段与事件处理器调用。</summary>
+    /// <param name="message">日志模板。</param>
+    /// <param name="args">日志参数。</param>
+    public void LogDebug(string message, params object?[] args)
+    {
+        _logger?.LogDebug(message, args);
     }
 
     /// <summary>记录信息日志，供各阶段与事件处理器调用。</summary>
@@ -122,6 +145,9 @@ public sealed partial class ProcessingEngine
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
+            LogDebug("引擎准备: Provider={Provider}, Processors=[{Processors}], Receiver={Receiver}",
+                _provider.GetType().Name, string.Join(" -> ", _processors.Select(processor => processor.GetType().Name)),
+                _receiver.GetType().Name);
             await InitializeStagesAsync(linkedCancellation.Token);
             await ValidateStagesAsync(linkedCancellation.Token);
             await PrepareStagesAsync(linkedCancellation.Token);
@@ -132,7 +158,7 @@ public sealed partial class ProcessingEngine
 
             await StartStagesAsync(linkedCancellation.Token);
             State = ProcessingEngineState.Running;
-            Started?.Invoke(this, new ProcessingEngineEventArgs());
+            InvokeObserverHooks(Started, new ProcessingEngineEventArgs(), nameof(Started));
 
             var tasks = new List<Task>(_processors.Count + 2)
             {
@@ -143,7 +169,7 @@ public sealed partial class ProcessingEngine
             await Task.WhenAll(tasks);
 
             State = ProcessingEngineState.Completed;
-            Completed?.Invoke(this, new ProcessingEngineEventArgs());
+            InvokeObserverHooks(Completed, new ProcessingEngineEventArgs(), nameof(Completed));
             LogInformation("数据流程完成");
         }
         catch (Exception ex)
@@ -152,7 +178,7 @@ public sealed partial class ProcessingEngine
             State = ex is OperationCanceledException
                 ? ProcessingEngineState.Canceled
                 : ProcessingEngineState.Faulted;
-            Failed?.Invoke(this, new ProcessingEngineEventArgs(ex));
+            InvokeObserverHooks(Failed, new ProcessingEngineEventArgs(ex), nameof(Failed));
             LogError(ex, "数据流程失败");
             throw;
         }
@@ -165,7 +191,7 @@ public sealed partial class ProcessingEngine
             }
             finally
             {
-                Stopped?.Invoke(this, new ProcessingEngineEventArgs());
+                InvokeObserverHooks(Stopped, new ProcessingEngineEventArgs(), nameof(Stopped));
             }
         }
     }
@@ -187,6 +213,8 @@ public sealed partial class ProcessingEngine
 
         _receiver.BindChannel(reader);
         Channels = channels.AsReadOnly();
+        LogDebug("引擎已绑定 {ChannelCount} 条有界通道，单通道容量 {ChannelCapacity}",
+            Channels.Count, ChannelCapacity);
     }
 
     private static Channel<DataBlock> CreateChannel()
@@ -202,53 +230,84 @@ public sealed partial class ProcessingEngine
     private Task InitializeStagesAsync(CancellationToken cancellationToken)
     {
         return Task.WhenAll([
-            _provider.InitializeAsync(this, cancellationToken),
-            _receiver.InitializeAsync(this, cancellationToken),
-            .. _processors.Select(p => p.InitializeAsync(this, cancellationToken))
+            RunLifecycleAsync("初始化", "Provider", _provider,
+                () => _provider.InitializeAsync(this, cancellationToken)),
+            RunLifecycleAsync("初始化", "Receiver", _receiver,
+                () => _receiver.InitializeAsync(this, cancellationToken)),
+            .. _processors.Select((processor, index) => RunLifecycleAsync("初始化", $"Processor#{index}", processor,
+                () => processor.InitializeAsync(this, cancellationToken)))
         ]);
     }
 
     private Task ValidateStagesAsync(CancellationToken cancellationToken)
     {
         return Task.WhenAll([
-            _provider.ValidateAsync(cancellationToken),
-            _receiver.ValidateAsync(cancellationToken),
-            .. _processors.Select(p => p.ValidateAsync(cancellationToken))
+            RunLifecycleAsync("校验", "Provider", _provider, () => _provider.ValidateAsync(cancellationToken)),
+            RunLifecycleAsync("校验", "Receiver", _receiver, () => _receiver.ValidateAsync(cancellationToken)),
+            .. _processors.Select((processor, index) => RunLifecycleAsync("校验", $"Processor#{index}", processor,
+                () => processor.ValidateAsync(cancellationToken)))
         ]);
     }
 
     private Task PrepareStagesAsync(CancellationToken cancellationToken)
     {
         return Task.WhenAll([
-            _provider.PrepareAsync(cancellationToken),
-            _receiver.PrepareAsync(cancellationToken),
-            .. _processors.Select(p => p.PrepareAsync(cancellationToken))
+            RunLifecycleAsync("预处理", "Provider", _provider, () => _provider.PrepareAsync(cancellationToken)),
+            RunLifecycleAsync("预处理", "Receiver", _receiver, () => _receiver.PrepareAsync(cancellationToken)),
+            .. _processors.Select((processor, index) => RunLifecycleAsync("预处理", $"Processor#{index}", processor,
+                () => processor.PrepareAsync(cancellationToken)))
         ]);
     }
 
-    private Task StartStagesAsync(CancellationToken cancellationToken)
+    private async Task StartStagesAsync(CancellationToken cancellationToken)
     {
-        return Task.WhenAll([
-            _provider.StartAsync(cancellationToken),
-            _receiver.StartAsync(cancellationToken),
-            .. _processors.Select(p => p.StartAsync(cancellationToken))
-        ]);
+        await RunLifecycleAsync("启动", "Receiver", _receiver, () => _receiver.StartAsync(cancellationToken));
+        for (var index = _processors.Count - 1; index >= 0; index--)
+        {
+            var processor = _processors[index];
+            await RunLifecycleAsync("启动", $"Processor#{index}", processor,
+                () => processor.StartAsync(cancellationToken));
+        }
+
+        await RunLifecycleAsync("启动", "Provider", _provider, () => _provider.StartAsync(cancellationToken));
     }
 
     private Task DisposeStagesAsync(CancellationToken cancellationToken)
     {
         return Task.WhenAll([
-            _provider.DisposeAsync(cancellationToken),
-            _receiver.DisposeAsync(cancellationToken),
-            .. _processors.Select(p => p.DisposeAsync(cancellationToken))
+            RunLifecycleAsync("释放", "Provider", _provider, () => _provider.DisposeAsync(cancellationToken)),
+            RunLifecycleAsync("释放", "Receiver", _receiver, () => _receiver.DisposeAsync(cancellationToken)),
+            .. _processors.Select((processor, index) => RunLifecycleAsync("释放", $"Processor#{index}", processor,
+                () => processor.DisposeAsync(cancellationToken)))
         ]);
+    }
+
+    private async Task RunLifecycleAsync(string phase, string role, IAsyncLifeCycle stage, Func<Task> action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        LogDebug("{Role} {Stage} 开始{Phase}", role, stage.GetType().Name, phase);
+        try
+        {
+            await action();
+            LogDebug("{Role} {Stage} 完成{Phase}，耗时 {ElapsedMilliseconds} ms", role, stage.GetType().Name,
+                phase, stopwatch.ElapsedMilliseconds);
+        }
+        catch (Exception exception)
+        {
+            LogDebug("{Role} {Stage} {Phase}失败，耗时 {ElapsedMilliseconds} ms，异常 {ExceptionType}: {Message}",
+                role, stage.GetType().Name, phase, stopwatch.ElapsedMilliseconds, exception.GetType().Name,
+                exception.Message);
+            throw;
+        }
     }
 
     private async Task RunProviderAsync(CancellationTokenSource cancellation)
     {
         try
         {
+            LogDebug("Provider {Provider} 开始执行", _provider.GetType().Name);
             await _provider.ProduceAsync(cancellation.Token);
+            LogDebug("Provider {Provider} 已完成", _provider.GetType().Name);
         }
         catch (Exception ex)
         {
@@ -261,7 +320,9 @@ public sealed partial class ProcessingEngine
     {
         try
         {
+            LogDebug("Processor#{Index} {Processor} 开始执行", index, processor.GetType().Name);
             await processor.ProcessAsync(cancellation.Token);
+            LogDebug("Processor#{Index} {Processor} 已完成", index, processor.GetType().Name);
         }
         catch (Exception ex)
         {
@@ -274,7 +335,9 @@ public sealed partial class ProcessingEngine
     {
         try
         {
+            LogDebug("Receiver {Receiver} 开始执行", _receiver.GetType().Name);
             await _receiver.ReceiveAsync(cancellation.Token);
+            LogDebug("Receiver {Receiver} 已完成", _receiver.GetType().Name);
         }
         catch (Exception ex)
         {
@@ -291,6 +354,9 @@ public sealed partial class ProcessingEngine
         if (Interlocked.Exchange(ref _interrupted, 1) != 0)
             return;
 
+        if (error is null) LogDebug("引擎收到中断请求");
+        else LogDebug("引擎因 {ExceptionType} 中断: {Message}", error.GetType().Name, error.Message);
+
         foreach (var channel in Channels)
             channel.Writer.TryComplete(error);
 
@@ -303,6 +369,26 @@ public sealed partial class ProcessingEngine
         foreach (var channel in Channels)
             while (channel.Reader.TryRead(out var block))
                 block.Dispose();
+    }
+
+    /// <summary>执行观测型引擎事件，避免单个订阅者破坏主流程或掩盖原始异常。</summary>
+    /// <param name="handlers">待执行的事件处理器。</param>
+    /// <param name="eventArgs">事件参数。</param>
+    /// <param name="eventName">事件名称，用于日志定位。</param>
+    private void InvokeObserverHooks(EventHandler<ProcessingEngineEventArgs>? handlers,
+        ProcessingEngineEventArgs eventArgs, string eventName)
+    {
+        if (handlers is null) return;
+
+        foreach (EventHandler<ProcessingEngineEventArgs> handler in handlers.GetInvocationList())
+            try
+            {
+                handler(this, eventArgs);
+            }
+            catch (Exception exception)
+            {
+                LogError(exception, "引擎观测事件 {EventName} 的处理器失败", eventName);
+            }
     }
 
     public static EngineBuilder Builder()

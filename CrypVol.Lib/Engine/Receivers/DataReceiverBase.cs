@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using CrypVol.Lib.Engine.Models;
 
@@ -54,10 +55,18 @@ public abstract class DataReceiverBase : IDataReceiver
     /// <summary>读取 Engine 绑定的最终数据流。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>最终数据块异步流。</returns>
-    protected IAsyncEnumerable<DataBlock> ReadAsync(CancellationToken cancellationToken = default)
+    protected async IAsyncEnumerable<DataBlock> ReadAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        return (_reader ?? throw new InvalidOperationException("Receiver 尚未绑定输入通道。"))
-            .ReadAllAsync(cancellationToken);
+        var reader = _reader ?? throw new InvalidOperationException("Receiver 尚未绑定输入通道。");
+        await foreach (var block in reader.ReadAllAsync(cancellationToken))
+        {
+            Engine.LogTrace(
+                "Receiver {Receiver} 接收块: {Path}, Seq={Sequence}, Target={TargetIndex}, Length={Length}, Flags=0x{Flags:X2}",
+                GetType().Name, block.Metadata.RelativePath, block.Metadata.Sequence, block.Metadata.TargetIndex,
+                block.Length, block.Metadata.Flags);
+            yield return block;
+        }
     }
 
     /// <summary>Engine 注入后初始化阶段私有状态。</summary>

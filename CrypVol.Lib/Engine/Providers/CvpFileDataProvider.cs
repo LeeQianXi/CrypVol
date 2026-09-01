@@ -42,7 +42,7 @@ public sealed class CvpFileDataProvider : DataProviderBase
             }
         }
 
-        Engine.LogTrace("CVP 数据提供完成: {BlockCount} 块", _blocks.Count);
+        Engine.LogDebug("CVP 数据提供完成: {BlockCount} 块", _blocks.Count);
     }
 
     /// <inheritdoc />
@@ -67,6 +67,8 @@ public sealed class CvpFileDataProvider : DataProviderBase
         {
             _stream!.Position = metadata.SourceOffset;
             var read = await _stream.ReadAsync(buffer.AsMemory(0, metadata.Length), cancellationToken);
+            if (read != metadata.Length)
+                throw new EndOfStreamException($"CVP 数据块读取不完整: {metadata.SourceFullPath} offset={metadata.SourceOffset:X}");
             Engine.LogTrace("CVP读: {Path}#{Sequence} offset={Offset:X} {Bytes}字节",
                 metadata.RelativePath, metadata.Sequence, metadata.SourceOffset, read);
             return new DataBlock(buffer, read, metadata);

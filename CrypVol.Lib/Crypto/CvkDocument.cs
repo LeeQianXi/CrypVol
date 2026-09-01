@@ -10,11 +10,6 @@ public sealed class CvkDocument
 {
     private readonly List<FileInfo> _newPublicKeyFiles = [];
     private byte[]? _publicKeyDek;
-    /// <summary>创建带随机 CEK 的 CVK 内容模型。</summary>
-    /// <param name="encryptionMode">CEK 封装模式。</param>
-    /// <returns>可编辑的 CVK 内容模型。</returns>
-    public static CvkDocument CreateNew(EncryptionMode encryptionMode) =>
-        new(RandomNumberGenerator.GetBytes(32), encryptionMode);
 
     /// <summary>创建 CVK 内容模型。</summary>
     /// <param name="cek">要由 CVK 封装的 32 字节内容加密密钥。</param>
@@ -34,14 +29,25 @@ public sealed class CvkDocument
     /// <summary>密码封装时用于派生密钥的密码。</summary>
     public string? Password { get; set; }
 
-    /// <summary>已存在的公钥接收者槽位；可在缺少原始 PEM 文件时保留或删除。</summary>
+    /// <summary>已存在的公钥接收者槽位；可在缺少原始公钥文件时保留或删除。</summary>
     public IList<CvkPublicKeyRecipient> PublicKeyRecipients { get; } = new List<CvkPublicKeyRecipient>();
 
-    /// <summary>待新增的 PEM 公钥文件；构建时会生成新的接收者槽位。</summary>
+    /// <summary>待新增的 RSA 公钥文件；构建时会生成新的接收者槽位。</summary>
     public IReadOnlyList<FileInfo> NewPublicKeyFiles => _newPublicKeyFiles;
 
+    /// <summary>可选注释。</summary>
+    public string? Comment { get; set; }
+
+    /// <summary>创建带随机 CEK 的 CVK 内容模型。</summary>
+    /// <param name="encryptionMode">CEK 封装模式。</param>
+    /// <returns>可编辑的 CVK 内容模型。</returns>
+    public static CvkDocument CreateNew(EncryptionMode encryptionMode)
+    {
+        return new CvkDocument(RandomNumberGenerator.GetBytes(32), encryptionMode);
+    }
+
     /// <summary>添加一个公钥接收者。</summary>
-    /// <param name="publicKeyFile">PEM 公钥文件。</param>
+    /// <param name="publicKeyFile">PEM 或 OpenSSH <c>ssh-rsa</c> 公钥文件。</param>
     public void AddPublicKey(FileInfo publicKeyFile)
     {
         ArgumentNullException.ThrowIfNull(publicKeyFile);
@@ -52,7 +58,7 @@ public sealed class CvkDocument
     }
 
     /// <summary>移除一个公钥接收者。</summary>
-    /// <param name="publicKeyFile">要移除的 PEM 公钥文件。</param>
+    /// <param name="publicKeyFile">要移除的公钥文件。</param>
     /// <returns>是否移除了接收者。</returns>
     public bool RemovePublicKey(FileInfo publicKeyFile)
     {
@@ -74,7 +80,7 @@ public sealed class CvkDocument
         var removedSlot = recipient is not null && PublicKeyRecipients.Remove(recipient);
         var pending = _newPublicKeyFiles.FirstOrDefault(file => string.Equals(
             Path.GetFileNameWithoutExtension(file.Name), keyId, StringComparison.Ordinal));
-        return (pending is not null && _newPublicKeyFiles.Remove(pending)) || removedSlot;
+        return pending is not null && _newPublicKeyFiles.Remove(pending) || removedSlot;
     }
 
     /// <summary>清空全部既有及待新增的公钥接收者。</summary>
@@ -84,12 +90,12 @@ public sealed class CvkDocument
         _newPublicKeyFiles.Clear();
     }
 
-    /// <summary>可选注释。</summary>
-    public string? Comment { get; set; }
-
     /// <summary>提取进入处理引擎所需的轻量凭据。</summary>
     /// <returns>仅包含内容加密模式与 CEK 的运行凭据。</returns>
-    public CvkCredentials ToCredentials() => new(EncryptionMode, Cek);
+    public CvkCredentials ToCredentials()
+    {
+        return new CvkCredentials(EncryptionMode, Cek);
+    }
 
     /// <summary>按现有 KEY0 v1 格式构建二进制 CVK 内容。</summary>
     /// <returns>可直接 Base64 编码或写入的二进制 CVK 内容。</returns>
@@ -143,7 +149,10 @@ public sealed class CvkDocument
 
     /// <summary>构建可直接保存为 .cvk 文件的 Base64 文本。</summary>
     /// <returns>Base64 编码后的 CVK 内容；无加密模式返回空字符串。</returns>
-    public string BuildBase64() => EncryptionMode == EncryptionMode.None ? string.Empty : Convert.ToBase64String(Build());
+    public string BuildBase64()
+    {
+        return EncryptionMode == EncryptionMode.None ? string.Empty : Convert.ToBase64String(Build());
+    }
 
     /// <summary>将构建后的内容写入指定 CVK 文件。</summary>
     /// <param name="file">目标 CVK 文件。</param>
@@ -198,15 +207,14 @@ public sealed class CvkDocument
         var dek = _publicKeyDek ??= RandomNumberGenerator.GetBytes(32);
         foreach (var file in _newPublicKeyFiles)
         {
-            using var rsa = RSA.Create();
-            rsa.ImportFromPem(File.ReadAllText(file.FullName));
-            var keyId = Path.GetFileNameWithoutExtension(file.Name);
+            using var rsa = RsaKeyLoader.LoadPublicKey(File.ReadAllText(file.FullName));
+            var keyId = CvkKeyIdResolver.Resolve(file);
             recipients[keyId] = new CvkPublicKeyRecipient(keyId,
                 rsa.Encrypt(dek, RSAEncryptionPadding.OaepSHA256));
         }
 
         if (recipients.Count == 0)
-            throw new Exception("至少需要一个接收者公钥。");
+            throw new CvkValidationException("Asymmetric 模式必须提供至少一个公钥接收者。请指定 --public-key，或改用其他 --mode。");
         if (recipients.Count > ushort.MaxValue)
             throw new InvalidOperationException("接收者数量不能超过 65535。");
 
