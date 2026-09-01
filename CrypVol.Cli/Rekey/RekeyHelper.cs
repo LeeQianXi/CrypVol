@@ -1,5 +1,6 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Utility;
 
 namespace CrypVol.Cli.Rekey;
 
@@ -125,21 +126,14 @@ public static class RekeyHelper
             return 1;
         }
 
-        var temporaryPath = Path.Combine(outputDirectory.FullName, $".{outputFile.Name}.{Guid.NewGuid():N}.tmp");
         try
         {
-            outputDirectory.Create();
-            await File.WriteAllTextAsync(temporaryPath, contents, token);
-            File.Move(temporaryPath, outputFile.FullName, true);
+            await AtomicFile.WriteTextAsync(outputFile.FullName, contents, token);
         }
         catch (Exception ex)
         {
             await Console.Error.WriteLineAsync($"无法写入 CVK: {ex.Message}");
             return 1;
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
         }
 
         Console.WriteLine($"密钥已重新封装 → {outputFile.FullName}");

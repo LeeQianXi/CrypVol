@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
+using CrypVol.Lib.Utility;
 
 namespace CrypVol.Lib.Crypto;
 
@@ -165,8 +166,7 @@ public sealed class CvkDocument
     {
         ArgumentNullException.ThrowIfNull(file);
         if (EncryptionMode == EncryptionMode.None) return;
-        file.Directory?.Create();
-        await File.WriteAllTextAsync(file.FullName, BuildBase64(), cancellationToken);
+        await AtomicFile.WriteTextAsync(file.FullName, BuildBase64(), cancellationToken);
     }
 
     internal void LoadPublicKeyRecipients(IEnumerable<CvkPublicKeyRecipient> recipients, byte[] dek)
