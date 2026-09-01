@@ -9,6 +9,11 @@ namespace CrypVol.Lib.Crypto;
 /// <summary>加载既有 KEY0 v1 CVK 文件并返回可重新构建的内容模型。</summary>
 public static class CvkLoader
 {
+    private const uint MinArgonMemoryKiB = 8 * 1024;
+    private const uint MaxArgonMemoryKiB = 512 * 1024;
+    private const uint MaxArgonIterations = 10;
+    private const uint MaxArgonParallelism = 16;
+    private const ushort MaxRecipientCiphertextLength = 4096;
     /// <summary>读取 CVK 的封装模式，不解包 CEK。</summary>
     /// <param name="path">CVK 文件路径。</param>
     /// <returns>封装模式。</returns>
@@ -40,14 +45,14 @@ public static class CvkLoader
         switch (envelopeMode)
         {
             case EnvelopeMode.Plain:
-                document = new CvkDocument(reader.ReadBytes(32), EncryptionMode.PlainKey);
+                document = new CvkDocument(ReadExact(reader, 32, payloadEnd, "CEK"), EncryptionMode.PlainKey);
                 break;
             case EnvelopeMode.Password:
-                document = new CvkDocument(ReadPasswordPayload(reader, password), EncryptionMode.Password);
+                document = new CvkDocument(ReadPasswordPayload(reader, password, payloadEnd), EncryptionMode.Password);
                 break;
             case EnvelopeMode.PublicKey:
                 var payload = await ReadPublicKeyPayloadAsync(reader, privateKeyFile, privateKeyPassword,
-                    cancellationToken, logger);
+                    payloadEnd, cancellationToken, logger);
                 document = new CvkDocument(payload.Cek, EncryptionMode.Asymmetric);
                 document.LoadPublicKeyRecipients(payload.Recipients, payload.Dek);
                 break;
@@ -60,17 +65,18 @@ public static class CvkLoader
         return document;
     }
 
-    private static byte[] ReadPasswordPayload(BinaryReader reader, string? password)
+    private static byte[] ReadPasswordPayload(BinaryReader reader, string? password, long payloadEnd)
     {
         if (string.IsNullOrWhiteSpace(password))
             throw new InvalidOperationException("密钥受密码保护，请提供密码。");
-        var salt = reader.ReadBytes(16);
-        var iterations = BinaryPrimitives.ReverseEndianness(reader.ReadUInt32());
-        var memorySize = BinaryPrimitives.ReverseEndianness(reader.ReadUInt32());
-        var parallelism = BinaryPrimitives.ReverseEndianness(reader.ReadUInt32());
-        var nonce = reader.ReadBytes(12);
-        var tag = reader.ReadBytes(16);
-        var ciphertext = reader.ReadBytes(32);
+        var salt = ReadExact(reader, 16, payloadEnd, "Argon2 salt");
+        var iterations = BinaryPrimitives.ReverseEndianness(ReadUInt32(reader, payloadEnd, "Argon2 iterations"));
+        var memorySize = BinaryPrimitives.ReverseEndianness(ReadUInt32(reader, payloadEnd, "Argon2 memory"));
+        var parallelism = BinaryPrimitives.ReverseEndianness(ReadUInt32(reader, payloadEnd, "Argon2 parallelism"));
+        ValidateArgonParameters(iterations, memorySize, parallelism);
+        var nonce = ReadExact(reader, 12, payloadEnd, "密码 nonce");
+        var tag = ReadExact(reader, 16, payloadEnd, "密码 tag");
+        var ciphertext = ReadExact(reader, 32, payloadEnd, "密码密文");
         using var argon = new Argon2id(Encoding.UTF8.GetBytes(password))
         {
             Salt = salt,
@@ -85,16 +91,20 @@ public static class CvkLoader
     }
 
     private static async Task<PublicKeyPayload> ReadPublicKeyPayloadAsync(BinaryReader reader, FileInfo? privateKeyFile,
-        string? privateKeyPassword, CancellationToken cancellationToken, ILogger? logger)
+        string? privateKeyPassword, long payloadEnd, CancellationToken cancellationToken, ILogger? logger)
     {
-        var count = BinaryPrimitives.ReverseEndianness(reader.ReadUInt16());
+        var count = BinaryPrimitives.ReverseEndianness(ReadUInt16(reader, payloadEnd, "接收者数量"));
+        if (count == 0) throw new InvalidDataException("公钥 CVK 至少需要一个接收者。");
         var recipients = new List<CvkPublicKeyRecipient>(count);
         for (var index = 0; index < count; index++)
         {
-            var keyIdLength = reader.ReadByte();
-            var keyId = Encoding.UTF8.GetString(reader.ReadBytes(keyIdLength));
-            var encryptedDekLength = BinaryPrimitives.ReverseEndianness(reader.ReadUInt16());
-            var encryptedDek = reader.ReadBytes(encryptedDekLength);
+            var keyIdLength = ReadByte(reader, payloadEnd, "接收者标识长度");
+            if (keyIdLength == 0) throw new InvalidDataException("公钥接收者标识不能为空。");
+            var keyId = Encoding.UTF8.GetString(ReadExact(reader, keyIdLength, payloadEnd, "接收者标识"));
+            var encryptedDekLength = BinaryPrimitives.ReverseEndianness(ReadUInt16(reader, payloadEnd, "DEK 密文长度"));
+            if (encryptedDekLength == 0 || encryptedDekLength > MaxRecipientCiphertextLength)
+                throw new InvalidDataException("公钥接收者 DEK 密文长度无效。");
+            var encryptedDek = ReadExact(reader, encryptedDekLength, payloadEnd, "DEK 密文");
             recipients.Add(new CvkPublicKeyRecipient(keyId, encryptedDek));
         }
 
@@ -103,9 +113,9 @@ public static class CvkLoader
             : await FindDekFromUserSshKeysAsync(recipients, privateKeyPassword, cancellationToken, logger);
         if (dek is null)
             throw new InvalidOperationException("未找到可用私钥。请通过 --privkey-key 明确指定匹配的 RSA 私钥。");
-        var nonce = reader.ReadBytes(12);
-        var tag = reader.ReadBytes(16);
-        var ciphertext = reader.ReadBytes(32);
+        var nonce = ReadExact(reader, 12, payloadEnd, "公钥 nonce");
+        var tag = ReadExact(reader, 16, payloadEnd, "公钥 tag");
+        var ciphertext = ReadExact(reader, 32, payloadEnd, "公钥密文");
         var cek = new byte[32];
         using var aes = new AesGcm(dek, 16);
         aes.Decrypt(nonce, ciphertext, tag, cek);
@@ -166,7 +176,7 @@ public static class CvkLoader
         var length = BinaryPrimitives.ReverseEndianness(reader.ReadUInt16());
         if (reader.BaseStream.Position + length != payloadEnd)
             throw new InvalidDataException("CVK 注释内容无效。");
-        return Encoding.UTF8.GetString(reader.ReadBytes(length));
+        return Encoding.UTF8.GetString(ReadExact(reader, length, payloadEnd, "CVK 注释"));
     }
 
     private static BinaryReader OpenPayload(byte[] data, out EnvelopeMode mode, out long payloadEnd)
@@ -178,9 +188,40 @@ public static class CvkLoader
         mode = (EnvelopeMode)reader.ReadByte();
         var length = BinaryPrimitives.ReverseEndianness(reader.ReadInt32());
         payloadEnd = stream.Position + length;
-        if (length < 0 || payloadEnd > stream.Length)
+        if (length < 0 || payloadEnd < stream.Position || payloadEnd > stream.Length)
             throw new InvalidDataException("CVK 载荷长度无效。");
         return reader;
+    }
+
+    private static byte[] ReadExact(BinaryReader reader, int count, long payloadEnd, string field)
+    {
+        if (count < 0 || reader.BaseStream.Position + count > payloadEnd)
+            throw new InvalidDataException($"CVK {field}超出载荷边界。");
+        var value = reader.ReadBytes(count);
+        if (value.Length != count) throw new InvalidDataException($"CVK {field}长度不足。");
+        return value;
+    }
+
+    private static byte ReadByte(BinaryReader reader, long payloadEnd, string field)
+    {
+        return ReadExact(reader, 1, payloadEnd, field)[0];
+    }
+
+    private static ushort ReadUInt16(BinaryReader reader, long payloadEnd, string field)
+    {
+        return BinaryPrimitives.ReadUInt16LittleEndian(ReadExact(reader, sizeof(ushort), payloadEnd, field));
+    }
+
+    private static uint ReadUInt32(BinaryReader reader, long payloadEnd, string field)
+    {
+        return BinaryPrimitives.ReadUInt32LittleEndian(ReadExact(reader, sizeof(uint), payloadEnd, field));
+    }
+
+    private static void ValidateArgonParameters(uint iterations, uint memorySize, uint parallelism)
+    {
+        if (iterations is 0 or > MaxArgonIterations || memorySize < MinArgonMemoryKiB ||
+            memorySize > MaxArgonMemoryKiB || parallelism is 0 or > MaxArgonParallelism)
+            throw new InvalidDataException("CVK Argon2 参数超出允许范围。");
     }
 
     private sealed record PublicKeyPayload(byte[] Cek,
