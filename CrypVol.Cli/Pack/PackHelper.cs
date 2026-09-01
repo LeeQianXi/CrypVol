@@ -23,6 +23,11 @@ public static class PackHelper
         var outputDir = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
         var mode = args.GetValue(CommandDefinition.Pack.Mode);
         var algorithm = args.GetValue(CommandDefinition.Pack.Algorithm);
+        if (algorithm == EncryptionAlgorithm.Ecc && mode != EncryptionMode.Asymmetric)
+        {
+            await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --mode Asymmetric 一起使用。");
+            return 1;
+        }
         var keyFile = args.GetValue(CommandDefinition.Pack.KeyFile);
         var publicKeys = args.GetValue(CommandDefinition.Pack.PublicKey)?.ToList() ?? [];
 

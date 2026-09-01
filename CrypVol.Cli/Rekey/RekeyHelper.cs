@@ -68,6 +68,11 @@ public static class RekeyHelper
         var sourceMode = document.EncryptionMode;
         var sourceAlgorithm = document.EncryptionAlgorithm;
         var targetAlgorithm = requestedAlgorithm ?? sourceAlgorithm;
+        if (targetAlgorithm == EncryptionAlgorithm.Ecc && toMode != EncryptionMode.Asymmetric)
+        {
+            await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --to-mode Asymmetric 一起使用。");
+            return 1;
+        }
         document.EncryptionMode = toMode;
         switch (toMode)
         {

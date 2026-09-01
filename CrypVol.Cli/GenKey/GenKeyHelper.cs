@@ -11,6 +11,11 @@ public static class GenKeyHelper
         var name = args.GetValue(CommandDefinition.GenKey.Name)!;
         var mode = args.GetValue(CommandDefinition.GenKey.Mode);
         var algorithm = args.GetValue(CommandDefinition.GenKey.Algorithm);
+        if (algorithm == EncryptionAlgorithm.Ecc && mode != EncryptionMode.Asymmetric)
+        {
+            await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --mode Asymmetric 一起使用。");
+            return 1;
+        }
         var password = args.GetValue(CommandDefinition.GenKey.Password);
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
         // 1. 快速校验

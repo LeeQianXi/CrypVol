@@ -141,6 +141,10 @@ public sealed class CvkDocument
         if (EncryptionMode == EncryptionMode.None) return [];
         if (Cek.Length != 32)
             throw new InvalidOperationException("CVK 载荷必须是 32 字节 CEK。");
+        if (!Enum.IsDefined(EncryptionMode) || !Enum.IsDefined(EncryptionAlgorithm))
+            throw new CvkValidationException("CVK 模式或算法无效。");
+        if (EncryptionAlgorithm == EncryptionAlgorithm.Ecc && EncryptionMode != EncryptionMode.Asymmetric)
+            throw new CvkValidationException("ECC 算法只能与 Asymmetric 公钥保护模式组合。");
 
         using var keyBodyStream = new MemoryStream();
         using (var keyBodyWriter = new BinaryWriter(keyBodyStream, Encoding.UTF8, true))

@@ -188,10 +188,15 @@ public static class CvkLoader
             throw new InvalidDataException("CVK 元数据中的模式或算法无效。");
         if (metadata.ProtectionMode != EncryptionMode.Asymmetric && metadata.Algorithm == EncryptionAlgorithm.Ecc)
             throw new InvalidDataException("ECC 算法必须与公钥保护模式组合。");
+        if (metadata.ProtectionMode == EncryptionMode.Asymmetric && metadata.Algorithm is not (EncryptionAlgorithm.AesGcm or EncryptionAlgorithm.Ecc))
+            throw new InvalidDataException("公钥保护算法无效。");
         if (metadata.KeyBodyLength != keyBodyLength || keyBodyLength <= 0)
             throw new InvalidDataException("CVK 元数据中的密钥体长度无效。");
         if (metadata.KeyIds.Count > ushort.MaxValue || metadata.KeyIds.Any(string.IsNullOrWhiteSpace))
             throw new InvalidDataException("CVK 元数据中的接收者标识无效。");
+        if (metadata.Comment?.Length > 65535 || metadata.Label?.Length > 4096 || metadata.Description?.Length > 16384 ||
+            metadata.Generator?.Length > 1024)
+            throw new InvalidDataException("CVK 元数据字段过长。");
         if (!string.Equals(metadata.Integrity, "SHA-256", StringComparison.Ordinal))
             throw new InvalidDataException("CVK 校验算法不受支持。");
     }
