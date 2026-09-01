@@ -10,7 +10,7 @@ public static class RekeyHelper
     {
         var cvkFile = args.GetRequiredValue(CommandDefinition.Rekey.CvkFile);
         var toMode = args.GetValue(CommandDefinition.Rekey.ToMode);
-        var algorithm = args.GetValue(CommandDefinition.Rekey.Algorithm);
+        var requestedAlgorithm = args.GetValue(CommandDefinition.Rekey.Algorithm);
         var newPassword = args.GetValue(CommandDefinition.Rekey.NewPassword);
         var publicKeys = args.GetValue(CommandDefinition.Rekey.PublicKey)?.ToList() ?? [];
         var logger = Program.LoggerFactory.CreateLogger(nameof(RekeyHelper));
@@ -66,6 +66,8 @@ public static class RekeyHelper
         }
 
         var sourceMode = document.EncryptionMode;
+        var sourceAlgorithm = document.EncryptionAlgorithm;
+        var targetAlgorithm = requestedAlgorithm ?? sourceAlgorithm;
         document.EncryptionMode = toMode;
         switch (toMode)
         {
@@ -79,9 +81,9 @@ public static class RekeyHelper
                 break;
             case EncryptionMode.Asymmetric:
                 document.Password = null;
-                document.EncryptionAlgorithm = algorithm;
+                document.EncryptionAlgorithm = targetAlgorithm;
                 // RSA 与 ECC 接收者槽位格式不同，跨算法切换时不能复用旧槽位。
-                if (sourceMode != toMode)
+                if (sourceMode != toMode || sourceAlgorithm != targetAlgorithm)
                     document.ClearPublicKeys();
                 foreach (var publicKey in publicKeys) document.AddPublicKey(publicKey);
                 if (document.PublicKeyRecipients.Count == 0 && document.NewPublicKeyFiles.Count == 0)

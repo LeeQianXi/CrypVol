@@ -919,7 +919,7 @@ public static class CommandDefinition
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<FileInfo?> Output;
         public static readonly Option<EncryptionMode> ToMode;
-        public static readonly Option<EncryptionAlgorithm> Algorithm;
+        public static readonly Option<EncryptionAlgorithm?> Algorithm;
         public static readonly Option<string> NewPassword;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<bool> Backup;
@@ -950,10 +950,9 @@ public static class CommandDefinition
                     """
             };
 
-            Algorithm = new Option<EncryptionAlgorithm>("--algorithm")
+            Algorithm = new Option<EncryptionAlgorithm?>("--algorithm")
             {
-                Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
-                DefaultValueFactory = static _ => EncryptionAlgorithm.AesGcm
+                Description = "公钥封装算法：AesGcm 或 Ecc（P-256 ECDH）；未指定时沿用原 CVK 算法"
             };
 
             Password = new Option<string>("--password", "-p")
