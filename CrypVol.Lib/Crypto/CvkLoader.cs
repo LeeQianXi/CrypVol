@@ -58,6 +58,12 @@ public static class CvkLoader
                 document = new CvkDocument(payload.Cek, EncryptionMode.Asymmetric);
                 document.LoadPublicKeyRecipients(payload.Recipients, payload.Dek);
                 break;
+            case EnvelopeMode.EccPublicKey:
+                var eccPayload = await ReadEccPublicKeyPayloadAsync(reader, privateKeyFile, payloadEnd,
+                    cancellationToken, logger);
+                document = new CvkDocument(eccPayload.Cek, EncryptionMode.Ecc);
+                document.LoadPublicKeyRecipients(eccPayload.Recipients, eccPayload.Dek);
+                break;
             default:
                 throw new InvalidDataException("未知 CVK 封装模式。");
         }
@@ -120,6 +126,46 @@ public static class CvkLoader
         var nonce = ReadExact(reader, 12, payloadEnd, "公钥 nonce");
         var tag = ReadExact(reader, 16, payloadEnd, "公钥 tag");
         var ciphertext = ReadExact(reader, 32, payloadEnd, "公钥密文");
+        var cek = new byte[32];
+        using var aes = new AesGcm(dek, 16);
+        aes.Decrypt(nonce, ciphertext, tag, cek);
+        return new PublicKeyPayload(cek, dek, recipients);
+    }
+
+    private static async Task<PublicKeyPayload> ReadEccPublicKeyPayloadAsync(BinaryReader reader,
+        FileInfo? privateKeyFile, long payloadEnd, CancellationToken cancellationToken, ILogger? logger)
+    {
+        var count = BinaryPrimitives.ReverseEndianness(ReadUInt16(reader, payloadEnd, "ECC 接收者数量"));
+        if (count == 0) throw new InvalidDataException("ECC CVK 至少需要一个接收者。");
+        var recipients = new List<CvkPublicKeyRecipient>(count);
+        for (var index = 0; index < count; index++)
+        {
+            var keyIdLength = ReadByte(reader, payloadEnd, "ECC 接收者标识长度");
+            if (keyIdLength == 0) throw new InvalidDataException("ECC 接收者标识不能为空。");
+            var keyId = Encoding.UTF8.GetString(ReadExact(reader, keyIdLength, payloadEnd, "ECC 接收者标识"));
+            var encryptedDekLength = BinaryPrimitives.ReverseEndianness(ReadUInt16(reader, payloadEnd,
+                "ECC DEK 密文长度"));
+            if (encryptedDekLength == 0 || encryptedDekLength > MaxRecipientCiphertextLength)
+                throw new InvalidDataException("ECC 接收者 DEK 密文长度无效。");
+            recipients.Add(new CvkPublicKeyRecipient(keyId,
+                ReadExact(reader, encryptedDekLength, payloadEnd, "ECC DEK 密文")));
+        }
+
+        if (privateKeyFile is null)
+            throw new InvalidOperationException("ECC CVK 必须通过 --privkey-key 指定 P-256 私钥。");
+        var pem = await File.ReadAllTextAsync(privateKeyFile.FullName, cancellationToken);
+        using var privateKey = EccKeyLoader.LoadPrivateKey(pem);
+        byte[]? dek = null;
+        foreach (var recipient in recipients)
+            try { dek = EccKeyLoader.UnwrapDek(privateKey, recipient.EncryptedDek); break; }
+            catch (CryptographicException) { }
+        if (dek is null) throw new CryptographicException("ECC 私钥无法解封任何接收者 DEK。");
+        logger?.LogDebug("ECC CVK 私钥匹配成功: 接收者数量={RecipientCount}, 私钥={PrivateKey}", recipients.Count,
+            privateKeyFile.FullName);
+
+        var nonce = ReadExact(reader, 12, payloadEnd, "ECC nonce");
+        var tag = ReadExact(reader, 16, payloadEnd, "ECC tag");
+        var ciphertext = ReadExact(reader, 32, payloadEnd, "ECC 密文");
         var cek = new byte[32];
         using var aes = new AesGcm(dek, 16);
         aes.Decrypt(nonce, ciphertext, tag, cek);

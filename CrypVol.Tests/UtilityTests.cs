@@ -75,7 +75,7 @@ public class EncryptionModeTests
     public void EncryptionMode_ValuesAreDistinct()
     {
         var values = Enum.GetValues<EncryptionMode>();
-        Assert.Equal(4, values.Length);
+        Assert.Equal(5, values.Length);
         Assert.Contains(EncryptionMode.None, values);
         Assert.Contains(EncryptionMode.PlainKey, values);
         Assert.Contains(EncryptionMode.Password, values);

@@ -209,6 +209,40 @@ public sealed class CvkDocumentTests
         }
     }
 
+    /// <summary>P-256 ECDH 公钥封装应能构建并使用对应私钥解封。</summary>
+    [Fact]
+    public async Task EccP256Document_LoadsWithPrivateKey()
+    {
+        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-ecc-{Guid.NewGuid()}"));
+        directory.Create();
+        try
+        {
+            var publicKey = new FileInfo(Path.Combine(directory.FullName, "device.pem"));
+            var privateKey = new FileInfo(Path.Combine(directory.FullName, "device-private.pem"));
+            using (var key = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256))
+            {
+                await File.WriteAllTextAsync(publicKey.FullName, key.ExportSubjectPublicKeyInfoPem());
+                await File.WriteAllTextAsync(privateKey.FullName, key.ExportECPrivateKeyPem());
+            }
+
+            var source = CvkDocument.CreateNew(EncryptionMode.Ecc);
+            source.AddPublicKey(publicKey);
+            var file = new FileInfo(Path.Combine(directory.FullName, "ecc.cvk"));
+            await source.WriteAsync(file);
+
+            var loaded = await CvkLoader.LoadAsync(file, privateKeyFile: privateKey);
+            Assert.Equal(source.Cek, loaded.Cek);
+            Assert.Equal(EncryptionMode.Ecc, loaded.EncryptionMode);
+            Assert.Equal(EnvelopeMode.EccPublicKey, CvkLoader.ReadMode(file.FullName));
+            Assert.Equal("device", Assert.Single(loaded.PublicKeyRecipients).KeyId);
+        }
+        finally
+        {
+            try { directory.Delete(true); }
+            catch { }
+        }
+    }
+
     private static FileInfo CreateFile()
     {
         return new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-document-{Guid.NewGuid()}.cvk"));

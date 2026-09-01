@@ -34,7 +34,7 @@ public static class GenKeyHelper
             return 1;
         }
 
-        if (mode == EncryptionMode.Asymmetric && !pubKeys.Any())
+        if (mode is EncryptionMode.Asymmetric or EncryptionMode.Ecc && !pubKeys.Any())
         {
             await Console.Error.WriteLineAsync("Asymmetric 模式需要 --public-key");
             return 1;

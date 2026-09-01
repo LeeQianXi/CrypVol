@@ -122,6 +122,7 @@ public sealed class CvkDocument
             EncryptionMode.PlainKey => EnvelopeMode.Plain,
             EncryptionMode.Password => EnvelopeMode.Password,
             EncryptionMode.Asymmetric => EnvelopeMode.PublicKey,
+            EncryptionMode.Ecc => EnvelopeMode.EccPublicKey,
             _ => throw new InvalidOperationException("不支持的 CVK 封装模式。")
         }));
         var payloadLengthPosition = stream.Position;
@@ -137,6 +138,9 @@ public sealed class CvkDocument
                 break;
             case EncryptionMode.Asymmetric:
                 WritePublicKeyPayload(writer);
+                break;
+            case EncryptionMode.Ecc:
+                WriteEccPublicKeyPayload(writer);
                 break;
         }
 
@@ -248,6 +252,45 @@ public sealed class CvkDocument
         writer.Write(ciphertext);
         PublicKeyRecipients.Clear();
         foreach (var recipient in resolvedRecipients) PublicKeyRecipients.Add(recipient);
+        _newPublicKeyFiles.Clear();
+    }
+
+    private void WriteEccPublicKeyPayload(BinaryWriter writer)
+    {
+        var recipients = PublicKeyRecipients.ToDictionary(item => item.KeyId, item => item,
+            StringComparer.Ordinal);
+        var dek = _publicKeyDek ??= RandomNumberGenerator.GetBytes(32);
+        foreach (var file in _newPublicKeyFiles)
+        {
+            using var key = EccKeyLoader.LoadPublicKey(File.ReadAllText(file.FullName));
+            var keyId = CvkKeyIdResolver.Resolve(file);
+            recipients[keyId] = new CvkPublicKeyRecipient(keyId, EccKeyLoader.WrapDek(key, dek));
+        }
+        if (recipients.Count == 0)
+            throw new CvkValidationException("ECC 模式必须提供至少一个公钥接收者。");
+        if (recipients.Count > ushort.MaxValue)
+            throw new InvalidOperationException("接收者数量不能超过 65535。");
+
+        writer.Write(BinaryPrimitives.ReverseEndianness((ushort)recipients.Count));
+        foreach (var recipient in recipients.Values)
+        {
+            var keyIdBytes = Encoding.UTF8.GetBytes(recipient.KeyId);
+            if (keyIdBytes.Length > byte.MaxValue)
+                throw new InvalidOperationException("接收者标识长度不能超过 255 字节。");
+            writer.Write((byte)keyIdBytes.Length);
+            writer.Write(keyIdBytes);
+            writer.Write(BinaryPrimitives.ReverseEndianness((ushort)recipient.EncryptedDek.Length));
+            writer.Write(recipient.EncryptedDek);
+        }
+
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[32];
+        var tag = new byte[16];
+        using var aes = new AesGcm(dek, 16);
+        aes.Encrypt(nonce, Cek.Span, ciphertext, tag);
+        writer.Write(nonce); writer.Write(tag); writer.Write(ciphertext);
+        PublicKeyRecipients.Clear();
+        foreach (var recipient in recipients.Values) PublicKeyRecipients.Add(recipient);
         _newPublicKeyFiles.Clear();
     }
 }

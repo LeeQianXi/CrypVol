@@ -32,7 +32,7 @@ public static class RekeyHelper
         // 2. 在任何写入前完成参数校验并构建内容，避免无效参数造成备份或覆写。
         if (toMode is EncryptionMode.None || !Enum.IsDefined(toMode))
         {
-            await Console.Error.WriteLineAsync("rekey 的目标模式必须是 PlainKey、Password 或 Asymmetric。");
+            await Console.Error.WriteLineAsync("rekey 的目标模式必须是 PlainKey、Password、Asymmetric 或 Ecc。");
             return 1;
         }
 
@@ -48,9 +48,9 @@ public static class RekeyHelper
             return 1;
         }
 
-        if (toMode != EncryptionMode.Asymmetric && publicKeys.Count > 0)
+        if (toMode is not (EncryptionMode.Asymmetric or EncryptionMode.Ecc) && publicKeys.Count > 0)
         {
-            await Console.Error.WriteLineAsync("--public-key 仅可与 --to-mode Asymmetric 一起使用。");
+            await Console.Error.WriteLineAsync("--public-key 仅可与公钥封装模式一起使用。");
             return 1;
         }
 
@@ -76,11 +76,12 @@ public static class RekeyHelper
                 document.ClearPublicKeys();
                 break;
             case EncryptionMode.Asymmetric:
+            case EncryptionMode.Ecc:
                 document.Password = null;
                 foreach (var publicKey in publicKeys) document.AddPublicKey(publicKey);
                 if (document.PublicKeyRecipients.Count == 0 && document.NewPublicKeyFiles.Count == 0)
                 {
-                    await Console.Error.WriteLineAsync("Asymmetric 模式至少需要一个现有或通过 --public-key 指定的接收者。");
+                    await Console.Error.WriteLineAsync("公钥模式至少需要一个现有或通过 --public-key 指定的接收者。");
                     return 1;
                 }
 

@@ -35,7 +35,7 @@ public static class InfoHelper
             if (!string.IsNullOrWhiteSpace(document.Comment))
                 Console.WriteLine($"注释: {document.Comment}");
 
-            if (document.EncryptionMode == EncryptionMode.Asymmetric)
+            if (document.EncryptionMode is EncryptionMode.Asymmetric or EncryptionMode.Ecc)
             {
                 Console.WriteLine($"公钥接收者: {document.PublicKeyRecipients.Count}");
                 foreach (var recipient in document.PublicKeyRecipients)
@@ -58,6 +58,7 @@ public static class InfoHelper
             EnvelopeMode.Plain => "明文 CEK",
             EnvelopeMode.Password => "密码保护",
             EnvelopeMode.PublicKey => "公钥保护",
+            EnvelopeMode.EccPublicKey => "ECC 公钥保护",
             _ => "未知"
         };
     }
@@ -69,6 +70,7 @@ public static class InfoHelper
             EncryptionMode.PlainKey => "明文",
             EncryptionMode.Password => "密码保护",
             EncryptionMode.Asymmetric => "公钥保护",
+            EncryptionMode.Ecc => "ECC 公钥保护",
             _ => "未知"
         };
     }
