@@ -41,6 +41,8 @@ public static class CvkLoader
 
         var data = Convert.FromBase64String((await File.ReadAllTextAsync(file.FullName, cancellationToken)).Trim());
         using var reader = OpenPayload(data, out var envelopeMode, out var payloadEnd);
+        logger?.LogDebug("读取 CVK {Path}: 封装模式={EnvelopeMode}, 载荷长度={PayloadLength} 字节",
+            file.FullName, envelopeMode, payloadEnd - reader.BaseStream.Position);
         CvkDocument document;
         switch (envelopeMode)
         {
@@ -109,10 +111,12 @@ public static class CvkLoader
         }
 
         var dek = privateKeyFile is not null
-            ? await TryDecryptDekAsync(privateKeyFile, recipients, privateKeyPassword, false, cancellationToken)
+            ? await TryDecryptDekAsync(privateKeyFile, recipients, privateKeyPassword, false, cancellationToken, logger)
             : await FindDekFromUserSshKeysAsync(recipients, privateKeyPassword, cancellationToken, logger);
         if (dek is null)
             throw new InvalidOperationException("未找到可用私钥。请通过 --privkey-key 明确指定匹配的 RSA 私钥。");
+        logger?.LogDebug("CVK 公钥载荷已匹配接收者: 接收者数量={RecipientCount}, 使用私钥={PrivateKey}",
+            recipients.Count, privateKeyFile?.FullName ?? "自动发现");
         var nonce = ReadExact(reader, 12, payloadEnd, "公钥 nonce");
         var tag = ReadExact(reader, 16, payloadEnd, "公钥 tag");
         var ciphertext = ReadExact(reader, 32, payloadEnd, "公钥密文");
@@ -125,10 +129,13 @@ public static class CvkLoader
     private static async Task<byte[]?> FindDekFromUserSshKeysAsync(IReadOnlyList<CvkPublicKeyRecipient> recipients,
         string? privateKeyPassword, CancellationToken cancellationToken, ILogger? logger)
     {
-        foreach (var privateKeyFile in SshPrivateKeyDiscovery.DiscoverUserPrivateKeys())
+        var candidates = SshPrivateKeyDiscovery.DiscoverUserPrivateKeys().ToArray();
+        logger?.LogDebug("自动发现 SSH 私钥候选 {CandidateCount} 个", candidates.Length);
+        foreach (var privateKeyFile in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var dek = await TryDecryptDekAsync(privateKeyFile, recipients, privateKeyPassword, true, cancellationToken);
+            var dek = await TryDecryptDekAsync(privateKeyFile, recipients, privateKeyPassword, true, cancellationToken,
+                logger);
             if (dek is not null)
             {
                 logger?.LogInformation("已自动发现并使用 SSH 私钥 {PrivateKeyPath}", privateKeyFile.FullName);
@@ -141,21 +148,35 @@ public static class CvkLoader
 
     private static async Task<byte[]?> TryDecryptDekAsync(FileInfo privateKeyFile,
         IReadOnlyList<CvkPublicKeyRecipient> recipients, string? privateKeyPassword, bool suppressCandidateErrors,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ILogger? logger)
     {
         try
         {
+            logger?.LogDebug("尝试使用私钥 {PrivateKeyPath} 匹配 {RecipientCount} 个 CVK 接收者",
+                privateKeyFile.FullName, recipients.Count);
             var pem = await File.ReadAllTextAsync(privateKeyFile.FullName, cancellationToken);
             using var rsa = RsaKeyLoader.LoadPrivateKey(pem, privateKeyPassword);
 
             foreach (var recipient in recipients)
-                try { return rsa.Decrypt(recipient.EncryptedDek, RSAEncryptionPadding.OaepSHA256); }
-                catch (CryptographicException) { }
+                try
+                {
+                    var dek = rsa.Decrypt(recipient.EncryptedDek, RSAEncryptionPadding.OaepSHA256);
+                    logger?.LogDebug("私钥 {PrivateKeyPath} 匹配 CVK 接收者 {KeyId}", privateKeyFile.FullName,
+                        recipient.KeyId);
+                    return dek;
+                }
+                catch (CryptographicException)
+                {
+                    logger?.LogTrace("私钥 {PrivateKeyPath} 不匹配 CVK 接收者 {KeyId}", privateKeyFile.FullName,
+                        recipient.KeyId);
+                }
 
             return null;
         }
         catch (Exception exception) when (suppressCandidateErrors && IsUnreadableOrUnsupportedKey(exception))
         {
+            logger?.LogDebug("跳过不可用 SSH 私钥 {PrivateKeyPath}: {ExceptionType}", privateKeyFile.FullName,
+                exception.GetType().Name);
             return null;
         }
     }
