@@ -6,7 +6,7 @@ using Xunit;
 
 namespace CrypVol.Tests;
 
-/// <summary>验证可编辑 CVK 内容模型及其既有 KEY0 格式封装。</summary>
+/// <summary>验证可编辑 CVK 内容模型及其 CVK v3 三段式封装。</summary>
 public sealed class CvkDocumentTests
 {
     [Fact]

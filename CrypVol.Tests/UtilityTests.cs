@@ -122,17 +122,6 @@ public class BrowseOutputModeTests
     }
 }
 
-public class EnvelopeModeTests
-{
-    [Fact]
-    public void EnvelopeMode_Values()
-    {
-        Assert.Equal(0, (byte)EnvelopeMode.Plain);
-        Assert.Equal(1, (byte)EnvelopeMode.Password);
-        Assert.Equal(2, (byte)EnvelopeMode.PublicKey);
-    }
-}
-
 public class BlockMetadataTests
 {
     [Fact]
