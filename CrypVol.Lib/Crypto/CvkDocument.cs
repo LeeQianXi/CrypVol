@@ -71,7 +71,10 @@ public sealed class CvkDocument
         var existing = _newPublicKeyFiles.FirstOrDefault(file => string.Equals(file.FullName,
             publicKeyFile.FullName, StringComparison.OrdinalIgnoreCase));
         var removedPending = existing is not null && _newPublicKeyFiles.Remove(existing);
-        return RemovePublicKey(Path.GetFileNameWithoutExtension(publicKeyFile.Name)) || removedPending;
+        var keyId = publicKeyFile.Exists
+            ? CvkKeyIdResolver.Resolve(publicKeyFile)
+            : Path.GetFileNameWithoutExtension(publicKeyFile.Name);
+        return RemovePublicKey(keyId) || removedPending;
     }
 
     /// <summary>按接收者标识移除既有公钥槽位，无需原始 PEM 文件。</summary>

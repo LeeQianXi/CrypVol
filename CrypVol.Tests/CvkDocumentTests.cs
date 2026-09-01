@@ -176,6 +176,39 @@ public sealed class CvkDocumentTests
         }
     }
 
+    /// <summary>移除 SSH 公钥文件时应使用邮箱注释生成的实际 KeyId。</summary>
+    [Fact]
+    public async Task RemovePublicKey_SshEmailKeyId_UsesResolvedKeyId()
+    {
+        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-remove-{Guid.NewGuid()}"));
+        directory.Create();
+        try
+        {
+            var publicKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa.pub"));
+            var privateKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa.pem"));
+            using (var rsa = RSA.Create(2048))
+            {
+                var pair = DotNetUtilities.GetRsaKeyPair(rsa);
+                await File.WriteAllTextAsync(publicKey.FullName,
+                    $"ssh-rsa {Convert.ToBase64String(OpenSshPublicKeyUtilities.EncodePublicKey(pair.Public))} alice@example.com\n");
+                await File.WriteAllTextAsync(privateKey.FullName, rsa.ExportRSAPrivateKeyPem());
+            }
+
+            var document = CvkDocument.CreateNew(EncryptionMode.Asymmetric);
+            document.AddPublicKey(publicKey);
+            var file = new FileInfo(Path.Combine(directory.FullName, "key.cvk"));
+            await document.WriteAsync(file);
+            var loaded = await CvkLoader.LoadAsync(file, privateKeyFile: privateKey);
+            Assert.True(loaded.RemovePublicKey(publicKey));
+            Assert.Empty(loaded.PublicKeyRecipients);
+        }
+        finally
+        {
+            try { directory.Delete(true); }
+            catch { }
+        }
+    }
+
     private static FileInfo CreateFile()
     {
         return new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-document-{Guid.NewGuid()}.cvk"));
