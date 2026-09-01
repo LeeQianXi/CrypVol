@@ -58,6 +58,7 @@ public sealed class SourceFileDataProvider : DataProviderBase
     private async Task ProduceFileAsync(FileInfo file, CancellationToken cancellationToken)
     {
         var relativePath = Path.GetRelativePath(_sourceDirectory.FullName, file.FullName);
+        VolumePathSafety.ValidateRelativePath(relativePath);
         Engine.LogDebug("源文件读取开始: {Path}, {Length} 字节", relativePath, file.Length);
         if (Encoding.UTF8.GetByteCount(relativePath) > 230)
             throw new InvalidOperationException($"文件相对路径超过 CVP 头限制: {relativePath}");

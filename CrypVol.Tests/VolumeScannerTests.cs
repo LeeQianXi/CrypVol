@@ -232,6 +232,36 @@ public class VolumeScannerTests
         }
     }
 
+    /// <summary>不可信卷头不得通过父目录跳出解包根目录。</summary>
+    [Fact]
+    public void Scan_PlainMode_ParentDirectoryPath_ThrowsInvalidDataException()
+    {
+        var dir = new DirectoryInfo(TempDir());
+        try
+        {
+            dir.Create();
+            var cvp = WritePlainCvp(dir, "archive.0.cvp", "../outside.txt", [1]);
+
+            Assert.Throws<InvalidDataException>(() => VolumeScanner.Scan([cvp]));
+        }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
+    }
+
+    /// <summary>输出解析必须拒绝越出根目录的绝对路径与相对路径。</summary>
+    [Fact]
+    public void VolumePathSafety_ResolveUnderRoot_RejectsEscapingPath()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"cvp-output-{Guid.NewGuid()}");
+
+        Assert.Throws<InvalidDataException>(() => VolumePathSafety.ResolveUnderRoot(root, "../outside.txt"));
+        Assert.Throws<InvalidDataException>(() => VolumePathSafety.ResolveUnderRoot(root, Path.GetTempPath()));
+        Assert.Equal(Path.Combine(root, "safe.txt"), VolumePathSafety.ResolveUnderRoot(root, "safe.txt"));
+    }
+
     // ── Scan: Encrypted mode ──
 
     [Fact]

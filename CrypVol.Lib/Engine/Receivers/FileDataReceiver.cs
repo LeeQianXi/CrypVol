@@ -1,3 +1,5 @@
+using CrypVol.Lib.Volume;
+
 namespace CrypVol.Lib.Engine.Receivers;
 
 /// <summary>将处理后的数据块写入普通文件的接收阶段。</summary>
@@ -18,9 +20,7 @@ public sealed class DataFileReciver : VolumeDataReceiverBase
     /// <inheritdoc />
     protected override async Task ReceiveVolumeAsync(VolumeContext context, CancellationToken cancellationToken)
     {
-        var fullPath = context.OutputPath;
-        if (!Path.IsPathFullyQualified(fullPath))
-            fullPath = Path.Combine(_outputDirectory, fullPath);
+        var fullPath = VolumePathSafety.ResolveUnderRoot(_outputDirectory, context.OutputPath);
 
         if (!_overwrite && File.Exists(fullPath))
         {

@@ -70,6 +70,7 @@ public static class VolumeScanner
                 string relPath;
                 try { relPath = ReadPath(hdr); }
                 catch { break; }
+                VolumePathSafety.ValidateRelativePath(relPath);
 
                 pos += headerLen;
 
