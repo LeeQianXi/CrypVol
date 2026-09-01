@@ -13,7 +13,7 @@ public static class VolumePathSafety
         if (Path.IsPathRooted(relativePath) || IsWindowsRootedPath(relativePath))
             throw new InvalidDataException($"归档条目路径不能是绝对路径: {relativePath}");
 
-        var segments = relativePath.Replace('\\', '/').Split('/', StringSplitOptions.None);
+        var segments = relativePath.Replace('\\', '/').Split('/');
         if (segments.Any(segment => string.IsNullOrEmpty(segment) || segment is "." or ".."))
             throw new InvalidDataException($"归档条目路径包含不安全的目录段: {relativePath}");
     }

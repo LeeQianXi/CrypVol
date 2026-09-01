@@ -8,7 +8,7 @@ namespace CrypVol.Lib.Volume;
 /// <summary>扫描 .cvp 卷头，构建文件→片段映射。魔数自动识别明文(CVPH)/加密(CVPE)头。filter 非 null 时跳过不匹配的文件。</summary>
 public static class VolumeScanner
 {
-    public static ScanResult Scan(IEnumerable<FileInfo> volumes, byte[]? cek = null,
+    public static ScanResult Scan(IReadOnlyCollection<FileInfo> volumes, byte[]? cek = null,
         GlobMatcher? filter = null, ILogger? logger = null)
     {
         var files = new Dictionary<string, List<Fragment>>();
@@ -70,6 +70,7 @@ public static class VolumeScanner
                 string relPath;
                 try { relPath = ReadPath(hdr); }
                 catch { break; }
+
                 VolumePathSafety.ValidateRelativePath(relPath);
 
                 pos += headerLen;
@@ -175,8 +176,10 @@ public static class VolumeScanner
     public sealed class ScanResult
     {
         public required Dictionary<string, List<Fragment>> Files { get; init; }
+
         /// <summary>按输入卷与卷内出现顺序排列的数据块，适用于格式保真的重写流程。</summary>
         public required IReadOnlyList<ScannedBlock> OrderedBlocks { get; init; }
+
         public bool PossiblyEncrypted { get; init; }
     }
 }

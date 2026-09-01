@@ -23,7 +23,7 @@ public sealed record PackOptions
         init;
     }
 
-    /// <summary>单卷大小上限（MiB）</summary>
+    /// <summary>单卷近似切分目标（MiB）；处理后的块可能因压缩、加密或完整性数据略有偏差。</summary>
     public uint VolumeSizeMb { get; init; } = 1024;
 
     /// <summary>
