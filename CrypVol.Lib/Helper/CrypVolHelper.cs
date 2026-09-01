@@ -61,7 +61,8 @@ public sealed class CrypVolHelper
 
             var encryptHeaders = mode != EncryptionMode.None;
 
-            var receiver = new CvpFileReciver(encryptHeaders ? cek : null, opts.OutputDir.FullName, prefix);
+            var receiver = new CvpFileReciver(encryptHeaders ? (ReadOnlyMemory<byte>?)cek : null,
+                opts.OutputDir.FullName, prefix);
             var provider = new SourceFileDataProvider(opts.SourceFiles, opts.SourceFolder, chunkSize, capacity,
                 headerSize, opts.IntegrityLevel, opts.EnableCompression);
             var builder = ProcessingEngine.Builder().UseProvider(provider);
@@ -104,7 +105,7 @@ public sealed class CrypVolHelper
             var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null, Logger);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), filter.IsActive ? filter : null, Logger);
             Logger?.LogInformation("卷扫描完成: {FileCount} 文件, {VolumeCount} 卷, 加密={Encrypted}",
                 scanResult.Files.Count, opts.VolumeFiles.Count,
                 scanResult.PossiblyEncrypted ? "是" : "否");
@@ -214,7 +215,7 @@ public sealed class CrypVolHelper
             var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null, Logger);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), filter.IsActive ? filter : null, Logger);
             Logger?.LogInformation("卷扫描完成: {FileCount} 文件, {VolumeCount} 卷, 加密={Encrypted}",
                 scanResult.Files.Count, opts.VolumeFiles.Count,
                 scanResult.PossiblyEncrypted ? "是" : "否");
@@ -276,7 +277,7 @@ public sealed class CrypVolHelper
         try
         {
             var (mode, cek) = opts.OldCredentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, logger: Logger);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), logger: Logger);
             if (scanResult.PossiblyEncrypted)
                 return new ConvertResult
                 {
@@ -296,7 +297,7 @@ public sealed class CrypVolHelper
                 var oldVol = Path.GetFileNameWithoutExtension(f.CvpFile.Name).Split('.').Last();
                 if (!int.TryParse(oldVol, out var ov)) ov = 0;
                 if (!volMap.TryGetValue(ov, out var nv)) volMap[ov] = nv = newVolIdx++;
-                var sequence = sequenceByVolume.TryGetValue(nv, out var currentSequence) ? currentSequence : 0;
+                var sequence = sequenceByVolume.GetValueOrDefault(nv, 0);
                 sequenceByVolume[nv] = sequence + 1;
                 items.Add(new BlockMetadata
                 {
@@ -328,7 +329,7 @@ public sealed class CrypVolHelper
             var (newMode, newCek) = opts.NewCredentials;
             Logger?.LogInformation("密钥轮换开始: {ItemCount} 块, {VolCount} 卷", items.Count, newVolIdx);
 
-            var receiver = new CvpFileReciver(newMode is EncryptionMode.None ? null : newCek);
+            var receiver = new CvpFileReciver(newMode is EncryptionMode.None ? (ReadOnlyMemory<byte>?)null : newCek);
 
             for (var i = 0; i < newVolIdx; i++)
                 receiver.AddTarget(i, Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp"));
@@ -373,7 +374,7 @@ public sealed class CrypVolHelper
             var (mode, cek) = opts.Credentials;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, filter.IsActive ? filter : null, Logger);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), filter.IsActive ? filter : null, Logger);
             Logger?.LogInformation("卷扫描完成: {FileCount} 文件, {VolumeCount} 卷",
                 scanResult.Files.Count, opts.VolumeFiles.Count);
 
@@ -567,7 +568,7 @@ public sealed class CrypVolHelper
         try
         {
             var (_, cek) = opts.Credentials;
-            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek, logger: Logger);
+            var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), logger: Logger);
             if (scanResult.PossiblyEncrypted)
                 return new RepairResult
                 {

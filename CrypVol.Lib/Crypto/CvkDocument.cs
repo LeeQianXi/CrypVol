@@ -21,7 +21,11 @@ public sealed class CvkDocument
     }
 
     /// <summary>CVK 载荷，即解包后可直接用于内容加密的 CEK。</summary>
-    public byte[] Cek { get; set; }
+    public ReadOnlyMemory<byte> Cek
+    {
+        get;
+        set => field = value.ToArray();
+    }
 
     /// <summary>CEK 的封装模式。</summary>
     public EncryptionMode EncryptionMode { get; set; }
@@ -102,7 +106,7 @@ public sealed class CvkDocument
     public byte[] Build()
     {
         if (EncryptionMode == EncryptionMode.None) return [];
-        if (Cek is null || Cek.Length != 32)
+        if (Cek.Length != 32)
             throw new InvalidOperationException("CVK 载荷必须是 32 字节 CEK。");
 
         using var stream = new MemoryStream();
@@ -122,7 +126,7 @@ public sealed class CvkDocument
         switch (EncryptionMode)
         {
             case EncryptionMode.PlainKey:
-                writer.Write(Cek);
+                writer.Write(Cek.Span);
                 break;
             case EncryptionMode.Password:
                 WritePasswordPayload(writer);
@@ -190,7 +194,7 @@ public sealed class CvkDocument
         var ciphertext = new byte[32];
         var tag = new byte[16];
         using var aes = new AesGcm(argon.GetBytes(32), 16);
-        aes.Encrypt(nonce, Cek, ciphertext, tag);
+        aes.Encrypt(nonce, Cek.Span, ciphertext, tag);
         writer.Write(salt);
         writer.Write(BinaryPrimitives.ReverseEndianness(iterations));
         writer.Write(BinaryPrimitives.ReverseEndianness(memorySize));
@@ -222,7 +226,7 @@ public sealed class CvkDocument
         var ciphertext = new byte[32];
         var tag = new byte[16];
         using var aes = new AesGcm(dek, 16);
-        aes.Encrypt(nonce, Cek, ciphertext, tag);
+        aes.Encrypt(nonce, Cek.Span, ciphertext, tag);
         writer.Write(BinaryPrimitives.ReverseEndianness((ushort)recipients.Count));
         var resolvedRecipients = recipients.Values.ToList();
         foreach (var recipient in resolvedRecipients)

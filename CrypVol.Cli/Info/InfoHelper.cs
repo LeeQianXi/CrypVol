@@ -31,7 +31,7 @@ public static class InfoHelper
 
             Console.WriteLine("状态: 已解封并验证");
             Console.WriteLine($"内容模式: {ModeLabel(document.EncryptionMode)} ({document.EncryptionMode})");
-            Console.WriteLine($"CEK 指纹: {System.Convert.ToHexString(document.Cek)[..8]}...");
+            Console.WriteLine($"CEK 指纹: {System.Convert.ToHexString(document.Cek.Span)[..8]}...");
             if (!string.IsNullOrWhiteSpace(document.Comment))
                 Console.WriteLine($"注释: {document.Comment}");
 
