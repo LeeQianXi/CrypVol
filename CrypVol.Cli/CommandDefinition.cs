@@ -1217,6 +1217,12 @@ public static class CommandDefinition
                 DefaultValueFactory = static _ => EncryptionMode.PlainKey
             };
 
+            Algorithm = new Option<EncryptionAlgorithm>("--algorithm")
+            {
+                Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
+                DefaultValueFactory = static _ => EncryptionAlgorithm.AesGcm
+            };
+
             Password = new Option<string>("--password", "-p")
             {
                 Description = "加密 CEK 的密码（Password 模式必需）",
@@ -1256,6 +1262,7 @@ public static class CommandDefinition
                 Output,
                 Name,
                 Mode,
+                Algorithm,
                 Password,
                 PublicKey,
                 Comment

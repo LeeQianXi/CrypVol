@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Konscious.Security.Cryptography;
 using CrypVol.Lib.Utility;
 
@@ -59,6 +60,12 @@ public sealed class CvkDocument
 
     /// <summary>生成该 CVK 的应用标识。</summary>
     public string? Generator { get; set; }
+
+    /// <summary>当前 CVK 使用的接收者标识快照。</summary>
+    public IReadOnlyList<string> KeyIds => PublicKeyRecipients.Select(item => item.KeyId)
+        .Concat(_newPublicKeyFiles.Select(CvkKeyIdResolver.Resolve))
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
 
     /// <summary>创建带随机 CEK 的 CVK 内容模型。</summary>
     /// <param name="encryptionMode">CEK 封装模式。</param>
@@ -124,10 +131,10 @@ public sealed class CvkDocument
     /// <returns>仅包含内容加密模式与 CEK 的运行凭据。</returns>
     public CvkCredentials ToCredentials()
     {
-        return new CvkCredentials(EncryptionMode, Cek);
+        return new CvkCredentials(EncryptionMode, Cek, EncryptionAlgorithm);
     }
 
-    /// <summary>按 KEY0 v2 格式构建二进制 CVK 内容。</summary>
+    /// <summary>按 CVK v3 三段式格式构建二进制内容。</summary>
     /// <returns>可直接 Base64 编码或写入的二进制 CVK 内容。</returns>
     public byte[] Build()
     {
@@ -135,52 +142,51 @@ public sealed class CvkDocument
         if (Cek.Length != 32)
             throw new InvalidOperationException("CVK 载荷必须是 32 字节 CEK。");
 
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        writer.Write(Encoding.ASCII.GetBytes("KEY0"));
-        writer.Write((byte)2);
-        writer.Write((byte)(EncryptionMode switch
+        using var keyBodyStream = new MemoryStream();
+        using (var keyBodyWriter = new BinaryWriter(keyBodyStream, Encoding.UTF8, true))
         {
-            EncryptionMode.PlainKey => EnvelopeMode.Plain,
-            EncryptionMode.Password => EnvelopeMode.Password,
-            EncryptionMode.Asymmetric when EncryptionAlgorithm == EncryptionAlgorithm.Ecc => EnvelopeMode.EccPublicKey,
-            EncryptionMode.Asymmetric => EnvelopeMode.PublicKey,
-            _ => throw new InvalidOperationException("不支持的 CVK 封装模式。")
-        }));
-        var payloadLengthPosition = stream.Position;
-        writer.Write(0);
-
-        switch (EncryptionMode)
-        {
-            case EncryptionMode.PlainKey:
-                writer.Write(Cek.Span);
-                break;
-            case EncryptionMode.Password:
-                WritePasswordPayload(writer);
-                break;
-            case EncryptionMode.Asymmetric when EncryptionAlgorithm == EncryptionAlgorithm.Ecc:
-                WriteEccPublicKeyPayload(writer);
-                break;
-            case EncryptionMode.Asymmetric:
-                WritePublicKeyPayload(writer);
-                break;
+            switch (EncryptionMode)
+            {
+                case EncryptionMode.PlainKey:
+                    keyBodyWriter.Write(Cek.Span);
+                    break;
+                case EncryptionMode.Password:
+                    WritePasswordPayload(keyBodyWriter);
+                    break;
+                case EncryptionMode.Asymmetric when EncryptionAlgorithm == EncryptionAlgorithm.Ecc:
+                    WriteEccPublicKeyPayload(keyBodyWriter);
+                    break;
+                case EncryptionMode.Asymmetric:
+                    WritePublicKeyPayload(keyBodyWriter);
+                    break;
+                default:
+                    throw new InvalidOperationException("不支持的 CVK 封装模式。");
+            }
         }
+        var keyBody = keyBodyStream.ToArray();
+        var metadata = JsonSerializer.SerializeToUtf8Bytes(new CvkMetadataPayload(
+            EncryptionMode, EncryptionAlgorithm, CreatedAt, Label, Description, Generator,
+            Comment, KeyIds, keyBody.Length), CvkJson.Options);
+        if (metadata.Length > CvkFormat.MaxSectionLength)
+            throw new InvalidOperationException("CVK 元数据过大。");
 
-        var comment = string.IsNullOrWhiteSpace(Comment) ? [] : Encoding.UTF8.GetBytes(Comment);
-        if (comment.Length > ushort.MaxValue)
-            throw new InvalidOperationException("CVK 注释长度不能超过 65535 字节。");
-        writer.Write(BinaryPrimitives.ReverseEndianness((ushort)comment.Length));
-        writer.Write(comment);
-
-        var metadata = JsonSerializer.SerializeToUtf8Bytes(new CvkMetadata(CreatedAt, Label, Description, Generator));
-        writer.Write(Encoding.ASCII.GetBytes("META"));
-        writer.Write(BinaryPrimitives.ReverseEndianness(metadata.Length));
+        using var stream = new MemoryStream(CvkFormat.HeaderSize + metadata.Length + keyBody.Length + CvkFormat.IntegritySize);
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, true);
+        writer.Write(CvkFormat.Magic);
+        writer.Write(CvkFormat.Version);
+        writer.Write(CvkFormat.Flags);
+        WriteUInt32(writer, metadata.Length);
+        WriteUInt32(writer, keyBody.Length);
         writer.Write(metadata);
-
-        var end = stream.Position;
-        stream.Position = payloadLengthPosition;
-        writer.Write(BinaryPrimitives.ReverseEndianness((int)(end - payloadLengthPosition - sizeof(int))));
+        writer.Write(keyBody);
+        var integrity = SHA256.HashData(stream.ToArray());
+        writer.Write(integrity);
         return stream.ToArray();
+    }
+
+    private static void WriteUInt32(BinaryWriter writer, int value)
+    {
+        writer.Write(BinaryPrimitives.ReverseEndianness(value));
     }
 
     /// <summary>构建可直接保存为 .cvk 文件的 Base64 文本。</summary>
@@ -318,5 +324,4 @@ public sealed class CvkDocument
         _newPublicKeyFiles.Clear();
     }
 
-    private sealed record CvkMetadata(DateTimeOffset? CreatedAt, string? Label, string? Description, string? Generator);
 }

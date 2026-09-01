@@ -69,7 +69,7 @@ public sealed class CvkDocumentTests
 
             Assert.Equal(document.Cek, loaded.Cek);
             Assert.Equal(EncryptionMode.Password, loaded.EncryptionMode);
-            Assert.Equal(EnvelopeMode.Password, CvkLoader.ReadMode(file.FullName));
+            Assert.Equal(EncryptionMode.Password, CvkLoader.ReadMode(file.FullName));
         }
         finally { Delete(file); }
     }
@@ -259,7 +259,7 @@ public sealed class CvkDocumentTests
             Assert.Equal(source.Cek, loaded.Cek);
             Assert.Equal(EncryptionMode.Asymmetric, loaded.EncryptionMode);
             Assert.Equal(EncryptionAlgorithm.Ecc, loaded.EncryptionAlgorithm);
-            Assert.Equal(EnvelopeMode.EccPublicKey, CvkLoader.ReadMode(file.FullName));
+            Assert.Equal(EncryptionMode.Asymmetric, CvkLoader.ReadMode(file.FullName));
             Assert.Equal("device", Assert.Single(loaded.PublicKeyRecipients).KeyId);
         }
         finally

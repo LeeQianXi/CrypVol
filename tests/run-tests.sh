@@ -270,7 +270,7 @@ section "6. info — 密钥信息"
 # ═══════════════════════════════════════
 check_out "info PlainKey"   "明文"     run info "$TMP/k-plain.cvk"
 check_out "info Password"   "密码保护" run info "$TMP/k-pass.cvk" -p "pwd123"
-check_out "info 编码模式"   "封装模式: 密码保护" run info "$TMP/k-pass.cvk" -p "pwd123"
+check_out "info 保护模式"   "保护模式: 密码保护" run info "$TMP/k-pass.cvk" -p "pwd123"
 check_out "info -p 正确密码" "CEK"     run info "$TMP/k-pass.cvk" -p "pwd123"
 check_out "info 注释内容"   "注释: test" run info "$TMP/k-cmt.cvk" -p "pwd"
 check_fail "info 非法文件"             run info "$TMP/not-a-key.txt"
