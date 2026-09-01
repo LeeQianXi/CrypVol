@@ -82,9 +82,8 @@ public static class VolumeScanner
                         fs.Position = pos;
                         if (fs.Read(peekBuf) < 4) break;
                         if (FileEntryHeader.IsValidMagic(BitConverter.ToUInt32(peekBuf))) break;
-                        var skipLen = BitConverter.ToInt32(peekBuf);
-                        if (skipLen < 0) break;
-                        pos += 4 + skipLen;
+                        var skipLen = ReadBlockLength(peekBuf, fs.Length, pos, cvp);
+                        pos += sizeof(int) + (long)skipLen;
                     }
 
                     continue;
@@ -107,8 +106,7 @@ public static class VolumeScanner
 
                     if (FileEntryHeader.IsValidMagic(nextMagic)) break;
 
-                    var blockLen = BitConverter.ToInt32(peekBuf);
-                    if (blockLen < 0) break;
+                    var blockLen = ReadBlockLength(peekBuf, fs.Length, pos, cvp);
                     pos += 4;
 
                     if (!files.TryGetValue(relPath, out var list))
@@ -142,6 +140,23 @@ public static class VolumeScanner
         var end = start;
         while (end < bytes.Length && bytes[end] != 0) end++;
         return Encoding.UTF8.GetString(bytes, start, end - start);
+    }
+
+    /// <summary>读取并验证当前位置的块长度，确保块完整位于当前卷文件中。</summary>
+    /// <param name="lengthBytes">长度字段的四个字节。</param>
+    /// <param name="fileLength">当前卷文件长度。</param>
+    /// <param name="lengthOffset">长度字段在卷中的偏移。</param>
+    /// <param name="cvp">当前卷文件。</param>
+    /// <returns>已验证的块长度。</returns>
+    private static int ReadBlockLength(ReadOnlySpan<byte> lengthBytes, long fileLength, long lengthOffset,
+        FileInfo cvp)
+    {
+        var length = BitConverter.ToInt32(lengthBytes);
+        var remaining = fileLength - lengthOffset - sizeof(int);
+        if (length < 0 || length > remaining)
+            throw new InvalidDataException(
+                $"CVP 数据块长度无效: {cvp.FullName} offset=0x{lengthOffset:X}, length={length}");
+        return length;
     }
 
     public record Fragment(FileInfo CvpFile,

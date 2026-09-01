@@ -251,6 +251,39 @@ public class VolumeScannerTests
         }
     }
 
+    /// <summary>长度字段超出卷剩余内容时，扫描器必须在创建片段前拒绝该卷。</summary>
+    [Fact]
+    public void Scan_PlainMode_TruncatedBlock_ThrowsInvalidDataException()
+    {
+        var dir = new DirectoryInfo(TempDir());
+        try
+        {
+            dir.Create();
+            var path = Path.Combine(dir.FullName, "truncated.0.cvp");
+            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write))
+            {
+                var header = new FileEntryHeader
+                {
+                    FileId = 1,
+                    Flags = 0,
+                    FragmentIndex = 0,
+                    SizeOrTotal = 100
+                };
+                header.SetFilePath("truncated.bin");
+                stream.Write(header.ToBytes());
+                stream.Write(BitConverter.GetBytes(100));
+                stream.Write([1]);
+            }
+
+            Assert.Throws<InvalidDataException>(() => VolumeScanner.Scan([new FileInfo(path)]));
+        }
+        finally
+        {
+            try { dir.Delete(true); }
+            catch { }
+        }
+    }
+
     /// <summary>输出解析必须拒绝越出根目录的绝对路径与相对路径。</summary>
     [Fact]
     public void VolumePathSafety_ResolveUnderRoot_RejectsEscapingPath()
