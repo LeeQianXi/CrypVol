@@ -28,6 +28,31 @@ public sealed class CvkDocumentTests
         finally { Delete(file); }
     }
 
+    /// <summary>CVK v2 应保留创建时间及用户可读元数据。</summary>
+    [Fact]
+    public async Task DocumentMetadata_RoundTrips()
+    {
+        var file = CreateFile();
+        try
+        {
+            var source = CvkDocument.CreateNew(EncryptionMode.PlainKey);
+            source.Comment = "用途说明";
+            source.Label = "测试卷";
+            source.Description = "元数据往返";
+            source.Generator = "unit-test";
+            await source.WriteAsync(file);
+
+            var loaded = await CvkLoader.LoadAsync(file);
+
+            Assert.Equal(source.Comment, loaded.Comment);
+            Assert.Equal(source.CreatedAt, loaded.CreatedAt);
+            Assert.Equal(source.Label, loaded.Label);
+            Assert.Equal(source.Description, loaded.Description);
+            Assert.Equal(source.Generator, loaded.Generator);
+        }
+        finally { Delete(file); }
+    }
+
     [Fact]
     public async Task ChangePasswordAndPayload_BuildsLoadableDocument()
     {

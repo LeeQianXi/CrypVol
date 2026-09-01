@@ -1,12 +1,13 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Konscious.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Crypto;
 
-/// <summary>加载既有 KEY0 v1 CVK 文件并返回可重新构建的内容模型。</summary>
+    /// <summary>加载 KEY0 v1/v2 CVK 文件并返回可重新构建的内容模型。</summary>
 public static class CvkLoader
 {
     private const uint MinArgonMemoryKiB = 8 * 1024;
@@ -20,7 +21,7 @@ public static class CvkLoader
     public static EnvelopeMode ReadMode(string path)
     {
         var data = Convert.FromBase64String(File.ReadAllText(path).Trim());
-        using var reader = OpenPayload(data, out var mode, out _);
+        using var reader = OpenPayload(data, out var mode, out _, out _);
         return mode;
     }
 
@@ -40,7 +41,7 @@ public static class CvkLoader
         if (!file.Exists) throw new FileNotFoundException("密钥文件不存在", file.FullName);
 
         var data = Convert.FromBase64String((await File.ReadAllTextAsync(file.FullName, cancellationToken)).Trim());
-        using var reader = OpenPayload(data, out var envelopeMode, out var payloadEnd);
+        using var reader = OpenPayload(data, out var envelopeMode, out var payloadEnd, out var version);
         logger?.LogDebug("读取 CVK {Path}: 封装模式={EnvelopeMode}, 载荷长度={PayloadLength} 字节",
             file.FullName, envelopeMode, payloadEnd - reader.BaseStream.Position);
         CvkDocument document;
@@ -69,7 +70,12 @@ public static class CvkLoader
         }
 
         if (document.Cek.Length != 32) throw new InvalidDataException("CVK 中的 CEK 长度无效。");
-        document.Comment = ReadComment(reader, payloadEnd);
+        var metadata = ReadCommentAndMetadata(reader, payloadEnd, version);
+        document.Comment = metadata.Comment;
+        document.CreatedAt = metadata.CreatedAt;
+        document.Label = metadata.Label;
+        document.Description = metadata.Description;
+        document.Generator = metadata.Generator;
         return document;
     }
 
@@ -235,9 +241,39 @@ public static class CvkLoader
             or ArgumentException;
     }
 
-    private static string? ReadComment(BinaryReader reader, long payloadEnd)
+    private static CvkMetadata ReadCommentAndMetadata(BinaryReader reader, long payloadEnd, byte version)
     {
-        if (reader.BaseStream.Position == payloadEnd) return null;
+        if (version == 1)
+        {
+            if (reader.BaseStream.Position == payloadEnd) return new CvkMetadata(null, null, null, null, null);
+            return new CvkMetadata(ReadLegacyComment(reader, payloadEnd), null, null, null, null);
+        }
+
+        if (reader.BaseStream.Position == payloadEnd) return new CvkMetadata(null, null, null, null, null);
+        if (reader.BaseStream.Position + sizeof(ushort) > payloadEnd)
+            throw new InvalidDataException("CVK 注释长度无效。");
+        var length = BinaryPrimitives.ReverseEndianness(reader.ReadUInt16());
+        if (reader.BaseStream.Position + length > payloadEnd)
+            throw new InvalidDataException("CVK 注释内容无效。");
+        var comment = Encoding.UTF8.GetString(ReadExact(reader, length, payloadEnd, "CVK 注释"));
+        if (reader.BaseStream.Position == payloadEnd)
+            return new CvkMetadata(comment, null, null, null, null);
+        if (reader.BaseStream.Position + 8 > payloadEnd ||
+            Encoding.ASCII.GetString(ReadExact(reader, 4, payloadEnd, "CVK 元数据标识")) != "META")
+            throw new InvalidDataException("CVK 元数据标识无效。");
+        var metadataLength = BinaryPrimitives.ReverseEndianness(ReadUInt32(reader, payloadEnd, "CVK 元数据长度"));
+        if (metadataLength > int.MaxValue)
+            throw new InvalidDataException("CVK 元数据长度无效。");
+        var metadata = JsonSerializer.Deserialize<CvkMetadataPayload>(
+            ReadExact(reader, (int)metadataLength, payloadEnd, "CVK 元数据"))
+            ?? throw new InvalidDataException("CVK 元数据为空。");
+        if (reader.BaseStream.Position != payloadEnd)
+            throw new InvalidDataException("CVK 元数据后存在多余内容。");
+        return new CvkMetadata(comment, metadata.CreatedAt, metadata.Label, metadata.Description, metadata.Generator);
+    }
+
+    private static string? ReadLegacyComment(BinaryReader reader, long payloadEnd)
+    {
         if (reader.BaseStream.Position + sizeof(ushort) > payloadEnd)
             throw new InvalidDataException("CVK 注释长度无效。");
         var length = BinaryPrimitives.ReverseEndianness(reader.ReadUInt16());
@@ -246,12 +282,14 @@ public static class CvkLoader
         return Encoding.UTF8.GetString(ReadExact(reader, length, payloadEnd, "CVK 注释"));
     }
 
-    private static BinaryReader OpenPayload(byte[] data, out EnvelopeMode mode, out long payloadEnd)
+    private static BinaryReader OpenPayload(byte[] data, out EnvelopeMode mode, out long payloadEnd, out byte version)
     {
         var stream = new MemoryStream(data, false);
         var reader = new BinaryReader(stream);
-        if (Encoding.ASCII.GetString(reader.ReadBytes(4)) != "KEY0" || reader.ReadByte() != 1)
+        if (Encoding.ASCII.GetString(reader.ReadBytes(4)) != "KEY0")
             throw new InvalidDataException("无效的密钥文件。");
+        version = reader.ReadByte();
+        if (version is not (1 or 2)) throw new InvalidDataException("不支持的 CVK 版本。");
         mode = (EnvelopeMode)reader.ReadByte();
         var length = BinaryPrimitives.ReverseEndianness(reader.ReadInt32());
         payloadEnd = stream.Position + length;
@@ -294,4 +332,10 @@ public static class CvkLoader
     private sealed record PublicKeyPayload(byte[] Cek,
         byte[] Dek,
         IReadOnlyList<CvkPublicKeyRecipient> Recipients);
+
+    private sealed record CvkMetadataPayload(DateTimeOffset? CreatedAt, string? Label, string? Description,
+        string? Generator);
+
+    private sealed record CvkMetadata(string? Comment, DateTimeOffset? CreatedAt, string? Label, string? Description,
+        string? Generator);
 }

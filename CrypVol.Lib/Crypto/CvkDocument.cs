@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Konscious.Security.Cryptography;
 using CrypVol.Lib.Utility;
 
@@ -43,12 +44,28 @@ public sealed class CvkDocument
     /// <summary>可选注释。</summary>
     public string? Comment { get; set; }
 
+    /// <summary>CVK 创建时间；旧版 CVK 未携带该字段时为 <see langword="null" />。</summary>
+    public DateTimeOffset? CreatedAt { get; set; }
+
+    /// <summary>用户可读的 CVK 标签。</summary>
+    public string? Label { get; set; }
+
+    /// <summary>CVK 用途描述。</summary>
+    public string? Description { get; set; }
+
+    /// <summary>生成该 CVK 的应用标识。</summary>
+    public string? Generator { get; set; }
+
     /// <summary>创建带随机 CEK 的 CVK 内容模型。</summary>
     /// <param name="encryptionMode">CEK 封装模式。</param>
     /// <returns>可编辑的 CVK 内容模型。</returns>
     public static CvkDocument CreateNew(EncryptionMode encryptionMode)
     {
-        return new CvkDocument(RandomNumberGenerator.GetBytes(32), encryptionMode);
+        return new CvkDocument(RandomNumberGenerator.GetBytes(32), encryptionMode)
+        {
+            CreatedAt = DateTimeOffset.UtcNow,
+            Generator = "CrypVol"
+        };
     }
 
     /// <summary>添加一个公钥接收者。</summary>
@@ -105,7 +122,7 @@ public sealed class CvkDocument
         return new CvkCredentials(EncryptionMode, Cek);
     }
 
-    /// <summary>按现有 KEY0 v1 格式构建二进制 CVK 内容。</summary>
+    /// <summary>按 KEY0 v2 格式构建二进制 CVK 内容。</summary>
     /// <returns>可直接 Base64 编码或写入的二进制 CVK 内容。</returns>
     public byte[] Build()
     {
@@ -116,7 +133,7 @@ public sealed class CvkDocument
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         writer.Write(Encoding.ASCII.GetBytes("KEY0"));
-        writer.Write((byte)1);
+        writer.Write((byte)2);
         writer.Write((byte)(EncryptionMode switch
         {
             EncryptionMode.PlainKey => EnvelopeMode.Plain,
@@ -144,14 +161,16 @@ public sealed class CvkDocument
                 break;
         }
 
-        if (!string.IsNullOrWhiteSpace(Comment))
-        {
-            var comment = Encoding.UTF8.GetBytes(Comment);
-            if (comment.Length > ushort.MaxValue)
-                throw new InvalidOperationException("CVK 注释长度不能超过 65535 字节。");
-            writer.Write(BinaryPrimitives.ReverseEndianness((ushort)comment.Length));
-            writer.Write(comment);
-        }
+        var comment = string.IsNullOrWhiteSpace(Comment) ? [] : Encoding.UTF8.GetBytes(Comment);
+        if (comment.Length > ushort.MaxValue)
+            throw new InvalidOperationException("CVK 注释长度不能超过 65535 字节。");
+        writer.Write(BinaryPrimitives.ReverseEndianness((ushort)comment.Length));
+        writer.Write(comment);
+
+        var metadata = JsonSerializer.SerializeToUtf8Bytes(new CvkMetadata(CreatedAt, Label, Description, Generator));
+        writer.Write(Encoding.ASCII.GetBytes("META"));
+        writer.Write(BinaryPrimitives.ReverseEndianness(metadata.Length));
+        writer.Write(metadata);
 
         var end = stream.Position;
         stream.Position = payloadLengthPosition;
@@ -293,4 +312,6 @@ public sealed class CvkDocument
         foreach (var recipient in recipients.Values) PublicKeyRecipients.Add(recipient);
         _newPublicKeyFiles.Clear();
     }
+
+    private sealed record CvkMetadata(DateTimeOffset? CreatedAt, string? Label, string? Description, string? Generator);
 }
