@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 
 namespace CrypVol.Lib.Crypto.Writing;
@@ -9,9 +10,12 @@ public sealed class Sha256IntegrityCalculator : ICvkIntegrityCalculator
     /// <inheritdoc />
     public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
     {
-        var data = new byte[headerJson.Length + keyBody.Length];
-        headerJson.Span.CopyTo(data);
-        keyBody.Span.CopyTo(data.AsSpan(headerJson.Length));
+        var data = new byte[8 + headerJson.Length + keyBody.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(data, checked((uint)headerJson.Length));
+        headerJson.Span.CopyTo(data.AsSpan(4));
+        var bodyOffset = 4 + headerJson.Length;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(bodyOffset), checked((uint)keyBody.Length));
+        keyBody.Span.CopyTo(data.AsSpan(bodyOffset + 4));
         return SHA256.HashData(data);
     }
 }

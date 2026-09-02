@@ -7,6 +7,8 @@ public sealed class CvkCredentials
     public CvkCredentials(CvkKeyProtection keyProtection, ReadOnlyMemory<byte> cek,
         CvkKeyWrapAlgorithm keyWrapAlgorithm = CvkKeyWrapAlgorithm.None)
     {
+        if (!Enum.IsDefined(keyProtection)) throw new ArgumentOutOfRangeException(nameof(keyProtection));
+        if (!Enum.IsDefined(keyWrapAlgorithm)) throw new ArgumentOutOfRangeException(nameof(keyWrapAlgorithm));
         if (cek.Length != 32 && !(cek.Length == 0 && keyProtection == CvkKeyProtection.Plain && keyWrapAlgorithm == CvkKeyWrapAlgorithm.None))
             throw new ArgumentException("受保护 CEK 必须是 32 字节；仅 Plain/None 允许为空。", nameof(cek));
         var validRoute = keyProtection switch

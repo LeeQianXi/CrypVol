@@ -580,7 +580,7 @@ public sealed class CvkKeyLoaderTests
             var blob = Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)));
             File.WriteAllText(file.FullName, $"ssh-rsa {blob}\n");
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
-            Assert.Equal("id_rsa", material.KeyId);
+            Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
         finally { if (file.Exists) file.Delete(); }
     }

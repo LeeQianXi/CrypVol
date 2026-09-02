@@ -77,7 +77,9 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
         RsaKeyBody body;
         try
         {
-            body = JsonSerializer.Deserialize<RsaKeyBody>(keyBody.Span, JsonOptions) ??
+            using var document = JsonDocument.Parse(keyBody.ToArray());
+            ValidateBody(document.RootElement);
+            body = JsonSerializer.Deserialize<RsaKeyBody>(document.RootElement.GetRawText(), JsonOptions) ??
                    throw new InvalidDataException("RSA 密钥体为空。");
         }
         catch (JsonException ex) { throw new InvalidDataException("RSA 密钥体格式无效。", ex); }
@@ -85,13 +87,14 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
         byte[]? dataKey = null;
         foreach (var recipient in body.Recipients)
         {
+            if (recipient is null) continue;
             if (!_privateKeys.TryGetValue(recipient.KeyId, out var material) || material.Key is not RSA rsa) continue;
             try
             {
                 dataKey = rsa.Decrypt(Convert.FromBase64String(recipient.WrappedKey), Padding);
                 break;
             }
-            catch (CryptographicException) { }
+            catch (Exception ex) when (ex is CryptographicException or FormatException or ArgumentException) { }
         }
 
         if (dataKey is null) throw new CryptographicException("没有可用的 RSA 私钥接收者。");
@@ -106,6 +109,48 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
             return ValueTask.FromResult(CvkPayloadCodec.Decode(plain));
         }
         finally { CryptographicOperations.ZeroMemory(dataKey); }
+    }
+
+    private static void ValidateBody(JsonElement root)
+    {
+        ValidateObject(root, ["nonce", "tag", "ciphertext", "recipients"]);
+        foreach (var name in new[] { "nonce", "tag", "ciphertext" })
+            if (root.GetProperty(name).ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(root.GetProperty(name).GetString()))
+                throw new InvalidDataException($"RSA 密钥体字段无效：{name}。");
+        var recipients = root.GetProperty("recipients");
+        if (recipients.ValueKind != JsonValueKind.Array || recipients.GetArrayLength() == 0)
+            throw new InvalidDataException("RSA 密钥体缺少接收者。");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in recipients.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Null) continue;
+            ValidateObject(item, ["keyId", "wrappedKey", "recipient"]);
+            var id = RequireString(item, "keyId");
+            if (string.IsNullOrWhiteSpace(id) || !ids.Add(id)) throw new InvalidDataException("RSA 接收者 KeyId 为空或重复。");
+            if (string.IsNullOrWhiteSpace(RequireString(item, "wrappedKey"))) throw new InvalidDataException("RSA wrappedKey 为空。");
+            var embedded = item.GetProperty("recipient");
+            ValidateObject(embedded, ["keyId", "algorithm", "publicKey", "comment"]);
+            if (RequireString(embedded, "keyId") != id || RequireString(embedded, "algorithm") != "RSA" || string.IsNullOrWhiteSpace(RequireString(embedded, "publicKey")))
+                throw new InvalidDataException("RSA 嵌入接收者元数据无效。");
+        }
+    }
+
+    private static string RequireString(JsonElement parent, string name)
+    {
+        if (!parent.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException($"RSA 密钥体字段缺失或类型无效：{name}。");
+        return value.GetString()!;
+    }
+
+    private static void ValidateObject(JsonElement element, string[] allowed)
+    {
+        if (element.ValueKind != JsonValueKind.Object) throw new InvalidDataException("RSA 密钥体对象无效。");
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!seen.Add(property.Name) || !allowed.Contains(property.Name, StringComparer.Ordinal))
+                throw new InvalidDataException($"RSA 密钥体字段无效：{property.Name}。");
+        }
     }
 
     private sealed record RsaKeyBody(string Nonce,

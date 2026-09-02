@@ -58,6 +58,9 @@ public static class AsymmetricKeyFileLoader
     {
         ArgumentNullException.ThrowIfNull(file);
         var text = Read(file);
+        if (text.Contains("PUBLIC KEY", StringComparison.OrdinalIgnoreCase) &&
+            !text.Contains("PRIVATE KEY", StringComparison.OrdinalIgnoreCase))
+            throw new AsymmetricKeyFileFormatException($"私钥加载器拒绝公钥文件：{file.FullName}");
         var resolvedId = ResolveKeyId(file, keyId);
 
         var rsa = RSA.Create();

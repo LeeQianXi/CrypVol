@@ -155,6 +155,10 @@ public static class CvkOperations
                 {
                     [privateMaterial.KeyId] = privateMaterial
                 };
+                // 私钥文件名不一定等于 CVK 中的接收者 KeyId；为密钥体中声明的
+                // 接收者建立别名，处理器随后仍会通过公钥解封失败来筛选候选。
+                foreach (var recipientId in ExtractRecipientIds(parsed.KeyBody))
+                    keys.TryAdd(recipientId, privateMaterial);
                 registry.Register(parsed.Header.KeyProtection, parsed.Header.KeyWrapAlgorithm,
                     CreateAsymmetricCryptor(parsed.Header.KeyWrapAlgorithm, keys));
             }
@@ -183,4 +187,14 @@ public static class CvkOperations
         CvkKeyWrapAlgorithm.EcdhP521 => new EcdhP521Cryptor(privateKeys),
         _ => throw new NotSupportedException($"不支持的非对称封装算法：{algorithm}。")
     };
+
+    private static IEnumerable<string> ExtractRecipientIds(ReadOnlyMemory<byte> keyBody)
+    {
+        using var json = System.Text.Json.JsonDocument.Parse(keyBody.ToArray());
+        if (!json.RootElement.TryGetProperty("recipients", out var recipients) || recipients.ValueKind != System.Text.Json.JsonValueKind.Array)
+            yield break;
+        foreach (var item in recipients.EnumerateArray())
+            if (item.ValueKind == System.Text.Json.JsonValueKind.Object && item.TryGetProperty("keyId", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.String)
+                yield return id.GetString()!;
+    }
 }

@@ -10,9 +10,10 @@ public sealed class PlainCvkPayloadUnprotector : ICvkPayloadUnprotector
     public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(header);
         if (header.KeyProtection != CvkKeyProtection.Plain)
             throw new InvalidOperationException("明文 Payload 解封器只能用于 Plain 模式。");
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var payload = JsonSerializer.Deserialize<CvkPayload>(keyBody.Span,

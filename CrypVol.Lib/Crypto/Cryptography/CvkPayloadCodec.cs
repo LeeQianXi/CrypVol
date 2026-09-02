@@ -18,7 +18,10 @@ internal static class CvkPayloadCodec
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(payload.RecipientKeys);
-        return JsonSerializer.SerializeToUtf8Bytes(payload, Options);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, Options);
+        using var document = JsonDocument.Parse(bytes);
+        ValidatePayloadJson(document.RootElement);
+        return bytes;
     }
 
     public static CvkPayload Decode(ReadOnlySpan<byte> bytes)

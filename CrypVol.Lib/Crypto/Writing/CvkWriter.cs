@@ -13,6 +13,9 @@ namespace CrypVol.Lib.Crypto.Writing;
 /// </remarks>
 public sealed class CvkWriter
 {
+    private const int MaxHeaderLength = 1024 * 1024;
+    private const int MaxKeyBodyLength = 256 * 1024 * 1024;
+    private const int MaxIntegrityLength = 4096;
     private const int PrefixSize = 16;
     private static readonly byte[] Magic = [.. "CVK1"u8];
     private readonly ICvkIntegrityCalculator _integrityCalculator;
@@ -42,8 +45,14 @@ public sealed class CvkWriter
             document.Comment, document.CreatedAt, document.Generator);
         var payload = new CvkPayload(document.Cek.ToArray(), document.RecipientKeys.ToArray());
         var headerJson = JsonSerializer.SerializeToUtf8Bytes(header, _jsonOptions);
+        if (headerJson.Length == 0 || headerJson.Length > MaxHeaderLength)
+            throw new InvalidDataException("CVK Header 长度超出限制。");
         var keyBody = await _payloadProtector.ProtectAsync(header, payload, cancellationToken);
+        if (keyBody.Length == 0 || keyBody.Length > MaxKeyBodyLength)
+            throw new InvalidDataException("CVK 密钥体长度超出限制。");
         var integrity = _integrityCalculator.Compute(headerJson, keyBody);
+        if (integrity.Length == 0 || integrity.Length > MaxIntegrityLength)
+            throw new InvalidDataException("CVK 完整性段长度超出限制。");
 
         var output = new byte[PrefixSize + headerJson.Length + keyBody.Length + integrity.Length];
         Magic.CopyTo(output, 0);

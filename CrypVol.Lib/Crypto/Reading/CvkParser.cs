@@ -37,7 +37,9 @@ public static class CvkParser
         CvkHeader header;
         try
         {
-            using var headerDocument = JsonDocument.Parse(headerJson.ToArray(), new JsonDocumentOptions
+            var headerBytes = headerJson.ToArray();
+            if (headerBytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF })) headerBytes = headerBytes[3..];
+            using var headerDocument = JsonDocument.Parse(headerBytes, new JsonDocumentOptions
             {
                 CommentHandling = JsonCommentHandling.Disallow,
                 AllowTrailingCommas = false
@@ -64,8 +66,15 @@ public static class CvkParser
         if (header.Version == 0) throw new InvalidDataException("CVK 版本无效。");
         if (!Enum.IsDefined(header.KeyProtection)) throw new InvalidDataException("CVK 保护模式无效。");
         if (!Enum.IsDefined(header.KeyWrapAlgorithm)) throw new InvalidDataException("CVK 封装算法无效。");
-        if (header.KeyProtection == CvkKeyProtection.Plain && header.KeyWrapAlgorithm != CvkKeyWrapAlgorithm.None)
-            throw new InvalidDataException("Plain 模式不能携带密钥封装算法。");
+        var validRoute = header.KeyProtection switch
+        {
+            CvkKeyProtection.Plain => header.KeyWrapAlgorithm == CvkKeyWrapAlgorithm.None,
+            CvkKeyProtection.Password => header.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256 or CvkKeyWrapAlgorithm.PasswordArgon2Id,
+            CvkKeyProtection.PublicKey => header.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.RsaOaepSha256 or CvkKeyWrapAlgorithm.RsaOaepSha384
+                or CvkKeyWrapAlgorithm.RsaOaepSha512 or CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521,
+            _ => false
+        };
+        if (!validRoute) throw new InvalidDataException("CVK 保护模式与封装算法不匹配。");
     }
 
     private static void ValidateHeaderJson(JsonElement root)

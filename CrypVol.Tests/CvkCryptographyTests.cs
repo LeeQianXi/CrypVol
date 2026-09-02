@@ -1362,7 +1362,10 @@ public sealed class CvkCryptographyTests
         var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
         var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
         var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
-        json.Remove(field);
+        if (json.ContainsKey(field))
+            json.Remove(field);
+        else
+            json["recipients"]!.AsArray()[0]![field] = null;
 
         await Assert.ThrowsAnyAsync<Exception>(() =>
             new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial })

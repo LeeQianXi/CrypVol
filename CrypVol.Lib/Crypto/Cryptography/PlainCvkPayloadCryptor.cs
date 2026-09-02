@@ -11,6 +11,7 @@ public sealed class PlainCvkPayloadCryptor : ICvkPayloadCryptor
         CancellationToken cancellationToken = default)
     {
         EnsureHeader(header);
+        ArgumentNullException.ThrowIfNull(payload);
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult<ReadOnlyMemory<byte>>(JsonSerializer.SerializeToUtf8Bytes(payload,
             new JsonSerializerOptions
@@ -39,6 +40,7 @@ public sealed class PlainCvkPayloadCryptor : ICvkPayloadCryptor
 
     private static void EnsureHeader(CvkHeader header)
     {
+        ArgumentNullException.ThrowIfNull(header);
         if (header.KeyProtection != CvkKeyProtection.Plain || header.KeyWrapAlgorithm != CvkKeyWrapAlgorithm.None)
             throw new InvalidOperationException("Plain 密钥体实现只能用于 Plain/None。");
     }

@@ -17,6 +17,7 @@ public abstract class CvkAlgorithmCryptorBase(
     public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(payload);
         EnsureRoute(header);
         return ProtectCoreAsync(header, payload, cancellationToken);
     }
@@ -39,6 +40,7 @@ public abstract class CvkAlgorithmCryptorBase(
 
     private void EnsureRoute(CvkHeader header)
     {
+        ArgumentNullException.ThrowIfNull(header);
         if (header.KeyProtection != Protection || header.KeyWrapAlgorithm != WrapAlgorithm)
             throw new InvalidOperationException($"处理器路由不匹配：需要 {Protection}/{WrapAlgorithm}。");
     }
