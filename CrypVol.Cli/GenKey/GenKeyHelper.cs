@@ -12,22 +12,18 @@ public static class GenKeyHelper
         var name = args.GetValue(CommandDefinition.GenKey.Name)!;
         var mode = args.GetValue(CommandDefinition.GenKey.Mode);
         var algorithm = args.GetValue(CommandDefinition.GenKey.Algorithm);
-        if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 &&
-            mode != CvkKeyProtection.PublicKey)
-        {
-            await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --mode Asymmetric 一起使用。");
-            return 1;
-        }
+        // None 仅表示“未指定算法”；实际默认算法由封装级别决定。
+        if (algorithm == CvkKeyWrapAlgorithm.None)
+            algorithm = mode switch
+            {
+                CvkKeyProtection.Plain => CvkKeyWrapAlgorithm.None,
+                CvkKeyProtection.Password => CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256,
+                CvkKeyProtection.PublicKey => CvkKeyWrapAlgorithm.RsaOaepSha256,
+                _ => algorithm
+            };
 
         var password = args.GetValue(CommandDefinition.GenKey.Password);
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
-        // 1. 快速校验
-        if (!Enum.IsDefined(mode))
-        {
-            await Console.Error.WriteLineAsync("genkey 不支持 None 模式");
-            return 1;
-        }
-
         if (string.IsNullOrWhiteSpace(name) || name.EndsWith(".cvk", StringComparison.OrdinalIgnoreCase)
                                             || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
                                             name.Contains(Path.DirectorySeparatorChar)
@@ -37,29 +33,37 @@ public static class GenKeyHelper
             return 1;
         }
 
-        if (mode == CvkKeyProtection.Password && string.IsNullOrWhiteSpace(password))
-        {
-            await Console.Error.WriteLineAsync("Password 模式需要 --password");
-            return 1;
-        }
-
-        if (mode == CvkKeyProtection.PublicKey && !pubKeys.Any())
-        {
-            await Console.Error.WriteLineAsync("Asymmetric 模式需要 --public-key");
-            return 1;
-        }
-
-        // 2. 生成密钥
         try
         {
+            var route = CvkEncapsulationRoute.Resolve(mode, algorithm);
+            if (route.RequiresPassword && string.IsNullOrWhiteSpace(password))
+                throw new ArgumentException("Password 封装级别必须提供 --password。", nameof(password));
+            if (!route.RequiresPassword && !string.IsNullOrWhiteSpace(password))
+                throw new ArgumentException("只有 Password 封装级别可以使用 --password。", nameof(password));
+            if (route.RequiresRecipients && pubKeys.Count == 0)
+                throw new ArgumentException("PublicKey 封装级别至少需要一个 --public-key。", nameof(pubKeys));
+            if (!route.RequiresRecipients && pubKeys.Count > 0)
+                throw new ArgumentException("只有 PublicKey 封装级别可以使用 --public-key。", nameof(pubKeys));
+
+            // 生成新 CEK；公钥仅作为 CEK 的接收者元数据加入，不在 CLI 中自行处理密钥体。
             outputDir.Create();
             var cvk = CvkOperations.CreateNew(mode, algorithm);
             cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
-            foreach (var publicKey in pubKeys) CvkOperations.AddPublicKey(cvk, publicKey);
-            await CvkOperations.WriteAsync(cvk, new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), password,
-                token);
-            Console.WriteLine($"密钥已生成: {Path.Combine(outputDir.FullName, name + ".cvk")} ({mode})");
+            foreach (var publicKey in pubKeys)
+                CvkOperations.AddPublicKey(cvk, publicKey);
+
+            var outputFile = new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk"));
+            await CvkOperations.WriteAsync(cvk, outputFile, password, token);
+            Console.WriteLine($"密钥已生成: {outputFile.FullName}");
+            Console.WriteLine($"封装级别: {route.Level}; 算法: {route.Algorithm}");
+            if (route.RequiresRecipients)
+                Console.WriteLine($"公钥接收者: {cvk.RecipientKeys.Count}");
             return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            await Console.Error.WriteLineAsync("密钥生成已取消");
+            return 2;
         }
         catch (Exception ex)
         {

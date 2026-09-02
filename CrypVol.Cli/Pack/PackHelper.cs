@@ -24,6 +24,15 @@ public static class PackHelper
         var outputDir = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
         var mode = args.GetValue(CommandDefinition.Pack.Mode);
         var algorithm = args.GetValue(CommandDefinition.Pack.Algorithm);
+        // 算法默认值必须随封装级别解析，不能让 Plain/Password 继承公钥算法默认值。
+        if (algorithm == CvkKeyWrapAlgorithm.None)
+            algorithm = mode switch
+            {
+                CvkKeyProtection.Plain => CvkKeyWrapAlgorithm.None,
+                CvkKeyProtection.Password => CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256,
+                CvkKeyProtection.PublicKey => CvkKeyWrapAlgorithm.RsaOaepSha256,
+                _ => algorithm
+            };
         if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 &&
             mode != CvkKeyProtection.PublicKey)
         {
@@ -37,6 +46,19 @@ public static class PackHelper
         if (keyFile is null && mode == CvkKeyProtection.PublicKey && publicKeys.Count == 0)
         {
             await Console.Error.WriteLineAsync("参数错误：公钥模式必须至少提供一个 --public-key；也可以改用 PlainKey 或 Password 模式。");
+            return 1;
+        }
+
+        if (keyFile is null && mode != CvkKeyProtection.PublicKey && publicKeys.Count > 0)
+        {
+            await Console.Error.WriteLineAsync("参数错误：只有 PublicKey 模式可以使用 --public-key");
+            return 1;
+        }
+
+        if (keyFile is null && mode != CvkKeyProtection.Password &&
+            !string.IsNullOrWhiteSpace(args.GetValue(CommandDefinition.Pack.Password)))
+        {
+            await Console.Error.WriteLineAsync("参数错误：只有 Password 模式可以使用 --password");
             return 1;
         }
 

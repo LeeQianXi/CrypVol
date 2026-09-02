@@ -210,7 +210,7 @@ public static class CommandDefinition
             Algorithm = new Option<CvkKeyWrapAlgorithm>("--algorithm")
             {
                 Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
-                DefaultValueFactory = static _ => CvkKeyWrapAlgorithm.RsaOaepSha256
+                DefaultValueFactory = static _ => CvkKeyWrapAlgorithm.None
             };
 
             Password = new Option<string>("--password", "-p")
@@ -918,11 +918,14 @@ public static class CommandDefinition
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<FileInfo?> Output;
-        public static readonly Option<CvkKeyProtection> ToMode;
+        public static readonly Option<CvkKeyProtection?> ToMode;
         public static readonly Option<CvkKeyWrapAlgorithm?> Algorithm;
         public static readonly Option<string> NewPassword;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<bool> Backup;
+        public static readonly Option<string?> Label;
+        public static readonly Option<string?> Description;
+        public static readonly Option<string?> Comment;
 
         static Rekey()
         {
@@ -937,22 +940,22 @@ public static class CommandDefinition
                 HelpName = "file"
             }.AcceptLegalFilePathsOnly();
 
-            ToMode = new Option<CvkKeyProtection>("--to-mode")
+            ToMode = new Option<CvkKeyProtection?>("--to-mode")
             {
                 Description =
                     """
                     目标密钥保护模式：
 
-                    PlainKey   —— 将 CEK 以明文存储（降低安全性）
+                    Plain       —— 将 CEK 以明文存储（降低安全性）
                     Password   —— 用密码包裹 CEK
-                    Asymmetric —— 用公钥包裹 CEK
+                    PublicKey  —— 用公钥包裹 CEK
                     （必需指定）
                     """
             };
 
             Algorithm = new Option<CvkKeyWrapAlgorithm?>("--algorithm")
             {
-                Description = "公钥封装算法：AesGcm 或 Ecc（P-256 ECDH）；未指定时沿用原 CVK 算法"
+                Description = "目标封装级别内部的算法；未指定时使用该级别的默认算法"
             };
 
             Password = new Option<string>("--password", "-p")
@@ -969,7 +972,7 @@ public static class CommandDefinition
 
             PublicKey = new Option<IEnumerable<FileInfo>>("--public-key")
             {
-                Description = "新的公钥文件（转为 Asymmetric 模式时必需）",
+                Description = "新的公钥文件（转为 PublicKey 模式时必需）",
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
@@ -989,22 +992,34 @@ public static class CommandDefinition
             {
                 Description = "操作前备份原始 .cvk 文件（追加 .bak 后缀）"
             };
+            Label = new Option<string?>("--label")
+            {
+                Description = "新的 CVK 标签"
+            };
+            Description = new Option<string?>("--description")
+            {
+                Description = "新的 CVK 描述"
+            };
+            Comment = new Option<string?>("--comment")
+            {
+                Description = "新的 CVK 注释"
+            };
         }
 
         public static Command SubCommand()
         {
             var cmd = new Command("rekey",
                 """
-                重新封装 .cvk 密钥文件的保护方式。
+                重新封装 .cvk 密钥文件的封装级别。
 
-                CEK 不变，仅更换密钥信封的保护层。不读取 .cvp 数据卷。
-                例如将明文密钥改为密码保护，或将密码保护切换为公钥保护。
+                CEK 不变，仅更换密钥信封的封装层。不读取 .cvp 数据卷。
+                Plain、Password、PublicKey 是互斥的封装级别，算法只能选择对应级别内部的实现。
 
                 示例：
                   crypvol rekey ./archive.cvk --to-mode Password --new-password "betterpass" -b
                     将 .cvk 转为密码保护（先备份原文件）
 
-                  crypvol rekey ./archive.cvk --to-mode Asymmetric --public-key alice.pem -o ./new.cvk
+                  crypvol rekey ./archive.cvk --to-mode PublicKey --public-key alice.pem -o ./new.cvk
                     将 .cvk 转为公钥保护，输出到新文件
                 """)
             {
@@ -1017,7 +1032,10 @@ public static class CommandDefinition
                 PublicKey,
                 PrivkeyKey,
                 PrivkeyKeyPass,
-                Backup
+                Backup,
+                Label,
+                Description,
+                Comment
             };
 
             cmd.SetAction(RekeyHelper.Invoker);
@@ -1209,17 +1227,18 @@ public static class CommandDefinition
                 Description =
                     """
                     密钥保护模式：
-                    PlainKey   —— CEK 明文存储（默认）
+                    Plain      —— CEK 明文存储（默认）
                     Password   —— 密码包裹 CEK
-                    Asymmetric —— 公钥包裹 CEK
+                    PublicKey  —— 公钥包裹 CEK
                     """,
                 DefaultValueFactory = static _ => CvkKeyProtection.Plain
             };
 
             Algorithm = new Option<CvkKeyWrapAlgorithm>("--algorithm")
             {
-                Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
-                DefaultValueFactory = static _ => CvkKeyWrapAlgorithm.RsaOaepSha256
+                Description =
+                    "封装算法；未指定时按封装级别选择默认值（Plain=None、Password=PBKDF2、PublicKey=RSA-OAEP-SHA256）",
+                DefaultValueFactory = static _ => CvkKeyWrapAlgorithm.None
             };
 
             Password = new Option<string>("--password", "-p")
@@ -1251,11 +1270,11 @@ public static class CommandDefinition
 
                 示例：
                   crypvol genkey
-                    生成 ./key.cvk (PlainKey)
+                    生成 ./key.cvk (Plain)
                   crypvol genkey -m Password -p "mypassword" -n secret
                     生成 ./secret.cvk (Password)
-                  crypvol genkey -o /keys -n project -m Asymmetric --public-key alice.pem
-                    生成 /keys/project.cvk (Asymmetric)
+                  crypvol genkey -o /keys -n project -m PublicKey --public-key alice.pem
+                    生成 /keys/project.cvk (PublicKey)
                 """)
             {
                 Output,
