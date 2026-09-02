@@ -1205,6 +1205,7 @@ public static class CommandDefinition
         public static readonly Option<string> Password;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<string> Comment;
+        public static readonly Option<string> Cek;
 
         static GenKey()
         {
@@ -1258,6 +1259,11 @@ public static class CommandDefinition
                 Description = "在密钥文件中嵌入备注",
                 HelpName = "text"
             };
+            Cek = new Option<string>("--cek")
+            {
+                Description = "指定 32 字节 CEK 的 64 位十六进制值；未指定时随机生成",
+                HelpName = "hex"
+            };
         }
 
         public static Command SubCommand()
@@ -1283,7 +1289,8 @@ public static class CommandDefinition
                 Algorithm,
                 Password,
                 PublicKey,
-                Comment
+                Comment,
+                Cek
             };
             cmd.SetAction(GenKeyHelper.Invoker);
             return cmd;

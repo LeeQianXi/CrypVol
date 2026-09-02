@@ -292,19 +292,22 @@ public sealed class CvkCryptographyTests
         var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}.pem"));
         await File.WriteAllTextAsync(file.FullName, rsa.ExportPkcs8PrivateKeyPem());
-        using var privateMaterial = AsymmetricKeyFileLoader.LoadPrivateKey(file, keyId: "rsa");
-        try
+        Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var privateMaterial, keyId: "rsa"));
+        using (privateMaterial)
         {
-            var cryptor = new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+            try
             {
-                ["rsa"] = privateMaterial
-            });
-            var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
-            var payload = Payload([recipient]);
-            var restored = await cryptor.UnprotectAsync(header, await cryptor.ProtectAsync(header, payload));
-            Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
+                var cryptor = new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+                {
+                    ["rsa"] = privateMaterial
+                });
+                var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+                var payload = Payload([recipient]);
+                var restored = await cryptor.UnprotectAsync(header, await cryptor.ProtectAsync(header, payload));
+                Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
+            }
+            finally { file.Delete(); }
         }
-        finally { file.Delete(); }
     }
 
     [Fact]

@@ -13,8 +13,8 @@ public sealed class CvkKeyLoaderTests
     [Fact]
     public void KeyLoaders_RejectNullFile()
     {
-        Assert.Throws<ArgumentNullException>(() => AsymmetricKeyFileLoader.LoadPublicKey(null!));
-        Assert.Throws<ArgumentNullException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(null!));
+        Assert.Throws<ArgumentNullException>(() => AsymmetricKeyLoaderManager.Instance.LoadPublicKey(null!, out _));
+        Assert.Throws<ArgumentNullException>(() => AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(null!, out _));
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportPkcs8PrivateKeyPem());
-            var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, keyId: "dispose-test");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material, keyId: "dispose-test"));
             var publicBytes = material.PublicKeyBytes.ToArray();
             material.Dispose();
             material.Dispose();
@@ -49,7 +49,7 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
-            var material = AsymmetricKeyFileLoader.LoadPublicKey(file, "public-dispose-test");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material, "public-dispose-test"));
             var publicBytes = material.PublicKeyBytes.ToArray();
             material.Dispose();
             material.Dispose();
@@ -75,11 +75,15 @@ public sealed class CvkKeyLoaderTests
         {
             File.WriteAllText(publicFile.FullName, rsa.ExportSubjectPublicKeyInfoPem());
             File.WriteAllText(privateFile.FullName, rsa.ExportPkcs8PrivateKeyPem());
-            using var publicMaterial = AsymmetricKeyFileLoader.LoadPublicKey(publicFile, "same");
-            using var privateMaterial = AsymmetricKeyFileLoader.LoadPrivateKey(privateFile, keyId: "same");
-
-            Assert.Equal(publicMaterial.Algorithm, privateMaterial.Algorithm);
-            Assert.Equal(publicMaterial.PublicKeyBytes, privateMaterial.PublicKeyBytes);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(publicFile, out var publicMaterial, "same"));
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(privateFile, out var privateMaterial,
+                keyId: "same"));
+            using (publicMaterial)
+            using (privateMaterial)
+            {
+                Assert.Equal(publicMaterial.Algorithm, privateMaterial.Algorithm);
+                Assert.Equal(publicMaterial.PublicKeyBytes, privateMaterial.PublicKeyBytes);
+            }
         }
         finally
         {
@@ -98,12 +102,16 @@ public sealed class CvkKeyLoaderTests
         {
             File.WriteAllText(publicFile.FullName, ecdh.ExportSubjectPublicKeyInfoPem());
             File.WriteAllText(privateFile.FullName, ecdh.ExportPkcs8PrivateKeyPem());
-            using var publicMaterial = AsymmetricKeyFileLoader.LoadPublicKey(publicFile, "same-ecdh");
-            using var privateMaterial = AsymmetricKeyFileLoader.LoadPrivateKey(privateFile, keyId: "same-ecdh");
-
-            Assert.Equal("ECDH", publicMaterial.Algorithm);
-            Assert.Equal("ECDH", privateMaterial.Algorithm);
-            Assert.Equal(publicMaterial.PublicKeyBytes, privateMaterial.PublicKeyBytes);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(publicFile, out var publicMaterial, "same-ecdh"));
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(privateFile, out var privateMaterial,
+                keyId: "same-ecdh"));
+            using (publicMaterial)
+            using (privateMaterial)
+            {
+                Assert.Equal("ECDH", publicMaterial.Algorithm);
+                Assert.Equal("ECDH", privateMaterial.Algorithm);
+                Assert.Equal(publicMaterial.PublicKeyBytes, privateMaterial.PublicKeyBytes);
+            }
         }
         finally
         {
@@ -120,7 +128,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
@@ -139,7 +148,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
         finally
@@ -157,7 +167,8 @@ public sealed class CvkKeyLoaderTests
         {
             var pem = Encoding.UTF8.GetBytes(rsa.ExportSubjectPublicKeyInfoPem());
             File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
@@ -179,7 +190,8 @@ public sealed class CvkKeyLoaderTests
             var pem = rsa.ExportSubjectPublicKeyInfoPem();
             pem = crlf ? pem.Replace("\n", "\r\n", StringComparison.Ordinal) : pem.TrimEnd('\r', '\n');
             File.WriteAllText(file.FullName, pem);
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
         }
         finally
@@ -196,7 +208,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, "custom-id");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material, "custom-id"));
+            using var materialLease = material;
             Assert.Equal("custom-id", material.KeyId);
         }
         finally
@@ -213,7 +226,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, "   ");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material, "   "));
+            using var materialLease = material;
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
         finally
@@ -231,7 +245,8 @@ public sealed class CvkKeyLoaderTests
         {
             var pem = Encoding.UTF8.GetBytes(rsa.ExportPkcs8PrivateKeyPem());
             File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, keyId: "\t");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material, keyId: "\t"));
+            using var materialLease = material;
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
         finally
@@ -248,7 +263,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportPkcs8PrivateKeyPem());
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
         finally
@@ -264,15 +280,16 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, "not a key");
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out _));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _));
         }
         finally
         {
             if (file.Exists) file.Delete();
         }
 
-        Assert.Throws<FileNotFoundException>(() => AsymmetricKeyFileLoader.LoadPublicKey(new FileInfo(file.FullName)));
+        Assert.Throws<FileNotFoundException>(() =>
+            AsymmetricKeyLoaderManager.Instance.LoadPublicKey(new FileInfo(file.FullName), out _));
     }
 
     [Fact]
@@ -292,8 +309,8 @@ public sealed class CvkKeyLoaderTests
             try
             {
                 File.WriteAllBytes(file.FullName, content);
-                Assert.ThrowsAny<Exception>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
-                Assert.ThrowsAny<Exception>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
+                Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out _));
+                Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _));
             }
             finally
             {
@@ -309,8 +326,10 @@ public sealed class CvkKeyLoaderTests
         directory.Create();
         try
         {
-            Assert.ThrowsAny<Exception>(() => AsymmetricKeyFileLoader.LoadPublicKey(new FileInfo(directory.FullName)));
-            Assert.ThrowsAny<Exception>(() => AsymmetricKeyFileLoader.LoadPrivateKey(new FileInfo(directory.FullName)));
+            Assert.ThrowsAny<Exception>(() =>
+                AsymmetricKeyLoaderManager.Instance.LoadPublicKey(new FileInfo(directory.FullName), out _));
+            Assert.ThrowsAny<Exception>(() =>
+                AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(new FileInfo(directory.FullName), out _));
         }
         finally { directory.Delete(); }
     }
@@ -323,7 +342,7 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportPkcs8PrivateKeyPem());
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out _));
         }
         finally
         {
@@ -340,7 +359,7 @@ public sealed class CvkKeyLoaderTests
         {
             var mixed = rsa.ExportPkcs8PrivateKeyPem() + rsa.ExportSubjectPublicKeyInfoPem();
             File.WriteAllText(file.FullName, mixed);
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out _));
         }
         finally
         {
@@ -356,7 +375,7 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _));
         }
         finally
         {
@@ -373,10 +392,11 @@ public sealed class CvkKeyLoaderTests
         {
             var pbe = new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100_000);
             File.WriteAllText(file.FullName, rsa.ExportEncryptedPkcs8PrivateKeyPem("secret", pbe));
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, "secret");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material, "secret"));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file, "wrong"));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _, "wrong"));
         }
         finally
         {
@@ -393,7 +413,8 @@ public sealed class CvkKeyLoaderTests
         {
             var pem = Encoding.UTF8.GetBytes(rsa.ExportPkcs8PrivateKeyPem());
             File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
@@ -413,7 +434,8 @@ public sealed class CvkKeyLoaderTests
             var pbe = new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100_000);
             var pem = Encoding.UTF8.GetBytes(rsa.ExportEncryptedPkcs8PrivateKeyPem("secret", pbe));
             File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, "secret");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material, "secret"));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
         }
         finally
@@ -430,8 +452,7 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportPkcs8PrivateKeyPem());
-            Assert.Throws<AsymmetricKeyFileFormatException>(() =>
-                AsymmetricKeyFileLoader.LoadPrivateKey(file, "unexpected-password"));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _, "unexpected-password"));
         }
         finally
         {
@@ -447,7 +468,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportRSAPrivateKeyPem());
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
         }
         finally
@@ -464,7 +486,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, rsa.ExportRSAPublicKeyPem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
@@ -484,8 +507,10 @@ public sealed class CvkKeyLoaderTests
         {
             File.WriteAllText(publicFile.FullName, ecdsa.ExportSubjectPublicKeyInfoPem());
             File.WriteAllText(privateFile.FullName, ecdsa.ExportECPrivateKeyPem());
-            using var publicMaterial = AsymmetricKeyFileLoader.LoadPublicKey(publicFile);
-            using var privateMaterial = AsymmetricKeyFileLoader.LoadPrivateKey(privateFile);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(publicFile, out var publicMaterial));
+            using var publicMaterialLease = publicMaterial;
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(privateFile, out var privateMaterial));
+            using var privateMaterialLease = privateMaterial;
             Assert.Equal("ECDSA", publicMaterial.Algorithm);
             Assert.Equal("ECDSA", privateMaterial.Algorithm);
         }
@@ -509,8 +534,10 @@ public sealed class CvkKeyLoaderTests
         {
             File.WriteAllText(publicFile.FullName, ecdsa.ExportSubjectPublicKeyInfoPem());
             File.WriteAllText(privateFile.FullName, ecdsa.ExportECPrivateKeyPem());
-            using var publicMaterial = AsymmetricKeyFileLoader.LoadPublicKey(publicFile);
-            using var privateMaterial = AsymmetricKeyFileLoader.LoadPrivateKey(privateFile);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(publicFile, out var publicMaterial));
+            using var publicMaterialLease = publicMaterial;
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(privateFile, out var privateMaterial));
+            using var privateMaterialLease = privateMaterial;
             Assert.Equal("ECDSA", publicMaterial.Algorithm);
             Assert.Equal("ECDSA", privateMaterial.Algorithm);
             Assert.Equal(publicMaterial.PublicKeyBytes, privateMaterial.PublicKeyBytes);
@@ -530,7 +557,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, ecdh.ExportPkcs8PrivateKeyPem());
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("ECDH", material.Algorithm);
         }
         finally
@@ -547,7 +575,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, ecdh.ExportSubjectPublicKeyInfoPem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("ECDH", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
@@ -570,8 +599,10 @@ public sealed class CvkKeyLoaderTests
         {
             File.WriteAllText(publicFile.FullName, ecdh.ExportSubjectPublicKeyInfoPem());
             File.WriteAllText(privateFile.FullName, ecdh.ExportPkcs8PrivateKeyPem());
-            using var publicMaterial = AsymmetricKeyFileLoader.LoadPublicKey(publicFile);
-            using var privateMaterial = AsymmetricKeyFileLoader.LoadPrivateKey(privateFile);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(publicFile, out var publicMaterial));
+            using var publicMaterialLease = publicMaterial;
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(privateFile, out var privateMaterial));
+            using var privateMaterialLease = privateMaterial;
             Assert.Equal("ECDH", publicMaterial.Algorithm);
             Assert.Equal("ECDH", privateMaterial.Algorithm);
         }
@@ -591,9 +622,10 @@ public sealed class CvkKeyLoaderTests
         {
             var pbe = new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100_000);
             File.WriteAllText(file.FullName, ecdh.ExportEncryptedPkcs8PrivateKeyPem("secret", pbe));
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, "secret");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material, "secret"));
+            using var materialLease = material;
             Assert.Equal("ECDH", material.Algorithm);
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file, "wrong"));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _, "wrong"));
         }
         finally
         {
@@ -610,9 +642,10 @@ public sealed class CvkKeyLoaderTests
         {
             var pbe = new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100_000);
             File.WriteAllText(file.FullName, ecdsa.ExportEncryptedPkcs8PrivateKeyPem("secret", pbe));
-            using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, "secret");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out var material, "secret"));
+            using var materialLease = material;
             Assert.Equal("ECDSA", material.Algorithm);
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file, "wrong"));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(file, out _, "wrong"));
         }
         finally
         {
@@ -631,7 +664,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, certificate.ExportCertificatePem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
@@ -650,7 +684,8 @@ public sealed class CvkKeyLoaderTests
         {
             File.WriteAllText(file.FullName,
                 $"ssh-rsa {Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)))} user@example.com\n");
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
@@ -669,7 +704,8 @@ public sealed class CvkKeyLoaderTests
         {
             var blob = Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)));
             File.WriteAllText(file.FullName, $"ssh-rsa {blob} alice@example.com\n");
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("alice@example.com", material.KeyId);
         }
         finally
@@ -687,7 +723,8 @@ public sealed class CvkKeyLoaderTests
         {
             var blob = Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)));
             File.WriteAllText(file.FullName, $"ssh-rsa {blob}\n");
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
         finally
@@ -705,7 +742,8 @@ public sealed class CvkKeyLoaderTests
         {
             var blob = Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)));
             File.WriteAllText(file.FullName, $"ssh-rsa {blob} alice@example.com\n");
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, "explicit-id");
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material, "explicit-id"));
+            using var materialLease = material;
             Assert.Equal("explicit-id", material.KeyId);
         }
         finally
@@ -723,7 +761,8 @@ public sealed class CvkKeyLoaderTests
         {
             var blob = Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)));
             File.WriteAllText(file.FullName, $"  \tssh-rsa   {blob}   alice@example.com  \t\n");
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("alice@example.com", material.KeyId);
             Assert.Equal(rsa.ExportSubjectPublicKeyInfo(), material.PublicKeyBytes);
         }
@@ -744,7 +783,7 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, content + "\n");
-            Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
+            Assert.False(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out _));
         }
         finally
         {
@@ -763,7 +802,8 @@ public sealed class CvkKeyLoaderTests
         try
         {
             File.WriteAllText(file.FullName, certificate.ExportCertificatePem());
-            using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
+            Assert.True(AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material));
+            using var materialLease = material;
             Assert.Equal("ECDSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }

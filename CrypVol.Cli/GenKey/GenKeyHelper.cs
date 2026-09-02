@@ -23,6 +23,7 @@ public static class GenKeyHelper
             };
 
         var password = args.GetValue(CommandDefinition.GenKey.Password);
+        var cekText = args.GetValue(CommandDefinition.GenKey.Cek);
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
         if (string.IsNullOrWhiteSpace(name) || name.EndsWith(".cvk", StringComparison.OrdinalIgnoreCase)
                                             || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
@@ -45,9 +46,18 @@ public static class GenKeyHelper
             if (!route.RequiresRecipients && pubKeys.Count > 0)
                 throw new ArgumentException("只有 PublicKey 封装级别可以使用 --public-key。", nameof(pubKeys));
 
+            ReadOnlyMemory<byte>? cek = null;
+            if (!string.IsNullOrWhiteSpace(cekText))
+            {
+                if (cekText.Length != 64)
+                    throw new ArgumentException("--cek 必须是恰好 64 个十六进制字符（32 字节）。", nameof(cekText));
+                try { cek = System.Convert.FromHexString(cekText); }
+                catch (FormatException ex) { throw new ArgumentException("--cek 不是有效的十六进制值。", nameof(cekText), ex); }
+            }
+
             // 生成新 CEK；公钥仅作为 CEK 的接收者元数据加入，不在 CLI 中自行处理密钥体。
             outputDir.Create();
-            var cvk = CvkOperations.CreateNew(mode, algorithm);
+            var cvk = CvkOperations.CreateNew(mode, algorithm, cek);
             cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
             foreach (var publicKey in pubKeys)
                 CvkOperations.AddPublicKey(cvk, publicKey);

@@ -49,6 +49,12 @@ public static class InfoHelper
             return 0;
         }
 
+        if (parsed.Header.KeyProtection == CvkKeyProtection.Password && string.IsNullOrWhiteSpace(password))
+        {
+            Console.WriteLine("状态: CVK 完整性通过，但需要提供 --password 才能解封");
+            return 0;
+        }
+
         try
         {
             CvkDocument document;
@@ -126,7 +132,8 @@ public static class InfoHelper
             }
         }
 
-        throw new InvalidOperationException("未找到能够解封当前 CVK 的成对 SSH 私钥。", lastError);
+        var detail = lastError is null ? "未发现成对 SSH 私钥文件" : $"最近一次尝试失败：{lastError.Message}";
+        throw new InvalidOperationException($"未找到能够解封当前 CVK 的成对 SSH 私钥。{detail}", lastError);
     }
 
     private static IEnumerable<FileInfo> FindSshPrivateKeys(ILogger logger)

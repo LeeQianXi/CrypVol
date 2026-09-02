@@ -1,27 +1,72 @@
-using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using CrypVol.Lib.Utility;
 
 namespace CrypVol.Lib.Crypto.Keys;
 
-/// <summary>加载通用非对称公钥、未加密私钥和带密码私钥文件。</summary>
-/// <remarks>该类不读取 CVK 文件；CVK 文件应由独立的 CVK Loader 负责。</remarks>
-public static class AsymmetricKeyFileLoader
+/// <summary>加载 PEM/PKCS#8 公钥、未加密私钥和带密码私钥文件。</summary>
+/// <remarks>该加载器只处理 PEM 密钥格式，不读取 CVK 或 OpenSSH 文件。</remarks>
+public sealed class PemAsymmetricKeyLoader : StaticSingleton<PemAsymmetricKeyLoader>, IAsymmetricKeyLoader
 {
-    /// <summary>加载公钥文件。</summary>
-    public static AsymmetricPublicKeyMaterial LoadPublicKey(FileInfo file, string? keyId = null)
+    /// <inheritdoc />
+    public bool LoadPublicKey(FileInfo file, out AsymmetricPublicKeyMaterial key, string? keyId = null)
     {
-        ArgumentNullException.ThrowIfNull(file);
-        var text = Read(file);
+        try
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            var text = Read(file);
+            if (!text.Contains("BEGIN", StringComparison.Ordinal) || text.Contains("OPENSSH", StringComparison.Ordinal))
+            {
+                key = null!;
+                return false;
+            }
+
+            key = LoadPublicKeyCore(file, text, keyId);
+            return true;
+        }
+        catch (FileNotFoundException) { throw; }
+        catch (DirectoryNotFoundException) { throw; }
+        catch (ArgumentNullException) { throw; }
+        catch
+        {
+            key = null!;
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public bool LoadPrivateKey(FileInfo file, out AsymmetricPrivateKeyMaterial key, string? password = null,
+        string? keyId = null)
+    {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            var text = Read(file);
+            if (!text.Contains("BEGIN", StringComparison.Ordinal) || text.Contains("OPENSSH", StringComparison.Ordinal))
+            {
+                key = null!;
+                return false;
+            }
+
+            key = LoadPrivateKeyCore(file, text, password, keyId);
+            return true;
+        }
+        catch (FileNotFoundException) { throw; }
+        catch (DirectoryNotFoundException) { throw; }
+        catch (ArgumentNullException) { throw; }
+        catch
+        {
+            key = null!;
+            return false;
+        }
+    }
+
+    private static AsymmetricPublicKeyMaterial LoadPublicKeyCore(FileInfo file, string text, string? keyId)
+    {
         if (text.Contains("PRIVATE KEY", StringComparison.OrdinalIgnoreCase))
             throw new AsymmetricKeyFileFormatException($"公钥加载器拒绝私钥文件：{file.FullName}");
         var resolvedId = ResolveKeyId(file, keyId);
 
-        if (TryLoadOpenSshRsa(text, file, keyId, resolvedId, out var openSsh))
-            return openSsh!;
-
-        // EC 公钥的 SubjectPublicKeyInfo 编码无法区分 ECDSA 与 ECDH；
-        // 对明确命名为 ECDH 的文件优先尝试 ECDH，其余保持 ECDSA 优先。
         var ecLoaders = IsEcdhHint(file, resolvedId)
             ? new[]
             {
@@ -31,7 +76,6 @@ public static class AsymmetricKeyFileLoader
             {
                 () => LoadEcdsaPublic(text, resolvedId), () => LoadEcdhPublic(text, resolvedId)
             };
-
         try
         {
             var rsa = RSA.Create();
@@ -54,19 +98,16 @@ public static class AsymmetricKeyFileLoader
         }
         catch (Exception) { }
 
-        throw new AsymmetricKeyFileFormatException($"无法识别公钥文件：{file.FullName}");
+        throw new AsymmetricKeyFileFormatException($"无法识别 PEM 公钥文件：{file.FullName}");
     }
 
-    /// <summary>加载不带密码或带密码的私钥文件。</summary>
-    public static AsymmetricPrivateKeyMaterial LoadPrivateKey(FileInfo file, string? password = null, string? keyId = null)
+    private static AsymmetricPrivateKeyMaterial LoadPrivateKeyCore(FileInfo file, string text, string? password,
+        string? keyId)
     {
-        ArgumentNullException.ThrowIfNull(file);
-        var text = Read(file);
         if (text.Contains("PUBLIC KEY", StringComparison.OrdinalIgnoreCase) &&
             !text.Contains("PRIVATE KEY", StringComparison.OrdinalIgnoreCase))
             throw new AsymmetricKeyFileFormatException($"私钥加载器拒绝公钥文件：{file.FullName}");
         var resolvedId = ResolveKeyId(file, keyId);
-
         var rsa = RSA.Create();
         try
         {
@@ -75,8 +116,8 @@ public static class AsymmetricKeyFileLoader
         }
         catch (Exception) { rsa.Dispose(); }
 
-        var ecdhFirst = IsEcdhHint(file, resolvedId) || text.Contains("BEGIN PRIVATE KEY", StringComparison.Ordinal);
         Exception? last = null;
+        var ecdhFirst = IsEcdhHint(file, resolvedId) || text.Contains("BEGIN PRIVATE KEY", StringComparison.Ordinal);
         foreach (var algorithm in ecdhFirst
                      ? new[]
                      {
@@ -100,7 +141,7 @@ public static class AsymmetricKeyFileLoader
             }
         }
 
-        throw new AsymmetricKeyFileFormatException($"无法加载私钥文件：{file.FullName}。请确认 PEM 格式和密码正确。", last);
+        throw new AsymmetricKeyFileFormatException($"无法加载 PEM 私钥文件：{file.FullName}。请确认 PEM 格式和密码正确。", last);
     }
 
     private static AsymmetricPublicKeyMaterial LoadEcdsaPublic(string text, string keyId)
@@ -121,66 +162,6 @@ public static class AsymmetricKeyFileLoader
     {
         return file.Name.Contains("ecdh", StringComparison.OrdinalIgnoreCase) ||
                keyId.Contains("ecdh", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>尝试读取单行 OpenSSH authorized_keys 格式的 RSA 公钥。</summary>
-    private static bool TryLoadOpenSshRsa(string text, FileInfo file, string? explicitKeyId,
-        string fallbackId, out AsymmetricPublicKeyMaterial? material)
-    {
-        material = null;
-        var line = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault(static value => !value.StartsWith('#'));
-        if (line is null) return false;
-        var fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        if (fields.Length < 2 || !string.Equals(fields[0], "ssh-rsa", StringComparison.Ordinal)) return false;
-
-        try
-        {
-            var blob = Convert.FromBase64String(fields[1]);
-            var offset = 0;
-            var type = ReadSshField(blob, ref offset);
-            if (!type.SequenceEqual("ssh-rsa"u8)) throw new FormatException("OpenSSH RSA 类型字段无效。");
-            var exponent = NormalizeMpint(ReadSshField(blob, ref offset));
-            var modulus = NormalizeMpint(ReadSshField(blob, ref offset));
-            if (offset != blob.Length || exponent.Length == 0 || modulus.Length == 0)
-                throw new FormatException("OpenSSH RSA 公钥字段不完整。");
-
-            var rsa = RSA.Create();
-            rsa.ImportParameters(new RSAParameters
-            {
-                Exponent = exponent,
-                Modulus = modulus
-            });
-            var id = !string.IsNullOrWhiteSpace(explicitKeyId)
-                ? explicitKeyId!
-                : fields.Length >= 3
-                    ? string.Join(' ', fields[2..])
-                    : fallbackId;
-            material = new AsymmetricPublicKeyMaterial(id, "RSA", rsa);
-            return true;
-        }
-        catch (Exception ex) when (ex is FormatException or ArgumentException or CryptographicException or OverflowException)
-        {
-            throw new AsymmetricKeyFileFormatException($"无法识别 OpenSSH RSA 公钥文件：{file.FullName}", ex);
-        }
-    }
-
-    private static ReadOnlySpan<byte> ReadSshField(ReadOnlySpan<byte> blob, ref int offset)
-    {
-        if (offset > blob.Length - 4) throw new FormatException("OpenSSH 字段长度缺失。");
-        var length = BinaryPrimitives.ReadUInt32BigEndian(blob[offset..]);
-        offset += 4;
-        if (length > int.MaxValue || offset > blob.Length - (int)length)
-            throw new FormatException("OpenSSH 字段长度越界。");
-        var field = blob.Slice(offset, (int)length);
-        offset += (int)length;
-        return field;
-    }
-
-    private static byte[] NormalizeMpint(ReadOnlySpan<byte> value)
-    {
-        while (value.Length > 1 && value[0] == 0) value = value[1..];
-        return value.ToArray();
     }
 
     private static void Import(AsymmetricAlgorithm key, string text, string? password)

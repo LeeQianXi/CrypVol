@@ -12,13 +12,16 @@ namespace CrypVol.Lib.Crypto;
 /// <summary>CVK 文档的显式创建、加载、写入和凭据转换操作。</summary>
 public static class CvkOperations
 {
-    /// <summary>创建包含随机 CEK 的新文档。</summary>
-    public static CvkDocument CreateNew(CvkKeyProtection protection, CvkKeyWrapAlgorithm algorithm)
+    /// <summary>创建 CVK 文档，可选使用调用方指定的 32 字节 CEK。</summary>
+    public static CvkDocument CreateNew(CvkKeyProtection protection, CvkKeyWrapAlgorithm algorithm,
+        ReadOnlyMemory<byte>? cek = null)
     {
         CvkEncapsulationRoute.Resolve(protection, algorithm);
+        if (cek is { } supplied && supplied.Length != 32)
+            throw new ArgumentException("CEK 必须恰好为 32 字节。", nameof(cek));
         return new CvkDocument
         {
-            Cek = RandomNumberGenerator.GetBytes(32),
+            Cek = cek?.ToArray() ?? RandomNumberGenerator.GetBytes(32),
             KeyProtection = protection,
             KeyWrapAlgorithm = algorithm,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -30,15 +33,21 @@ public static class CvkOperations
     public static void AddPublicKey(CvkDocument document, FileInfo file, string? keyId = null)
     {
         ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(file);
         var route = CvkEncapsulationRoute.Resolve(document.KeyProtection, document.KeyWrapAlgorithm);
-        using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, keyId);
-        if (!route.RequiresRecipients)
-            throw new InvalidOperationException("只有 PublicKey 保护模式才能添加公钥接收者。");
-        ValidateRecipientAlgorithm(route.Algorithm, material);
-        if (document.RecipientKeys.Any(x =>
-                x is not null && string.Equals(x.KeyId, material.KeyId, StringComparison.Ordinal)))
-            throw new InvalidOperationException($"接收者 KeyId 已存在：{material.KeyId}。");
-        document.RecipientKeys.Add(new AsymmetricRecipientKey(material.KeyId, material.Algorithm, material.PublicKeyBytes));
+        if (!AsymmetricKeyLoaderManager.Instance.LoadPublicKey(file, out var material, keyId))
+            throw new AsymmetricKeyFileFormatException($"无法解析公钥文件：{file.FullName}");
+        using (material)
+        {
+            if (!route.RequiresRecipients)
+                throw new InvalidOperationException("只有 PublicKey 保护模式才能添加公钥接收者。");
+            ValidateRecipientAlgorithm(route.Algorithm, material);
+            if (document.RecipientKeys.Any(x =>
+                    string.Equals(x.KeyId, material.KeyId, StringComparison.Ordinal)))
+                throw new InvalidOperationException($"接收者 KeyId 已存在：{material.KeyId}。");
+            document.RecipientKeys.Add(
+                new AsymmetricRecipientKey(material.KeyId, material.Algorithm, material.PublicKeyBytes));
+        }
     }
 
     /// <summary>校验公钥材料与文档声明的封装算法匹配。</summary>
@@ -139,7 +148,9 @@ public static class CvkOperations
                 if (privateKeyFile is null)
                     throw new ArgumentNullException(nameof(privateKeyFile), "公钥保护模式必须提供私钥文件。");
 
-                privateMaterial = AsymmetricKeyFileLoader.LoadPrivateKey(privateKeyFile, privateKeyPassword);
+                if (!AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(privateKeyFile, out privateMaterial,
+                        privateKeyPassword))
+                    throw new AsymmetricKeyFileFormatException($"无法解析私钥文件：{privateKeyFile.FullName}");
                 var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial>(StringComparer.Ordinal)
                 {
                     [privateMaterial.KeyId] = privateMaterial
