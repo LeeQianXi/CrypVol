@@ -140,6 +140,37 @@ public static class CvkOperations
             ? CvkPayloadCryptorRegistry.CreateDefault()
             : CvkPayloadCryptorRegistry.CreateDefault(password);
 
+        if (parsed.Header.KeyProtection == CvkKeyProtection.PublicKey && privateKeyFile is null)
+        {
+            Exception? last = null;
+            foreach (var candidate in AsymmetricKeyLoaderManager.Instance.DiscoverPrivateKeyFiles())
+            {
+                logger?.LogInformation("已自动发现并尝试使用 SSH 私钥 {PrivateKeyFile}", candidate.FullName);
+                try
+                {
+                    return await LoadWithPrivateKeyAsync(file, parsed, registry, candidate,
+                        privateKeyPassword, token, logger);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    last = ex;
+                    logger?.LogDebug(ex, "SSH 私钥 {PrivateKeyFile} 无法解封当前 CVK", candidate.FullName);
+                }
+            }
+
+            throw new InvalidOperationException(
+                last is null ? "未找到能够解封当前 CVK 的成对 SSH 私钥。" :
+                    $"未找到能够解封当前 CVK 的成对 SSH 私钥。最近一次尝试失败：{last.Message}", last);
+        }
+
+        return await LoadWithPrivateKeyAsync(file, parsed, registry, privateKeyFile,
+            privateKeyPassword, token, logger);
+    }
+
+    private static async Task<CvkDocument> LoadWithPrivateKeyAsync(FileInfo file, CvkParsedFile parsed,
+        CvkPayloadCryptorRegistry registry, FileInfo? privateKeyFile, string? privateKeyPassword,
+        CancellationToken token, ILogger? logger)
+    {
         AsymmetricPrivateKeyMaterial? privateMaterial = null;
         try
         {
@@ -147,7 +178,6 @@ public static class CvkOperations
             {
                 if (privateKeyFile is null)
                     throw new ArgumentNullException(nameof(privateKeyFile), "公钥保护模式必须提供私钥文件。");
-
                 if (!AsymmetricKeyLoaderManager.Instance.LoadPrivateKey(privateKeyFile, out privateMaterial,
                         privateKeyPassword))
                     throw new AsymmetricKeyFileFormatException($"无法解析私钥文件：{privateKeyFile.FullName}");
@@ -155,24 +185,18 @@ public static class CvkOperations
                 {
                     [privateMaterial.KeyId] = privateMaterial
                 };
-                // 私钥文件名不一定等于 CVK 中的接收者 KeyId；为密钥体中声明的
-                // 接收者建立别名，处理器随后仍会通过公钥解封失败来筛选候选。
                 foreach (var recipientId in ExtractRecipientIds(parsed.KeyBody))
                     keys.TryAdd(recipientId, privateMaterial);
                 registry.Register(parsed.Header.KeyProtection, parsed.Header.KeyWrapAlgorithm,
                     CreateAsymmetricCryptor(parsed.Header.KeyWrapAlgorithm, keys));
             }
-
             var cryptor = registry.Resolve(parsed.Header);
             logger?.LogDebug("已选择 CVK 解封算法：{Protection}/{WrapAlgorithm}",
                 parsed.Header.KeyProtection, parsed.Header.KeyWrapAlgorithm);
             return await new CvkReader(new Sha256IntegrityCalculator(),
                 new CvkPayloadUnprotectorAdapter(cryptor)).ReadDocumentAsync(file, token);
         }
-        finally
-        {
-            privateMaterial?.Dispose();
-        }
+        finally { privateMaterial?.Dispose(); }
     }
 
     /// <summary>创建带私钥候选集的非对称密钥体处理器。</summary>

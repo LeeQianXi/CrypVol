@@ -58,11 +58,8 @@ public static class InfoHelper
         try
         {
             CvkDocument document;
-            if (parsed.Header.KeyProtection == CvkKeyProtection.PublicKey && explicitPrivateKey is null)
-                document = await LoadWithDiscoveredSshKeyAsync(keyFile, password, privateKeyPassword, token, logger);
-            else
-                document = await CvkOperations.LoadAsync(keyFile, password, explicitPrivateKey, privateKeyPassword, token,
-                    logger);
+            document = await CvkOperations.LoadAsync(keyFile, password, explicitPrivateKey, privateKeyPassword, token,
+                logger);
             Console.WriteLine("状态: 已解封并验证");
             PrintDocument(document);
         }
@@ -110,48 +107,6 @@ public static class InfoHelper
         if (!string.IsNullOrWhiteSpace(comment)) Console.WriteLine($"注释: {comment}");
         if (createdAt is not null) Console.WriteLine($"创建时间: {createdAt:O}");
         if (!string.IsNullOrWhiteSpace(generator)) Console.WriteLine($"生成器: {generator}");
-    }
-
-    /// <summary>严格发现成对存在的 SSH 私钥文件；不尝试读取孤立私钥。</summary>
-    private static async Task<CvkDocument> LoadWithDiscoveredSshKeyAsync(FileInfo keyFile, string? password,
-        string? privateKeyPassword, CancellationToken token, ILogger logger)
-    {
-        Exception? lastError = null;
-        foreach (var privateKey in FindSshPrivateKeys(logger))
-        {
-            logger.LogInformation("已自动发现并尝试使用 SSH 私钥 {PrivateKeyFile}", privateKey.FullName);
-            try
-            {
-                return await CvkOperations.LoadAsync(
-                    keyFile, password, privateKey, privateKeyPassword, token, logger);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                lastError = ex;
-                logger.LogDebug(ex, "SSH 私钥 {PrivateKeyFile} 无法解封当前 CVK", privateKey.FullName);
-            }
-        }
-
-        var detail = lastError is null ? "未发现成对 SSH 私钥文件" : $"最近一次尝试失败：{lastError.Message}";
-        throw new InvalidOperationException($"未找到能够解封当前 CVK 的成对 SSH 私钥。{detail}", lastError);
-    }
-
-    private static IEnumerable<FileInfo> FindSshPrivateKeys(ILogger logger)
-    {
-        var sshDirectory = new DirectoryInfo(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh"));
-        if (!sshDirectory.Exists) yield break;
-
-        foreach (var file in sshDirectory.EnumerateFiles("*", SearchOption.TopDirectoryOnly)
-                     .OrderBy(static file => file.Name, StringComparer.Ordinal))
-        {
-            if (file.Extension.Equals(".pub", StringComparison.OrdinalIgnoreCase)) continue;
-            var publicFile = new FileInfo(file.FullName + ".pub");
-            if (!publicFile.Exists) continue;
-            logger.LogDebug("发现成对 SSH 密钥候选：{PrivateKeyFile} / {PublicKeyFile}",
-                file.FullName, publicFile.FullName);
-            yield return file;
-        }
     }
 
     private static string Fingerprint(ReadOnlyMemory<byte> cek)

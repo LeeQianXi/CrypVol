@@ -35,4 +35,19 @@ public sealed class AsymmetricKeyLoaderManager : StaticSingleton<AsymmetricKeyLo
         key = null!;
         return false;
     }
+
+    /// <summary>发现用户目录中成对存在的 SSH 私钥文件。</summary>
+    public IEnumerable<FileInfo> DiscoverPrivateKeyFiles()
+    {
+        var directory = new DirectoryInfo(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh"));
+        if (!directory.Exists) yield break;
+
+        foreach (var file in directory.EnumerateFiles("*", SearchOption.TopDirectoryOnly)
+                     .OrderBy(static file => file.Name, StringComparer.Ordinal))
+        {
+            if (file.Extension.Equals(".pub", StringComparison.OrdinalIgnoreCase)) continue;
+            if (File.Exists(file.FullName + ".pub")) yield return file;
+        }
+    }
 }
