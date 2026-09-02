@@ -25,7 +25,7 @@ public static class RekeyHelper
                 privateKeyPassword, token);
             var mode = requestedMode ?? document.KeyProtection;
             var algorithm = args.GetValue(CommandDefinition.Rekey.Algorithm)
-                ?? (requestedMode is null ? document.KeyWrapAlgorithm : DefaultAlgorithm(mode));
+                            ?? (requestedMode is null ? document.KeyWrapAlgorithm : DefaultAlgorithm(mode));
             var route = CvkEncapsulationRoute.Resolve(mode, algorithm);
 
             if (route.RequiresPassword && string.IsNullOrWhiteSpace(newPassword))
@@ -54,9 +54,11 @@ public static class RekeyHelper
                     document.RecipientKeys.RemoveAt(index);
                     removed = true;
                 }
+
                 if (!removed)
                     throw new ArgumentException($"未找到公钥接收者：{keyId}");
             }
+
             foreach (var key in publicKeys)
                 CvkOperations.AddPublicKey(document, key);
             if (route.RequiresRecipients && document.RecipientKeys.Count == 0)
@@ -70,7 +72,7 @@ public static class RekeyHelper
                 File.Copy(source.FullName, backup.FullName);
             }
 
-            var outputPassword = route.RequiresPassword ? (newPassword ?? oldPassword) : null;
+            var outputPassword = route.RequiresPassword ? newPassword ?? oldPassword : null;
             if (route.RequiresPassword && string.IsNullOrWhiteSpace(outputPassword))
                 throw new ArgumentException("Password 封装级别需要密码。");
             await CvkOperations.WriteAsync(document, output, outputPassword, token);

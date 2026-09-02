@@ -4,7 +4,8 @@
 [![Avalonia](https://img.shields.io/badge/Avalonia-11.3-8B5CF6)](https://avaloniaui.net/)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-blue)](LICENSE)
 
-CrypVol（Cryptographic Volume Package）是一个跨平台的加密分卷归档工具。它将文件流式拆为数据块，按需写入 `.cvp` 数据卷，并以 `.cvk` 保存或封装内容加密密钥（CEK）。提供命令行工具和 Avalonia 桌面应用。
+CrypVol（Cryptographic Volume Package）是一个跨平台的加密分卷归档工具。它将文件流式拆为数据块，按需写入 `.cvp` 数据卷，并以
+`.cvk` 保存或封装内容加密密钥（CEK）。提供命令行工具和 Avalonia 桌面应用。
 
 项目的设计目标是可自举、可流式处理大文件，而不是追求严格等长的物理分卷：读取和恢复不依赖生成时指定的卷大小。
 
@@ -40,7 +41,8 @@ bash scripts/publish-local.sh
 bash scripts/publish-local.sh /opt/crypvol-publish linux-x64
 ```
 
-开发环境需要 .NET SDK 10。CLI 项目为 `CrypVol.Cli`；构建后可通过 `dotnet run --project CrypVol.Cli -- <命令>` 使用。以下示例以已安装到 PATH 的 `crypvol` 表示。
+开发环境需要 .NET SDK 10。CLI 项目为 `CrypVol.Cli`；构建后可通过 `dotnet run --project CrypVol.Cli -- <命令>` 使用。以下示例以已安装到
+PATH 的 `crypvol` 表示。
 
 ```bash
 crypvol --help
@@ -53,22 +55,24 @@ crypvol pack --help
 
 数据卷命名为 `<前缀>.<卷号>.cvp`。每个文件按数据块写入；当块跨越近似卷容量时，后续块会写入下一个卷，并由片段标志关联。卷头会标记数据是否压缩、是否加密和完整性等级。
 
-`--volume-size` 是**近似切分目标**，并非严格的文件大小上限。压缩后的长度、文件头和块边界都会使最终卷大小与该值略有差异；恢复、浏览和校验只解析卷内结构，不需要知道该参数。
+`--volume-size` 是 **近似切分目标**，并非严格的文件大小上限。压缩后的长度、文件头和块边界都会使最终卷大小与该值略有差异；恢复、浏览和校验只解析卷内结构，不需要知道该参数。
 
 `--chunk-size` 决定单次读取和处理的数据块大小（1–64 MiB，默认 16 MiB）：较大块通常有利于压缩率和吞吐，但会提高峰值内存。它也是调整大文件处理内存/性能平衡的主要开关。
 
 ### CVK 密钥文件
 
-`.cvk` 是 Base64 编码的 CVK v3 容器，由固定 Header、明文 Metadata、密钥体（KeyBody）和 SHA-256 校验体组成。加载器先验证长度与校验体，再根据 Metadata 中的保护模式和算法自动选择解封路线。CVK 管理在引擎外由 `CvkDocument` 完成：加载后可修改保护模式、算法、密码、公钥接收者和元数据，再原子写入保存。
+`.cvk` 是 Base64 编码的 CVK v3 容器，由固定 Header、明文 Metadata、密钥体（KeyBody）和 SHA-256 校验体组成。加载器先验证长度与校验体，再根据
+Metadata 中的保护模式和算法自动选择解封路线。CVK 管理在引擎外由 `CvkDocument` 完成：加载后可修改保护模式、算法、密码、公钥接收者和元数据，再原子写入保存。
 
-| 模式 | CEK 的保存方式 | 使用时所需凭据 |
-| --- | --- | --- |
-| `None` | 不加密数据，也不生成 CVK | 无 |
-| `PlainKey` | CEK 写入明文密钥体 | CVK 文件本身 |
-| `Password` | 使用 Argon2id 派生密钥后，以 AES-256-GCM 封装 CEK | CVK + 密码 |
+| 模式         | CEK 的保存方式                                               | 使用时所需凭据     |
+|--------------|--------------------------------------------------------------|--------------------|
+| `None`       | 不加密数据，也不生成 CVK                                     | 无                 |
+| `PlainKey`   | CEK 写入明文密钥体                                           | CVK 文件本身       |
+| `Password`   | 使用 Argon2id 派生密钥后，以 AES-256-GCM 封装 CEK            | CVK + 密码         |
 | `Asymmetric` | 随机 DEK 由一个或多个公钥封装，DEK 再以 AES-256-GCM 封装 CEK | CVK + 任一匹配私钥 |
 
-保护模式与算法是两个独立字段：`EncryptionMode` 只描述 CEK 如何被保护；`EncryptionAlgorithm` 描述公钥密钥体使用的算法（`AesGcm` 或 `Ecc`，其中 `Ecc` 为 P-256 ECDH）。例如 ECC CVK 使用 `--mode Asymmetric --algorithm Ecc`，而不是把 ECC 当作一种保护模式。
+保护模式与算法是两个独立字段：`EncryptionMode` 只描述 CEK 如何被保护；`EncryptionAlgorithm` 描述公钥密钥体使用的算法（
+`AesGcm` 或 `Ecc`，其中 `Ecc` 为 P-256 ECDH）。例如 ECC CVK 使用 `--mode Asymmetric --algorithm Ecc`，而不是把 ECC 当作一种保护模式。
 
 `PlainKey` 仅适用于你能够安全存放 `.cvk` 文件的场景。密码、私钥和明文 CVK 都应视为敏感信息，不要提交到版本库或随数据卷一同公开分发。
 
@@ -94,7 +98,8 @@ crypvol pack ./data -o ./archive --prefix backup \
   --chunk-size 32 --volume-size 512 --compression-level Optimal
 ```
 
-未指定 `--key-file` 时，`pack` 按 `--mode` 创建新 CEK 和 CVK；指定 `--key-file` 时复用其中的 CEK，`--mode`、`--public-key` 和 `--comment` 不参与新 CVK 的创建。`--dry-run` 只根据原始大小和块大小给出近似卷数/块数，不写入数据或密钥文件。
+未指定 `--key-file` 时，`pack` 按 `--mode` 创建新 CEK 和 CVK；指定 `--key-file` 时复用其中的 CEK，`--mode`、`--public-key` 和
+`--comment` 不参与新 CVK 的创建。`--dry-run` 只根据原始大小和块大小给出近似卷数/块数，不写入数据或密钥文件。
 
 ### 2. 提取、浏览与校验
 
@@ -114,9 +119,12 @@ crypvol browse ./archive/backup.0.cvp --format Json --output files.json
 crypvol verify ./archive/backup.0.cvp --repair-report damage-report.txt
 ```
 
-加密卷会自动尝试发现同目录、同前缀的 `.cvk`。若无法发现或需指定其他位置，请传入 `--key-file`；Password 模式配合 `--password`。Asymmetric 模式会自动尝试当前用户 `~/.ssh` 中与同名 `.pub` 文件成对的私钥，也可用 `--privkey-key` 明确指定；加密私钥另可使用 `--key-pass`。
+加密卷会自动尝试发现同目录、同前缀的 `.cvk`。若无法发现或需指定其他位置，请传入 `--key-file`；Password 模式配合 `--password`
+。Asymmetric 模式会自动尝试当前用户 `~/.ssh` 中与同名 `.pub` 文件成对的私钥，也可用 `--privkey-key` 明确指定；加密私钥另可使用
+`--key-pass`。
 
-Asymmetric 模式仅使用 RSA：公钥支持 PEM 与 OpenSSH 的 `ssh-rsa` 单行格式；私钥支持 PKCS#1/PKCS#8 PEM、OpenSSH（含密码保护）、ssh.com 和 PuTTY PPK 格式。
+Asymmetric 模式仅使用 RSA：公钥支持 PEM 与 OpenSSH 的 `ssh-rsa` 单行格式；私钥支持 PKCS#1/PKCS#8
+PEM、OpenSSH（含密码保护）、ssh.com 和 PuTTY PPK 格式。
 
 ### 3. 修复
 
@@ -153,25 +161,28 @@ crypvol convert ./archive/backup.0.cvp \
   --output ./rotated --prefix backup-v2
 ```
 
-`rekey` 改变的是 CVK 对**同一 CEK**的保护方式，不会改写 `.cvp` 数据卷。它会先完成参数和构建校验；可选备份不会覆盖已有 `.bak`，写入使用同目录临时文件再替换目标。
+`rekey` 改变的是 CVK 对 **同一 CEK**的保护方式，不会改写 `.cvp` 数据卷。它会先完成参数和构建校验；可选备份不会覆盖已有
+`.bak`，写入使用同目录临时文件再替换目标。
 
-`convert` 改变的是卷内数据块的加密密钥：使用旧 CEK 解密、使用新 CEK 加密。它**只支持重加密到现有目标 CVK**，因此 `--key-file` 必须指定已有目标 CVK；该命令不会创建新的 CVK。
+`convert` 改变的是卷内数据块的加密密钥：使用旧 CEK 解密、使用新 CEK 加密。它 **只支持重加密到现有目标 CVK**，因此
+`--key-file` 必须指定已有目标 CVK；该命令不会创建新的 CVK。
 
 ## 命令概览
 
-| 命令 | 用途 |
-| --- | --- |
-| `genkey` | 创建独立的 CVK |
-| `pack` | 将文件或目录流式打包为 CVP 卷 |
-| `extract` | 从卷组恢复文件 |
-| `browse` | 不提取地列出卷内文件 |
-| `info` | 加载并验证 CVK，显示保护模式和 CEK 指纹 |
-| `verify` | 校验卷结构和块级 CRC32，可生成修复报告 |
-| `repair` | 按报告或扫描结果对损坏块进行零填充修复 |
-| `rekey` | 修改既有 CVK 对同一 CEK 的保护方式 |
-| `convert` | 使用既有目标 CVK 的 CEK 重加密数据卷 |
+| 命令      | 用途                                    |
+|-----------|-----------------------------------------|
+| `genkey`  | 创建独立的 CVK                          |
+| `pack`    | 将文件或目录流式打包为 CVP 卷           |
+| `extract` | 从卷组恢复文件                          |
+| `browse`  | 不提取地列出卷内文件                    |
+| `info`    | 加载并验证 CVK，显示保护模式和 CEK 指纹 |
+| `verify`  | 校验卷结构和块级 CRC32，可生成修复报告  |
+| `repair`  | 按报告或扫描结果对损坏块进行零填充修复  |
+| `rekey`   | 修改既有 CVK 对同一 CEK 的保护方式      |
+| `convert` | 使用既有目标 CVK 的 CEK 重加密数据卷    |
 
-所有命令均支持 `--verbose` / `-v` 控制日志级别，例如 `-v Debug` 或 `-v Trace`。完整参数以运行时帮助为准：`crypvol <command> --help`。
+所有命令均支持 `--verbose` / `-v` 控制日志级别，例如 `-v Debug` 或 `-v Trace`。完整参数以运行时帮助为准：
+`crypvol <command> --help`。
 
 ## 测试
 
@@ -201,12 +212,16 @@ Processor 1 ──► Processor 2 ──► … ──► IDataReceiver
 - `IDataProvider`、`IDataProcessor`、`IDataReceiver` 均实现异步生命周期：初始化、校验、预处理、启动与释放。
 - 每个阶段运行在独立任务中，阶段之间是容量为 1 的有界 `Channel<DataBlock>`。背压限制了内存占用，同时允许 I/O、压缩和加密并行推进。
 - Provider、Processor 依次完成自己的下游 Channel；任一阶段失败或取消时，引擎关闭所有通道并取消所有阶段。
-- 引擎事件为 `Starting`、`Started`、`Completed`、`Failed` 和 `Stopped`。处理器通过传入的 Engine 实例记录日志、报告异常或共享运行记录，而不是依赖额外 Hook 接口。
-- 当前内置组件包括 `SourceFileDataProvider`、`CvpFileDataProvider`、压缩/解压缩/加密/解密处理器，以及 `CvpFileReciver`、`DataFileReciver`。
+- 引擎事件为 `Starting`、`Started`、`Completed`、`Failed` 和 `Stopped`。处理器通过传入的 Engine 实例记录日志、报告异常或共享运行记录，而不是依赖额外
+  Hook 接口。
+- 当前内置组件包括 `SourceFileDataProvider`、`CvpFileDataProvider`、压缩/解压缩/加密/解密处理器，以及 `CvpFileReciver`、
+  `DataFileReciver`。
 
 ## 格式与完整性
 
-CVP 文件条目头使用 `CVPH`（明文）或 `CVPE`（加密）魔数；读取时自动识别，不需要人工指定卷的加密模式。加密数据块使用 AES-GCM，`--integrity Block`（默认）会额外保存 CRC32，用于快速定位介质损坏。CRC32 用于损坏检测，不替代密码学认证；AES-GCM 的认证标签仍是加密数据的完整性保障。
+CVP 文件条目头使用 `CVPH`（明文）或 `CVPE`（加密）魔数；读取时自动识别，不需要人工指定卷的加密模式。加密数据块使用 AES-GCM，
+`--integrity Block`（默认）会额外保存 CRC32，用于快速定位介质损坏。CRC32 用于损坏检测，不替代密码学认证；AES-GCM
+的认证标签仍是加密数据的完整性保障。
 
 ## 项目结构
 
