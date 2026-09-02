@@ -1,5 +1,7 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Container;
+using CrypVol.Lib.Crypto.Models;
 
 namespace CrypVol.Cli.Info;
 

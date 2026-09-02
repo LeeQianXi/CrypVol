@@ -9,7 +9,7 @@ using Renci.SshNet;
 using Renci.SshNet.Common;
 using SshRsaKey = Renci.SshNet.Security.RsaKey;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Protectors;
 
 /// <summary>加载 CVK 公钥模式所需的 RSA 密钥，兼容 PEM 与 OpenSSH 文本格式。</summary>
 public static class RsaKeyLoader

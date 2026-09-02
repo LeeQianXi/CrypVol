@@ -2,6 +2,8 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Container;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;

@@ -1,8 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CrypVol.Lib.Crypto.Models;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Container;
 
 /// <summary>CVK v3 容器的固定格式常量。</summary>
 internal static class CvkFormat

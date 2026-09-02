@@ -1,4 +1,4 @@
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Models;
 
 /// <summary>CVK 中 CEK 的保护模式；不表示数据加密算法。</summary>
 public enum EncryptionMode

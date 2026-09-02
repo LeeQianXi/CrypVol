@@ -1,8 +1,11 @@
 using System.Security.Cryptography;
 using System.Text;
+using CrypVol.Lib.Crypto.Discovery;
+using CrypVol.Lib.Crypto.Models;
+using CrypVol.Lib.Crypto.Protectors;
 using Microsoft.Extensions.Logging;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Container;
 
 /// <summary>CVK v3 加载器：先验证容器，再按明文元数据选择密钥体解封路线。</summary>
 public static class CvkLoader

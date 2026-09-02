@@ -1,9 +1,11 @@
-using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using CrypVol.Lib.Crypto.Container;
+using CrypVol.Lib.Crypto.Discovery;
+using CrypVol.Lib.Crypto.Protectors;
 using CrypVol.Lib.Utility;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Models;
 
 /// <summary>引擎外完整的 CVK 领域模型，负责密钥文件的加载、编辑、构建与写入。</summary>
 public sealed class CvkDocument
@@ -154,11 +156,14 @@ public sealed class CvkDocument
                 case EncryptionMode.Password:
                     WritePasswordPayload(keyBodyWriter);
                     break;
-                case EncryptionMode.Asymmetric when EncryptionAlgorithm == EncryptionAlgorithm.Ecc:
-                    WriteEccPublicKeyPayload(keyBodyWriter);
-                    break;
                 case EncryptionMode.Asymmetric:
-                    WritePublicKeyPayload(keyBodyWriter);
+                    var result = PublicKeyKeyProtector.Protect(EncryptionAlgorithm, Cek.Span,
+                        PublicKeyRecipients.ToArray(), _newPublicKeyFiles, _publicKeyDek);
+                    keyBodyWriter.Write(result.KeyBody);
+                    PublicKeyRecipients.Clear();
+                    foreach (var recipient in result.Recipients) PublicKeyRecipients.Add(recipient);
+                    _publicKeyDek = result.Dek;
+                    _newPublicKeyFiles.Clear();
                     break;
                 default:
                     throw new InvalidOperationException("不支持的 CVK 封装模式。");
@@ -199,61 +204,6 @@ public sealed class CvkDocument
     {
         var payload = PasswordKeyProtector.Protect(Cek.Span, Password);
         writer.Write(payload);
-    }
-
-    private void WritePublicKeyPayload(BinaryWriter writer)
-    {
-        var recipients = PublicKeyRecipients.ToDictionary(item => item.KeyId, item => item,
-            StringComparer.Ordinal);
-        var dek = _publicKeyDek ??= RandomNumberGenerator.GetBytes(32);
-        foreach (var file in _newPublicKeyFiles)
-        {
-            using var rsa = RsaKeyLoader.LoadPublicKey(File.ReadAllText(file.FullName));
-            var keyId = CvkKeyIdResolver.Resolve(file);
-            recipients[keyId] = new CvkPublicKeyRecipient(keyId,
-                rsa.Encrypt(dek, RSAEncryptionPadding.OaepSHA256));
-        }
-
-        if (recipients.Count == 0)
-            throw new CvkValidationException("Asymmetric 模式必须提供至少一个公钥接收者。请指定 --public-key，或改用其他 --mode。");
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var ciphertext = new byte[32];
-        var tag = new byte[16];
-        using var aes = new AesGcm(dek, 16);
-        aes.Encrypt(nonce, Cek.Span, ciphertext, tag);
-        var resolvedRecipients = recipients.Values.ToList();
-        PublicKeyKeyBodyCodec.WriteRecipients(writer, resolvedRecipients);
-        writer.Write(nonce);
-        writer.Write(tag);
-        writer.Write(ciphertext);
-        PublicKeyRecipients.Clear();
-        foreach (var recipient in resolvedRecipients) PublicKeyRecipients.Add(recipient);
-        _newPublicKeyFiles.Clear();
-    }
-
-    private void WriteEccPublicKeyPayload(BinaryWriter writer)
-    {
-        var recipients = PublicKeyRecipients.ToDictionary(item => item.KeyId, item => item,
-            StringComparer.Ordinal);
-        var dek = _publicKeyDek ??= RandomNumberGenerator.GetBytes(32);
-        foreach (var file in _newPublicKeyFiles)
-        {
-            using var key = EccKeyLoader.LoadPublicKey(File.ReadAllText(file.FullName));
-            var keyId = CvkKeyIdResolver.Resolve(file);
-            recipients[keyId] = new CvkPublicKeyRecipient(keyId, EccKeyLoader.WrapDek(key, dek));
-        }
-        if (recipients.Count == 0)
-            throw new CvkValidationException("ECC 模式必须提供至少一个公钥接收者。");
-        PublicKeyKeyBodyCodec.WriteRecipients(writer, recipients.Values.ToList());
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var ciphertext = new byte[32];
-        var tag = new byte[16];
-        using var aes = new AesGcm(dek, 16);
-        aes.Encrypt(nonce, Cek.Span, ciphertext, tag);
-        writer.Write(nonce); writer.Write(tag); writer.Write(ciphertext);
-        PublicKeyRecipients.Clear();
-        foreach (var recipient in recipients.Values) PublicKeyRecipients.Add(recipient);
-        _newPublicKeyFiles.Clear();
     }
 
 }

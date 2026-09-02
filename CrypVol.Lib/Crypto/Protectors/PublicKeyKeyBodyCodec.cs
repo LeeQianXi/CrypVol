@@ -1,7 +1,8 @@
 using System.Buffers.Binary;
 using System.Text;
+using CrypVol.Lib.Crypto.Models;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Protectors;
 
 /// <summary>公钥密钥体的接收者目录编解码；RSA/ECC 仅负责各自的密文生成与解封。</summary>
 internal static class PublicKeyKeyBodyCodec

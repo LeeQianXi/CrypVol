@@ -1,9 +1,8 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Container;
 
 /// <summary>CVK v3 容器编解码器，负责三段式布局与完整性校验，不参与密钥解封。</summary>
 internal static class CvkContainerCodec

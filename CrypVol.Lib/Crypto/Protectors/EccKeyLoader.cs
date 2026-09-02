@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Protectors;
 
 /// <summary>使用 P-256 ECDH 公私钥封装和解封 DEK。</summary>
 public static class EccKeyLoader

@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Container;
+using CrypVol.Lib.Crypto.Discovery;
+using CrypVol.Lib.Crypto.Models;
 using Org.BouncyCastle.Crypto.Utilities;
 using Org.BouncyCastle.Security;
 using Xunit;

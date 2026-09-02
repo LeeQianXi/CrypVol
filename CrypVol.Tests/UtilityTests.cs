@@ -1,4 +1,5 @@
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;

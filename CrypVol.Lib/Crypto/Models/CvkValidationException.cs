@@ -1,4 +1,4 @@
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Models;
 
 /// <summary>表示 CVK 构建参数不符合所选封装模式的错误。</summary>
 public sealed class CvkValidationException : InvalidOperationException

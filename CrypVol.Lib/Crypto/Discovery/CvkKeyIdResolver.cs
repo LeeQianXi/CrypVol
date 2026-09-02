@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Discovery;
 
 /// <summary>按公钥格式生成稳定的 CVK 接收者标识。</summary>
 public static partial class CvkKeyIdResolver

@@ -1,4 +1,4 @@
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Discovery;
 
 /// <summary>发现当前用户 SSH 目录中的私钥候选文件。</summary>
 public static class SshPrivateKeyDiscovery

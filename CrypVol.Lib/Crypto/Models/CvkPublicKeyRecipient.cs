@@ -1,4 +1,4 @@
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Models;
 
 /// <summary>CVK 公钥模式中的接收者槽位；可在没有原始公钥文件时保留或移除。</summary>
 public sealed class CvkPublicKeyRecipient

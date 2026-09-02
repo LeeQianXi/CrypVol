@@ -10,6 +10,7 @@ using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 

@@ -1,4 +1,4 @@
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Models;
 
 /// <summary>进入处理引擎的轻量加密凭据，携带保护模式、算法与只读 CEK。</summary>
 public sealed class CvkCredentials

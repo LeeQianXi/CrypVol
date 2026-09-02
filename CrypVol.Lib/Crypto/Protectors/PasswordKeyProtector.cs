@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
 
-namespace CrypVol.Lib.Crypto;
+namespace CrypVol.Lib.Crypto.Protectors;
 
 /// <summary>负责 Password 保护模式的 Argon2id 派生与 AES-GCM 密钥体编解码。</summary>
 internal static class PasswordKeyProtector
