@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -8,7 +7,6 @@ namespace CrypVol.Lib.Crypto;
 /// <summary>CVK v3 加载器：先验证容器，再按明文元数据选择密钥体解封路线。</summary>
 public static class CvkLoader
 {
-    private const ushort MaxRecipientCiphertextLength = 4096;
 
     /// <summary>读取 CVK 明文元数据中的保护模式。</summary>
     public static EncryptionMode ReadMode(string path) => ReadMetadata(path).ProtectionMode;
@@ -79,7 +77,7 @@ public static class CvkLoader
     private static async Task<PublicKeyPayload> ReadRsaPayloadAsync(BinaryReader reader, FileInfo? privateKeyFile,
         string? privateKeyPassword, long end, CancellationToken cancellationToken, ILogger? logger)
     {
-        var recipients = ReadRecipients(reader, end, "公钥");
+        var recipients = PublicKeyKeyBodyCodec.ReadRecipients(reader, end, "公钥");
         var dek = privateKeyFile is not null
             ? await TryDecryptDekAsync(privateKeyFile, recipients, privateKeyPassword, false, cancellationToken, logger)
             : await FindDekFromUserSshKeysAsync(recipients, privateKeyPassword, cancellationToken, logger);
@@ -90,7 +88,7 @@ public static class CvkLoader
     private static async Task<PublicKeyPayload> ReadEccPayloadAsync(BinaryReader reader, FileInfo? privateKeyFile,
         long end, CancellationToken cancellationToken, ILogger? logger)
     {
-        var recipients = ReadRecipients(reader, end, "ECC");
+        var recipients = PublicKeyKeyBodyCodec.ReadRecipients(reader, end, "ECC");
         if (privateKeyFile is null) throw new InvalidOperationException("ECC CVK 必须通过 --privkey-key 指定 P-256 私钥。");
         using var privateKey = EccKeyLoader.LoadPrivateKey(await File.ReadAllTextAsync(privateKeyFile.FullName, cancellationToken));
         byte[]? dek = null;
@@ -100,23 +98,6 @@ public static class CvkLoader
         if (dek is null) throw new CryptographicException("ECC 私钥无法解封任何接收者 DEK。");
         logger?.LogDebug("ECC 私钥匹配成功: {PrivateKey}, 接收者={RecipientCount}", privateKeyFile.FullName, recipients.Count);
         return ReadEncryptedCek(reader, end, recipients, dek);
-    }
-
-    private static List<CvkPublicKeyRecipient> ReadRecipients(BinaryReader reader, long end, string prefix)
-    {
-        var count = BinaryPrimitives.ReverseEndianness(ReadUInt16(reader, end, $"{prefix}接收者数量"));
-        if (count == 0) throw new InvalidDataException($"{prefix} CVK 至少需要一个接收者。");
-        var recipients = new List<CvkPublicKeyRecipient>(count);
-        for (var i = 0; i < count; i++)
-        {
-            var idLength = ReadByte(reader, end, "接收者标识长度");
-            if (idLength == 0) throw new InvalidDataException("接收者标识不能为空。");
-            var keyId = Encoding.UTF8.GetString(ReadExact(reader, idLength, end, "接收者标识"));
-            var length = BinaryPrimitives.ReverseEndianness(ReadUInt16(reader, end, "DEK 密文长度"));
-            if (length == 0 || length > MaxRecipientCiphertextLength) throw new InvalidDataException("DEK 密文长度无效。");
-            recipients.Add(new CvkPublicKeyRecipient(keyId, ReadExact(reader, length, end, "DEK 密文")));
-        }
-        return recipients;
     }
 
     private static PublicKeyPayload ReadEncryptedCek(BinaryReader reader, long end,
@@ -205,8 +186,6 @@ public static class CvkLoader
         return value;
     }
 
-    private static byte ReadByte(BinaryReader reader, long end, string field) => ReadExact(reader, 1, end, field)[0];
-    private static ushort ReadUInt16(BinaryReader reader, long end, string field) => BinaryPrimitives.ReadUInt16LittleEndian(ReadExact(reader, 2, end, field));
     private sealed record PublicKeyPayload(byte[] Cek, byte[] Dek, IReadOnlyList<CvkPublicKeyRecipient> Recipients);
 }
 
