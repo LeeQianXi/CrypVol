@@ -1,5 +1,3 @@
-using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Engine;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Engine.Processors;
@@ -43,8 +41,9 @@ public sealed class CrypVolHelper
                 };
 
             var capacity = checked((long)opts.VolumeSizeMb * 1024 * 1024);
-            var (mode, cek) = opts.Credentials;
-            var headerSize = mode is EncryptionMode.None ? FileEntryHeader.HeaderSize : FileEntryHeader.EncryptedHeaderSize;
+            var cek = opts.Credentials.Cek;
+            var encrypted = cek.Length != 0;
+            var headerSize = encrypted ? FileEntryHeader.EncryptedHeaderSize : FileEntryHeader.HeaderSize;
             var maxChunkSize = capacity - headerSize - sizeof(int);
             if (maxChunkSize <= 0)
                 return new PackResult
@@ -57,10 +56,10 @@ public sealed class CrypVolHelper
             Logger?.LogInformation(
                 "Pack 开始: 流式块大小 {ChunkSize} 字节, {FileCount} 文件, {TotalBytes} 字节, 加密={Encrypted}, 压缩={Compressed}",
                 chunkSize, opts.SourceFiles.Count, opts.SourceFiles.Sum(f => f.Length),
-                mode != EncryptionMode.None ? "是" : "否",
+                encrypted ? "是" : "否",
                 compressing ? $"是 ({opts.CompressionLevel})" : "否");
 
-            var encryptHeaders = mode != EncryptionMode.None;
+            var encryptHeaders = encrypted;
 
             var receiver = new CvpFileReciver(encryptHeaders ? (ReadOnlyMemory<byte>?)cek : null,
                 opts.OutputDir.FullName, prefix);
@@ -68,7 +67,7 @@ public sealed class CrypVolHelper
                 headerSize, opts.IntegrityLevel, opts.EnableCompression);
             var builder = ProcessingEngine.Builder().UseProvider(provider);
             if (opts.EnableCompression) builder.AddProcessor(new CompressionProcessor(opts.CompressionLevel));
-            if (mode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(cek));
+            if (encrypted) builder.AddProcessor(new EncryptionProcessor(cek));
             if (opts.IntegrityLevel is not IntegrityLevel.None)
                 builder.AddProcessor(new IntegrityAppendProcessor(opts.IntegrityLevel));
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
@@ -103,7 +102,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (mode, cek) = opts.Credentials;
+            var cek = opts.Credentials.Cek;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), filter.IsActive ? filter : null, Logger);
@@ -166,7 +165,7 @@ public sealed class CrypVolHelper
 
             Logger?.LogInformation("提取开始: {FileCount} 文件, {ItemCount} 块, 解密={Decrypt}, 解压={Decompress}",
                 fileFragments.Count, items.Count,
-                mode != EncryptionMode.None ? "是" : "否", isCompressed);
+                cek.Length != 0 ? "是" : "否", isCompressed);
 
             var receiver = new DataFileReciver(opts.OutputDir.FullName, opts.Overwrite);
 
@@ -181,7 +180,7 @@ public sealed class CrypVolHelper
             if (!opts.OutputDir.Exists) opts.OutputDir.Create();
             var builder = ProcessingEngine.Builder().UseProvider(new CvpFileDataProvider(items));
             if (integrityLevel is not IntegrityLevel.None) builder.AddProcessor(new IntegrityStripProcessor(integrityLevel));
-            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek));
+            if (cek.Length != 0) builder.AddProcessor(new DecryptionProcessor(cek));
             if (isCompressed) builder.AddProcessor(new DecompressionProcessor());
             if (integrityLevel >= IntegrityLevel.File) builder.AddProcessor(new FileIntegrityVerificationProcessor());
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
@@ -213,7 +212,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (mode, cek) = opts.Credentials;
+            var cek = opts.Credentials.Cek;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), filter.IsActive ? filter : null, Logger);
@@ -277,7 +276,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (mode, cek) = opts.OldCredentials;
+            var cek = opts.OldCredentials.Cek;
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), logger: Logger);
             if (scanResult.PossiblyEncrypted)
                 return new ConvertResult
@@ -327,10 +326,12 @@ public sealed class CrypVolHelper
                 integrityLevel = (IntegrityLevel)(firstFragment[0].Flags >> 3 & 3);
             }
 
-            var (newMode, newCek) = opts.NewCredentials;
+            var newCek = opts.NewCredentials.Cek;
+            var oldEncrypted = cek.Length != 0;
+            var newEncrypted = newCek.Length != 0;
             Logger?.LogInformation("密钥轮换开始: {ItemCount} 块, {VolCount} 卷", items.Count, newVolIdx);
 
-            var receiver = new CvpFileReciver(newMode is EncryptionMode.None ? (ReadOnlyMemory<byte>?)null : newCek);
+            var receiver = new CvpFileReciver(newEncrypted ? newCek : null);
 
             for (var i = 0; i < newVolIdx; i++)
                 receiver.AddTarget(i, Path.Combine(opts.OutputDir.FullName, $"{opts.OutputPrefix}.{i}.cvp"));
@@ -338,8 +339,8 @@ public sealed class CrypVolHelper
             var builder = ProcessingEngine.Builder()
                 .UseProvider(new CvpFileDataProvider(items));
             if (integrityLevel is not IntegrityLevel.None) builder.AddProcessor(new IntegrityStripProcessor(integrityLevel));
-            if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek));
-            if (newMode is not EncryptionMode.None) builder.AddProcessor(new EncryptionProcessor(newCek));
+            if (oldEncrypted) builder.AddProcessor(new DecryptionProcessor(cek));
+            if (newEncrypted) builder.AddProcessor(new EncryptionProcessor(newCek));
             if (integrityLevel is not IntegrityLevel.None) builder.AddProcessor(new IntegrityAppendProcessor(integrityLevel));
             var pipeline = builder.UseReceiver(receiver).WithLogger(Logger).Build();
             await RunPipelineAsync(pipeline, token);
@@ -372,7 +373,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (mode, cek) = opts.Credentials;
+            var cek = opts.Credentials.Cek;
             var filter = BuildGlobMatcher(opts.IncludePattern, opts.ExcludePattern);
 
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), filter.IsActive ? filter : null, Logger);
@@ -478,7 +479,7 @@ public sealed class CrypVolHelper
                     var builder = ProcessingEngine.Builder()
                         .UseProvider(new CvpFileDataProvider(items))
                         .AddProcessor(new IntegrityStripProcessor(formatProfile.Integrity));
-                    if (mode is not EncryptionMode.None) builder.AddProcessor(new DecryptionProcessor(cek));
+                    if (cek.Length != 0) builder.AddProcessor(new DecryptionProcessor(cek));
                     if (formatProfile.Compressed) builder.AddProcessor(new DecompressionProcessor());
                     var pipeline = builder.AddProcessor(new FileIntegrityVerificationProcessor(true))
                         .UseReceiver(new NullDataReceiver())
@@ -568,7 +569,7 @@ public sealed class CrypVolHelper
     {
         try
         {
-            var (_, cek) = opts.Credentials;
+            var cek = opts.Credentials.Cek;
             var scanResult = VolumeScanner.Scan(opts.VolumeFiles, cek.ToArray(), logger: Logger);
             if (scanResult.PossiblyEncrypted)
                 return new RepairResult

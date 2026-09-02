@@ -1,4 +1,5 @@
 using System.CommandLine;
+using CrypVol.Lib.Crypto.Models;
 using System.IO.Compression;
 using CrypVol.Cli.Browse;
 using CrypVol.Cli.Convert;
@@ -9,8 +10,6 @@ using CrypVol.Cli.Pack;
 using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
-using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 
@@ -88,8 +87,8 @@ public static class CommandDefinition
         public static readonly Option<uint> VolumeSize;
         public static readonly Option<uint> ChunkSize;
         public static readonly Option<FileInfo> KeyFile;
-        public static readonly Option<EncryptionMode> Mode;
-        public static readonly Option<EncryptionAlgorithm> Algorithm;
+        public static readonly Option<CvkKeyProtection> Mode;
+        public static readonly Option<CvkKeyWrapAlgorithm> Algorithm;
         public static readonly Option<string> Password;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<FileInfo> PrivkeyKey;
@@ -194,7 +193,7 @@ public static class CommandDefinition
                 HelpName = "passphrase"
             };
 
-            Mode = new Option<EncryptionMode>("--mode", "-m")
+            Mode = new Option<CvkKeyProtection>("--mode", "-m")
             {
                 Description =
                     """
@@ -205,13 +204,13 @@ public static class CommandDefinition
                     Password   —— CEK 经 Argon2id + AES-256-GCM 加密，需密码解密
                     Asymmetric —— CEK 经公钥加密，需对应私钥解密
                     """,
-                DefaultValueFactory = static _ => EncryptionMode.PlainKey
+                DefaultValueFactory = static _ => CvkKeyProtection.Plain
             };
 
-            Algorithm = new Option<EncryptionAlgorithm>("--algorithm")
+            Algorithm = new Option<CvkKeyWrapAlgorithm>("--algorithm")
             {
                 Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
-                DefaultValueFactory = static _ => EncryptionAlgorithm.AesGcm
+                DefaultValueFactory = static _ => CvkKeyWrapAlgorithm.RsaOaepSha256
             };
 
             Password = new Option<string>("--password", "-p")
@@ -919,8 +918,8 @@ public static class CommandDefinition
         public static readonly Option<FileInfo> PrivkeyKey;
         public static readonly Option<string> PrivkeyKeyPass;
         public static readonly Option<FileInfo?> Output;
-        public static readonly Option<EncryptionMode> ToMode;
-        public static readonly Option<EncryptionAlgorithm?> Algorithm;
+        public static readonly Option<CvkKeyProtection> ToMode;
+        public static readonly Option<CvkKeyWrapAlgorithm?> Algorithm;
         public static readonly Option<string> NewPassword;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<bool> Backup;
@@ -938,7 +937,7 @@ public static class CommandDefinition
                 HelpName = "file"
             }.AcceptLegalFilePathsOnly();
 
-            ToMode = new Option<EncryptionMode>("--to-mode")
+            ToMode = new Option<CvkKeyProtection>("--to-mode")
             {
                 Description =
                     """
@@ -951,7 +950,7 @@ public static class CommandDefinition
                     """
             };
 
-            Algorithm = new Option<EncryptionAlgorithm?>("--algorithm")
+            Algorithm = new Option<CvkKeyWrapAlgorithm?>("--algorithm")
             {
                 Description = "公钥封装算法：AesGcm 或 Ecc（P-256 ECDH）；未指定时沿用原 CVK 算法"
             };
@@ -1183,8 +1182,8 @@ public static class CommandDefinition
     {
         public static readonly Option<DirectoryInfo> Output;
         public static readonly Option<string> Name;
-        public static readonly Option<EncryptionMode> Mode;
-        public static readonly Option<EncryptionAlgorithm> Algorithm;
+        public static readonly Option<CvkKeyProtection> Mode;
+        public static readonly Option<CvkKeyWrapAlgorithm> Algorithm;
         public static readonly Option<string> Password;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
         public static readonly Option<string> Comment;
@@ -1205,7 +1204,7 @@ public static class CommandDefinition
                 DefaultValueFactory = static _ => "key"
             };
 
-            Mode = new Option<EncryptionMode>("--mode", "-m")
+            Mode = new Option<CvkKeyProtection>("--mode", "-m")
             {
                 Description =
                     """
@@ -1214,13 +1213,13 @@ public static class CommandDefinition
                     Password   —— 密码包裹 CEK
                     Asymmetric —— 公钥包裹 CEK
                     """,
-                DefaultValueFactory = static _ => EncryptionMode.PlainKey
+                DefaultValueFactory = static _ => CvkKeyProtection.Plain
             };
 
-            Algorithm = new Option<EncryptionAlgorithm>("--algorithm")
+            Algorithm = new Option<CvkKeyWrapAlgorithm>("--algorithm")
             {
                 Description = "公钥封装算法：AesGcm（默认）或 Ecc（P-256 ECDH）",
-                DefaultValueFactory = static _ => EncryptionAlgorithm.AesGcm
+                DefaultValueFactory = static _ => CvkKeyWrapAlgorithm.RsaOaepSha256
             };
 
             Password = new Option<string>("--password", "-p")

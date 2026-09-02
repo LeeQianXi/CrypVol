@@ -1,6 +1,6 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Crypto.Container;
+using CrypVol.Lib.Crypto.Reading;
 using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -25,15 +25,16 @@ public static class PackHelper
         var outputDir = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
         var mode = args.GetValue(CommandDefinition.Pack.Mode);
         var algorithm = args.GetValue(CommandDefinition.Pack.Algorithm);
-        if (algorithm == EncryptionAlgorithm.Ecc && mode != EncryptionMode.Asymmetric)
+        if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 && mode != CvkKeyProtection.PublicKey)
         {
             await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --mode Asymmetric 一起使用。");
             return 1;
         }
+
         var keyFile = args.GetValue(CommandDefinition.Pack.KeyFile);
         var publicKeys = args.GetValue(CommandDefinition.Pack.PublicKey)?.ToList() ?? [];
 
-        if (keyFile is null && mode == EncryptionMode.Asymmetric && publicKeys.Count == 0)
+        if (keyFile is null && mode == CvkKeyProtection.PublicKey && publicKeys.Count == 0)
         {
             await Console.Error.WriteLineAsync("参数错误：公钥模式必须至少提供一个 --public-key；也可以改用 PlainKey 或 Password 模式。");
             return 1;
@@ -114,11 +115,11 @@ public static class PackHelper
         {
             try
             {
-                var cvk = await CvkLoader.LoadAsync(keyFile,
+                var cvk = await CvkOperations.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Pack.Password),
                     args.GetValue(CommandDefinition.Pack.PrivkeyKey),
                     args.GetValue(CommandDefinition.Pack.PrivkeyKeyPass), token, logger);
-                creds = cvk.ToCredentials();
+                creds = CvkOperations.ToCredentials(cvk);
             }
             catch (Exception ex)
             {
@@ -129,7 +130,7 @@ public static class PackHelper
         else
         {
             var password = args.GetValue(CommandDefinition.Pack.Password);
-            if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
+            if (mode == CvkKeyProtection.Password && string.IsNullOrWhiteSpace(password))
             {
                 await Console.Error.WriteLineAsync("Password 模式需要 --password");
                 return 1;
@@ -138,14 +139,13 @@ public static class PackHelper
             try
             {
                 outputDir.Create();
-                var cvk = CvkDocument.CreateNew(mode, algorithm);
-                cvk.Password = password;
+                var cvk = CvkOperations.CreateNew(mode, algorithm);
                 cvk.Comment = args.GetValue(CommandDefinition.Pack.Comment);
-                foreach (var publicKey in publicKeys) cvk.AddPublicKey(publicKey);
+                foreach (var publicKey in publicKeys) CvkOperations.AddPublicKey(cvk, publicKey);
                 var keyDirectory = args.GetValue(CommandDefinition.Pack.KeyOutputPath) ?? outputDir;
                 keyDirectory.Create();
-                await cvk.WriteAsync(new FileInfo(Path.Combine(keyDirectory.FullName, $"{prefix}.cvk")), token);
-                creds = cvk.ToCredentials();
+                await CvkOperations.WriteAsync(cvk, new FileInfo(Path.Combine(keyDirectory.FullName, $"{prefix}.cvk")), password, token);
+                creds = CvkOperations.ToCredentials(cvk);
             }
             catch (Exception ex)
             {

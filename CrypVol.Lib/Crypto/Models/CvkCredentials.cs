@@ -1,42 +1,24 @@
 namespace CrypVol.Lib.Crypto.Models;
 
-/// <summary>进入处理引擎的轻量加密凭据，携带保护模式、算法与只读 CEK。</summary>
+/// <summary>进入 Engine 的轻量运行凭据，仅携带已经解封的 CEK。</summary>
 public sealed class CvkCredentials
 {
-    /// <summary>创建运行凭据，并复制 CEK 以隔离调用方的可变数组。</summary>
-    /// <param name="encryptionMode">内容加密模式。</param>
-    /// <param name="cek">内容加密密钥。</param>
-    /// <param name="encryptionAlgorithm">内容密钥使用的算法。</param>
-    public CvkCredentials(EncryptionMode encryptionMode, ReadOnlyMemory<byte> cek,
-        EncryptionAlgorithm encryptionAlgorithm = EncryptionAlgorithm.AesGcm)
+    /// <summary>创建 CVK 运行凭据。</summary>
+    public CvkCredentials(CvkKeyProtection keyProtection, ReadOnlyMemory<byte> cek,
+        CvkKeyWrapAlgorithm keyWrapAlgorithm = CvkKeyWrapAlgorithm.None)
     {
-        EncryptionMode = encryptionMode;
-        EncryptionAlgorithm = encryptionAlgorithm;
+        if (cek.Length != 32 && cek.Length != 0) throw new ArgumentException("CEK 必须是 32 字节或为空（表示不加密）。", nameof(cek));
+        KeyProtection = keyProtection;
+        KeyWrapAlgorithm = keyWrapAlgorithm;
         Cek = cek.ToArray();
     }
 
-    /// <summary>内容加密模式。</summary>
-    public EncryptionMode EncryptionMode { get; }
+    /// <summary>CVK 的保护模式。</summary>
+    public CvkKeyProtection KeyProtection { get; }
 
-    /// <summary>内容加密算法。</summary>
-    public EncryptionAlgorithm EncryptionAlgorithm { get; }
+    /// <summary>CVK 的封装算法。</summary>
+    public CvkKeyWrapAlgorithm KeyWrapAlgorithm { get; }
 
     /// <summary>内容加密密钥的只读视图。</summary>
     public ReadOnlyMemory<byte> Cek { get; }
-
-    /// <summary>支持现有的模式/CEK 元组解构调用。</summary>
-    public void Deconstruct(out EncryptionMode encryptionMode, out ReadOnlyMemory<byte> cek)
-    {
-        encryptionMode = EncryptionMode;
-        cek = Cek;
-    }
-
-    /// <summary>支持包含算法的模式、算法、CEK 元组解构调用。</summary>
-    public void Deconstruct(out EncryptionMode encryptionMode, out EncryptionAlgorithm encryptionAlgorithm,
-        out ReadOnlyMemory<byte> cek)
-    {
-        encryptionMode = EncryptionMode;
-        encryptionAlgorithm = EncryptionAlgorithm;
-        cek = Cek;
-    }
 }

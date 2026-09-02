@@ -12,15 +12,16 @@ public static class GenKeyHelper
         var name = args.GetValue(CommandDefinition.GenKey.Name)!;
         var mode = args.GetValue(CommandDefinition.GenKey.Mode);
         var algorithm = args.GetValue(CommandDefinition.GenKey.Algorithm);
-        if (algorithm == EncryptionAlgorithm.Ecc && mode != EncryptionMode.Asymmetric)
+        if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 && mode != CvkKeyProtection.PublicKey)
         {
             await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --mode Asymmetric 一起使用。");
             return 1;
         }
+
         var password = args.GetValue(CommandDefinition.GenKey.Password);
         var pubKeys = args.GetValue(CommandDefinition.GenKey.PublicKey)?.ToList() ?? [];
         // 1. 快速校验
-        if (mode == EncryptionMode.None)
+        if (!Enum.IsDefined(mode))
         {
             await Console.Error.WriteLineAsync("genkey 不支持 None 模式");
             return 1;
@@ -35,13 +36,13 @@ public static class GenKeyHelper
             return 1;
         }
 
-        if (mode == EncryptionMode.Password && string.IsNullOrWhiteSpace(password))
+        if (mode == CvkKeyProtection.Password && string.IsNullOrWhiteSpace(password))
         {
             await Console.Error.WriteLineAsync("Password 模式需要 --password");
             return 1;
         }
 
-        if (mode == EncryptionMode.Asymmetric && !pubKeys.Any())
+        if (mode == CvkKeyProtection.PublicKey && !pubKeys.Any())
         {
             await Console.Error.WriteLineAsync("Asymmetric 模式需要 --public-key");
             return 1;
@@ -51,11 +52,10 @@ public static class GenKeyHelper
         try
         {
             outputDir.Create();
-        var cvk = CvkDocument.CreateNew(mode, algorithm);
-            cvk.Password = password;
+            var cvk = CvkOperations.CreateNew(mode, algorithm);
             cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
-            foreach (var publicKey in pubKeys) cvk.AddPublicKey(publicKey);
-            await cvk.WriteAsync(new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), token);
+            foreach (var publicKey in pubKeys) CvkOperations.AddPublicKey(cvk, publicKey);
+            await CvkOperations.WriteAsync(cvk, new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), password, token);
             Console.WriteLine($"密钥已生成: {Path.Combine(outputDir.FullName, name + ".cvk")} ({mode})");
             return 0;
         }

@@ -1,303 +1,382 @@
 using System.Security.Cryptography;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Crypto.Container;
-using CrypVol.Lib.Crypto.Discovery;
+using CrypVol.Lib.Crypto.Cryptography;
 using CrypVol.Lib.Crypto.Models;
-using Org.BouncyCastle.Crypto.Utilities;
-using Org.BouncyCastle.Security;
+using CrypVol.Lib.Crypto.Keys;
+using CrypVol.Lib.Crypto.Reading;
+using CrypVol.Lib.Crypto.Writing;
 using Xunit;
 
 namespace CrypVol.Tests;
 
-/// <summary>验证可编辑 CVK 内容模型及其 CVK v3 三段式封装。</summary>
+/// <summary>覆盖 CVK 文档创建、原子写入、解析、完整性校验和元数据往返。</summary>
 public sealed class CvkDocumentTests
 {
     [Fact]
-    public async Task PlainDocument_LoadsCekAndComment()
+    public async Task Operations_RejectNullArguments()
     {
-        var file = CreateFile();
-        try
-        {
-            var source = CvkDocument.CreateNew(EncryptionMode.PlainKey);
-            source.Comment = "注释";
-            await source.WriteAsync(file);
-
-            var loaded = await CvkLoader.LoadAsync(file);
-
-            Assert.Equal(source.Cek, loaded.Cek);
-            Assert.Equal("注释", loaded.Comment);
-            Assert.Equal(EncryptionMode.PlainKey, loaded.EncryptionMode);
-        }
-        finally { Delete(file); }
+        var file = TempFile();
+        await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.WriteAsync(null!, file));
+        await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), null!));
+        await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.LoadAsync(null!));
+        Assert.ThrowsAny<Exception>(() => CvkOperations.ToCredentials(null!));
+        Assert.ThrowsAny<Exception>(() => CvkOperations.AddPublicKey(null!, file));
     }
 
-    /// <summary>CVK v2 应保留创建时间及用户可读元数据。</summary>
     [Fact]
-    public async Task DocumentMetadata_RoundTrips()
+    public void CreateNew_RejectsUndefinedRoutes()
     {
-        var file = CreateFile();
+        Assert.ThrowsAny<Exception>(() => CvkOperations.CreateNew((CvkKeyProtection)99, CvkKeyWrapAlgorithm.None));
+        Assert.ThrowsAny<Exception>(() => CvkOperations.CreateNew(CvkKeyProtection.Plain, (CvkKeyWrapAlgorithm)99));
+    }
+
+    [Fact]
+    public async Task PlainDocument_RoundTrips()
+    {
+        var file = TempFile();
         try
         {
-            var source = CvkDocument.CreateNew(EncryptionMode.PlainKey);
-            source.Comment = "用途说明";
-            source.Label = "测试卷";
-            source.Description = "元数据往返";
-            source.Generator = "unit-test";
-            await source.WriteAsync(file);
-
-            var loaded = await CvkLoader.LoadAsync(file);
-
+            var source = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            source.Comment = "unit-test";
+            await CvkOperations.WriteAsync(source, file);
+            var loaded = await CvkOperations.LoadAsync(file);
+            Assert.Equal(source.Cek, loaded.Cek);
             Assert.Equal(source.Comment, loaded.Comment);
-            Assert.Equal(source.CreatedAt, loaded.CreatedAt);
+            Assert.Equal(CvkKeyProtection.Plain, loaded.KeyProtection);
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task Metadata_WithUnicodeAndEscapes_RoundTrips()
+    {
+        var file = TempFile();
+        try
+        {
+            var source = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            source.Label = "卷🔐\n标签";
+            source.Description = "描述\t含引号\"";
+            source.Comment = string.Empty;
+            await CvkOperations.WriteAsync(source, file);
+            var loaded = await CvkOperations.LoadAsync(file);
             Assert.Equal(source.Label, loaded.Label);
             Assert.Equal(source.Description, loaded.Description);
+            Assert.Equal(source.Comment, loaded.Comment);
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task Reader_ReadAsyncReturnsVerifiedParsedSegments()
+    {
+        var file = TempFile();
+        try
+        {
+            var source = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            await CvkOperations.WriteAsync(source, file);
+            var parsed = await new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file);
+            Assert.Equal(CvkKeyProtection.Plain, parsed.Header.KeyProtection);
+            Assert.NotEmpty(parsed.HeaderJson.ToArray());
+            Assert.NotEmpty(parsed.KeyBody.ToArray());
+            Assert.Equal(32, parsed.Integrity.Length);
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task Header_UsesStableJsonRouteNames()
+    {
+        var file = TempFile();
+        try
+        {
+            await CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file);
+            var parsed = await new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file);
+            var json = System.Text.Encoding.UTF8.GetString(parsed.HeaderJson.ToArray());
+            Assert.Contains("\"version\"", json);
+            Assert.Contains("\"keyProtection\"", json);
+            Assert.Contains("\"keyWrapAlgorithm\"", json);
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task MetadataAndRecipients_RoundTripExactly()
+    {
+        using var rsa = RSA.Create(2048);
+        var file = TempFile();
+        try
+        {
+            var created = DateTimeOffset.UtcNow.AddMinutes(-1);
+            var source = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
+            source.Label = "label";
+            source.Description = "description";
+            source.Comment = "comment";
+            source.CreatedAt = created;
+            source.Generator = "generator";
+            source.RecipientKeys.Add(new AsymmetricRecipientKey("id", "RSA", rsa.ExportSubjectPublicKeyInfo(), "mail@example.com"));
+            await new CvkWriter(new CvkPayloadProtectorAdapter(new RsaOaepSha256Cryptor())).WriteAsync(source, file);
+            using var privateMaterial = new AsymmetricPrivateKeyMaterial("id", "RSA", rsa);
+            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["id"] = privateMaterial }))).ReadDocumentAsync(file);
+            Assert.Equal(source.Label, loaded.Label);
+            Assert.Equal(source.Description, loaded.Description);
+            Assert.Equal(source.Comment, loaded.Comment);
+            Assert.Equal(source.CreatedAt, loaded.CreatedAt);
             Assert.Equal(source.Generator, loaded.Generator);
+            Assert.Equal(source.RecipientKeys[0].KeyId, loaded.RecipientKeys[0].KeyId);
+            Assert.Equal(source.RecipientKeys[0].Algorithm, loaded.RecipientKeys[0].Algorithm);
+            Assert.Equal(source.RecipientKeys[0].Comment, loaded.RecipientKeys[0].Comment);
+            Assert.Equal(source.RecipientKeys[0].PublicKeyBytes.ToArray(), loaded.RecipientKeys[0].PublicKeyBytes.ToArray());
         }
-        finally { Delete(file); }
+        finally { if (file.Exists) file.Delete(); }
     }
 
-    /// <summary>CVK 任一段被篡改时，加载器应在解封前拒绝文件。</summary>
     [Fact]
-    public async Task TamperedContainer_IsRejectedByIntegrityCheck()
+    public async Task PasswordDocument_RoundTripsOnlyWithPassword()
     {
-        var file = CreateFile();
+        var file = TempFile();
         try
         {
-            var source = CvkDocument.CreateNew(EncryptionMode.PlainKey);
-            await source.WriteAsync(file);
-            var bytes = Convert.FromBase64String((await File.ReadAllTextAsync(file.FullName)).Trim());
-            bytes[bytes.Length - 40] ^= 0x5A;
-            await File.WriteAllTextAsync(file.FullName, Convert.ToBase64String(bytes));
-
-            await Assert.ThrowsAsync<CryptographicException>(() => CvkLoader.LoadAsync(file));
-        }
-        finally { Delete(file); }
-    }
-
-    [Fact]
-    public async Task ChangePasswordAndPayload_BuildsLoadableDocument()
-    {
-        var file = CreateFile();
-        try
-        {
-            var document = CvkDocument.CreateNew(EncryptionMode.PlainKey);
-            document.Cek = RandomNumberGenerator.GetBytes(32);
-            document.EncryptionMode = EncryptionMode.Password;
-            document.Password = "new-password";
-            await document.WriteAsync(file);
-
-            var loaded = await CvkLoader.LoadAsync(file, "new-password");
-
-            Assert.Equal(document.Cek, loaded.Cek);
-            Assert.Equal(EncryptionMode.Password, loaded.EncryptionMode);
-            Assert.Equal(EncryptionMode.Password, CvkLoader.ReadMode(file.FullName));
-        }
-        finally { Delete(file); }
-    }
-
-    [Fact]
-    public void PublicKeyRecipients_CanBeAddedAndRemoved()
-    {
-        var document = CvkDocument.CreateNew(EncryptionMode.Asymmetric);
-        var first = new FileInfo(Path.Combine(Path.GetTempPath(), "first.pem"));
-        var second = new FileInfo(Path.Combine(Path.GetTempPath(), "second.pem"));
-
-        document.AddPublicKey(first);
-        document.AddPublicKey(first);
-        document.AddPublicKey(second);
-
-        Assert.Equal(2, document.NewPublicKeyFiles.Count);
-        Assert.True(document.RemovePublicKey(first));
-        Assert.Single(document.NewPublicKeyFiles);
-        document.ClearPublicKeys();
-        Assert.Empty(document.NewPublicKeyFiles);
-    }
-
-    [Fact]
-    public async Task SshPrivateKeyDiscovery_OnlyReturnsPairedPrivateKeys()
-    {
-        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-ssh-{Guid.NewGuid()}"));
-        directory.Create();
-        try
-        {
-            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "id_rsa"), "private");
-            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "id_rsa.pub"), "public");
-            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "unpaired"), "private");
-            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "known_hosts"), "host");
-            await File.WriteAllTextAsync(Path.Combine(directory.FullName, "config"), "config");
-
-            var candidates = SshPrivateKeyDiscovery.DiscoverPrivateKeys(directory).ToArray();
-
-            var candidate = Assert.Single(candidates);
-            Assert.Equal("id_rsa", candidate.Name);
-        }
-        finally
-        {
-            try { directory.Delete(true); }
-            catch { }
-        }
-    }
-
-    [Fact]
-    public async Task LoadedPublicKeyRecipients_ArePreservedWithoutTheirPemFiles()
-    {
-        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-recipients-{Guid.NewGuid()}"));
-        directory.Create();
-        try
-        {
-            var firstPublic = new FileInfo(Path.Combine(directory.FullName, "first.pem"));
-            var firstPrivate = new FileInfo(Path.Combine(directory.FullName, "first-private.pem"));
-            var secondPublic = new FileInfo(Path.Combine(directory.FullName, "second.pem"));
-            using (var first = RSA.Create(2048))
-            using (var second = RSA.Create(2048))
-            {
-                await File.WriteAllTextAsync(firstPublic.FullName, first.ExportRSAPublicKeyPem());
-                await File.WriteAllTextAsync(firstPrivate.FullName, first.ExportRSAPrivateKeyPem());
-                await File.WriteAllTextAsync(secondPublic.FullName, second.ExportRSAPublicKeyPem());
-            }
-
-            var source = CvkDocument.CreateNew(EncryptionMode.Asymmetric);
-            source.AddPublicKey(firstPublic);
-            var original = new FileInfo(Path.Combine(directory.FullName, "original.cvk"));
-            await source.WriteAsync(original);
-
-            var loaded = await CvkLoader.LoadAsync(original, privateKeyFile: firstPrivate);
-            Assert.Single(loaded.PublicKeyRecipients);
-            File.Delete(firstPublic.FullName);
-
-            loaded.AddPublicKey(secondPublic);
-            var expanded = new FileInfo(Path.Combine(directory.FullName, "expanded.cvk"));
-            await loaded.WriteAsync(expanded);
-            var reloaded = await CvkLoader.LoadAsync(expanded, privateKeyFile: firstPrivate);
-            Assert.Equal(2, reloaded.PublicKeyRecipients.Count);
-
-            Assert.True(reloaded.RemovePublicKey("second"));
-            var reduced = new FileInfo(Path.Combine(directory.FullName, "reduced.cvk"));
-            await reloaded.WriteAsync(reduced);
-            var final = await CvkLoader.LoadAsync(reduced, privateKeyFile: firstPrivate);
-            Assert.Single(final.PublicKeyRecipients);
-            Assert.Equal("first", final.PublicKeyRecipients[0].KeyId);
-        }
-        finally
-        {
-            try { directory.Delete(true); }
-            catch { }
-        }
-    }
-
-    [Fact]
-    public async Task OpenSshRsaKeyPair_CanCreateAndLoadAsymmetricDocument()
-    {
-        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-openssh-{Guid.NewGuid()}"));
-        directory.Create();
-        try
-        {
-            var publicKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa.pub"));
-            var privateKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa"));
-            using (var rsa = RSA.Create(2048))
-            {
-                var pair = DotNetUtilities.GetRsaKeyPair(rsa);
-                var publicBlob = OpenSshPublicKeyUtilities.EncodePublicKey(pair.Public);
-                var privateBlob = OpenSshPrivateKeyUtilities.EncodePrivateKey(pair.Private);
-                await File.WriteAllTextAsync(publicKey.FullName,
-                    $"ssh-rsa {Convert.ToBase64String(publicBlob)} alice@example.com");
-                await File.WriteAllTextAsync(privateKey.FullName,
-                    $"-----BEGIN OPENSSH PRIVATE KEY-----\n{Convert.ToBase64String(privateBlob)}\n-----END OPENSSH PRIVATE KEY-----\n");
-            }
-
-            var original = CvkDocument.CreateNew(EncryptionMode.Asymmetric);
-            original.AddPublicKey(publicKey);
-            var file = new FileInfo(Path.Combine(directory.FullName, "key.cvk"));
-            await original.WriteAsync(file);
-
-            var loaded = await CvkLoader.LoadAsync(file, privateKeyFile: privateKey);
-
-            Assert.Equal(original.Cek, loaded.Cek);
-            Assert.Equal("alice@example.com", Assert.Single(loaded.PublicKeyRecipients).KeyId);
-        }
-        finally
-        {
-            try { directory.Delete(true); }
-            catch { }
-        }
-    }
-
-    /// <summary>移除 SSH 公钥文件时应使用邮箱注释生成的实际 KeyId。</summary>
-    [Fact]
-    public async Task RemovePublicKey_SshEmailKeyId_UsesResolvedKeyId()
-    {
-        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-remove-{Guid.NewGuid()}"));
-        directory.Create();
-        try
-        {
-            var publicKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa.pub"));
-            var privateKey = new FileInfo(Path.Combine(directory.FullName, "id_rsa.pem"));
-            using (var rsa = RSA.Create(2048))
-            {
-                var pair = DotNetUtilities.GetRsaKeyPair(rsa);
-                await File.WriteAllTextAsync(publicKey.FullName,
-                    $"ssh-rsa {Convert.ToBase64String(OpenSshPublicKeyUtilities.EncodePublicKey(pair.Public))} alice@example.com\n");
-                await File.WriteAllTextAsync(privateKey.FullName, rsa.ExportRSAPrivateKeyPem());
-            }
-
-            var document = CvkDocument.CreateNew(EncryptionMode.Asymmetric);
-            document.AddPublicKey(publicKey);
-            var file = new FileInfo(Path.Combine(directory.FullName, "key.cvk"));
-            await document.WriteAsync(file);
-            var loaded = await CvkLoader.LoadAsync(file, privateKeyFile: privateKey);
-            Assert.True(loaded.RemovePublicKey(publicKey));
-            Assert.Empty(loaded.PublicKeyRecipients);
-        }
-        finally
-        {
-            try { directory.Delete(true); }
-            catch { }
-        }
-    }
-
-    /// <summary>P-256 ECDH 公钥封装应能构建并使用对应私钥解封。</summary>
-    [Fact]
-    public async Task EccP256Document_LoadsWithPrivateKey()
-    {
-        var directory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-ecc-{Guid.NewGuid()}"));
-        directory.Create();
-        try
-        {
-            var publicKey = new FileInfo(Path.Combine(directory.FullName, "device.pem"));
-            var privateKey = new FileInfo(Path.Combine(directory.FullName, "device-private.pem"));
-            using (var key = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256))
-            {
-                await File.WriteAllTextAsync(publicKey.FullName, key.ExportSubjectPublicKeyInfoPem());
-                await File.WriteAllTextAsync(privateKey.FullName, key.ExportECPrivateKeyPem());
-            }
-
-            var source = CvkDocument.CreateNew(EncryptionMode.Asymmetric, EncryptionAlgorithm.Ecc);
-            source.AddPublicKey(publicKey);
-            var file = new FileInfo(Path.Combine(directory.FullName, "ecc.cvk"));
-            await source.WriteAsync(file);
-
-            var loaded = await CvkLoader.LoadAsync(file, privateKeyFile: privateKey);
+            var source = CvkOperations.CreateNew(CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
+            await CvkOperations.WriteAsync(source, file, "correct-password");
+            await Assert.ThrowsAsync<CryptographicException>(() => CvkOperations.LoadAsync(file, "wrong-password"));
+            var loaded = await CvkOperations.LoadAsync(file, "correct-password");
             Assert.Equal(source.Cek, loaded.Cek);
-            Assert.Equal(EncryptionMode.Asymmetric, loaded.EncryptionMode);
-            Assert.Equal(EncryptionAlgorithm.Ecc, loaded.EncryptionAlgorithm);
-            Assert.Equal(EncryptionMode.Asymmetric, CvkLoader.ReadMode(file.FullName));
-            Assert.Equal("device", Assert.Single(loaded.PublicKeyRecipients).KeyId);
+            Assert.Equal(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256, loaded.KeyWrapAlgorithm);
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task PasswordDocument_WithoutPasswordCannotBeLoaded()
+    {
+        var file = TempFile();
+        try
+        {
+            var source = CvkOperations.CreateNew(CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
+            await CvkOperations.WriteAsync(source, file, "secret");
+            await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.LoadAsync(file));
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task PasswordDocument_EmptyPasswordCannotBeWritten()
+    {
+        var file = TempFile();
+        try
+        {
+            var source = CvkOperations.CreateNew(CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
+            await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.WriteAsync(source, file, ""));
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task PublicDocument_WithoutRecipientsCannotBeWritten()
+    {
+        var file = TempFile();
+        try
+        {
+            var source = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
+            await Assert.ThrowsAsync<InvalidDataException>(() => CvkOperations.WriteAsync(source, file));
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public async Task Tampering_IsRejectedByIntegrityCheck()
+    {
+        var file = TempFile();
+        try
+        {
+            await CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file);
+            var bytes = await File.ReadAllBytesAsync(file.FullName);
+            bytes[^1] ^= 0x01;
+            await File.WriteAllBytesAsync(file.FullName, bytes);
+            await Assert.ThrowsAsync<CryptographicException>(() => CvkOperations.LoadAsync(file));
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Theory]
+    [InlineData(16)]
+    public async Task HeaderTampering_IsRejected(int relativeOffset)
+    {
+        await AssertTamperedFileAsync(bytes => { bytes[relativeOffset] ^= 1; return bytes; });
+    }
+
+    [Fact]
+    public async Task KeyBodyTampering_IsRejected()
+    {
+        await AssertTamperedFileAsync(bytes =>
+        {
+            var headerLength = BitConverter.ToUInt32(bytes, 4);
+            bytes[checked((int)(16 + headerLength))] ^= 1;
+            return bytes;
+        });
+    }
+
+    [Fact]
+    public async Task IntegrityLengthTampering_IsRejected()
+    {
+        await AssertTamperedFileAsync(bytes => { bytes[12] = 0; return bytes; });
+    }
+
+    [Fact]
+    public async Task TruncatedFile_IsRejected()
+    {
+        await AssertTamperedFileAsync(bytes => bytes[..^1]);
+    }
+
+    [Fact]
+    public async Task AppendedFile_IsRejected()
+    {
+        await AssertTamperedFileAsync(bytes => [.. bytes, (byte)0]);
+    }
+
+    [Fact]
+    public void Credentials_RejectInvalidCekLength()
+    {
+        Assert.Throws<ArgumentException>(() => new CvkCredentials(CvkKeyProtection.Plain, new byte[31]));
+    }
+
+    [Fact]
+    public void Credentials_RejectUndefinedRouteValues()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CvkCredentials((CvkKeyProtection)99, new byte[32], CvkKeyWrapAlgorithm.None));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CvkCredentials(CvkKeyProtection.Plain, new byte[32], (CvkKeyWrapAlgorithm)99));
+    }
+
+    [Fact]
+    public void Parser_RejectsInvalidMagic()
+    {
+        Assert.Throws<InvalidDataException>(() => CrypVol.Lib.Crypto.Reading.CvkParser.Parse("bad"u8.ToArray()));
+    }
+
+    [Theory]
+    [InlineData(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None)]
+    [InlineData(CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256)]
+    [InlineData(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256)]
+    public void CreateNew_InitializesExpectedCredentials(CvkKeyProtection protection, CvkKeyWrapAlgorithm algorithm)
+    {
+        var document = CvkOperations.CreateNew(protection, algorithm);
+        Assert.Equal(32, document.Cek.Length);
+        Assert.Equal(protection, document.KeyProtection);
+        Assert.Equal(protection == CvkKeyProtection.Plain ? CvkKeyWrapAlgorithm.None : algorithm, document.KeyWrapAlgorithm);
+        Assert.NotNull(document.CreatedAt);
+        Assert.Equal("CrypVol", document.Generator);
+    }
+
+    [Fact]
+    public void ToCredentials_CopiesCekAndRoute()
+    {
+        var document = CvkOperations.CreateNew(CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
+        var credentials = CvkOperations.ToCredentials(document);
+        Assert.Equal(document.Cek, credentials.Cek.ToArray());
+        Assert.Equal(document.KeyProtection, credentials.KeyProtection);
+        Assert.Equal(document.KeyWrapAlgorithm, credentials.KeyWrapAlgorithm);
+    }
+
+    [Fact]
+    public void Credentials_DefensivelyCopiesCek()
+    {
+        var source = new byte[32];
+        source[0] = 7;
+        var credentials = new CvkCredentials(CvkKeyProtection.Plain, source);
+        source[0] = 9;
+        Assert.Equal(7, credentials.Cek.Span[0]);
+    }
+
+    [Fact]
+    public void AddPublicKey_PersistsMaterialAndSupportsCustomId()
+    {
+        using var rsa = RSA.Create(2048);
+        var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-key-{Guid.NewGuid():N}.pub"));
+        try
+        {
+            File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
+            var document = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
+            CvkOperations.AddPublicKey(document, file, "recipient-1");
+            Assert.Single(document.RecipientKeys);
+            Assert.Equal("recipient-1", document.RecipientKeys[0].KeyId);
+            Assert.Equal("RSA", document.RecipientKeys[0].Algorithm);
+        }
+        finally { if (file.Exists) file.Delete(); }
+    }
+
+    [Fact]
+    public void AddPublicKey_StringOverload_RejectsMissingFile()
+    {
+        var document = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var path = Path.Combine(Path.GetTempPath(), $"missing-key-{Guid.NewGuid():N}.pub");
+        Assert.Throws<FileNotFoundException>(() => CvkOperations.AddPublicKey(document, path));
+    }
+
+    [Fact]
+    public async Task Operations_LoadAsync_UsesPrivateKeyForPublicMode()
+    {
+        using var rsa = RSA.Create(2048);
+        var document = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
+        document.RecipientKeys.Add(new AsymmetricRecipientKey("receiver", "RSA", rsa.ExportSubjectPublicKeyInfo()));
+        var cvkFile = TempFile();
+        var privateFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-private-{Guid.NewGuid():N}.pem"));
+        try
+        {
+            await CvkOperations.WriteAsync(document, cvkFile);
+            await File.WriteAllTextAsync(privateFile.FullName, rsa.ExportPkcs8PrivateKeyPem());
+            var loaded = await CvkOperations.LoadAsync(cvkFile, null, privateFile, null, CancellationToken.None);
+            Assert.Equal(document.Cek, loaded.Cek);
         }
         finally
         {
-            try { directory.Delete(true); }
-            catch { }
+            if (cvkFile.Exists) cvkFile.Delete();
+            if (privateFile.Exists) privateFile.Delete();
         }
     }
 
-    private static FileInfo CreateFile()
+    [Fact]
+    public async Task Operations_WriteAndLoad_HonorCancellation()
     {
-        return new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-document-{Guid.NewGuid()}.cvk"));
+        var file = TempFile();
+        try
+        {
+            var document = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CvkOperations.WriteAsync(document, file, cts.Token));
+            Assert.False(file.Exists);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CvkOperations.LoadAsync(file, null, cts.Token));
+        }
+        finally { if (file.Exists) file.Delete(); }
     }
 
-    private static void Delete(FileInfo file)
+    [Fact]
+    public async Task Write_CreatesMissingNestedDirectoryAtomically()
     {
-        try { file.Delete(); }
-        catch { }
+        var root = Path.Combine(Path.GetTempPath(), $"cvk-dir-{Guid.NewGuid():N}");
+        var file = new FileInfo(Path.Combine(root, "nested", "data.cvk"));
+        try
+        {
+            await CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file);
+            Assert.True(file.Exists);
+            Assert.NotNull(await CvkOperations.LoadAsync(file));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static FileInfo TempFile() => new(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}.cvk"));
+
+    private static async Task AssertTamperedFileAsync(Func<byte[], byte[]> mutate)
+    {
+        var file = TempFile();
+        try
+        {
+            await CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file);
+            var bytes = await File.ReadAllBytesAsync(file.FullName);
+            bytes = mutate(bytes);
+            await File.WriteAllBytesAsync(file.FullName, bytes);
+            await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.LoadAsync(file));
+        }
+        finally { if (file.Exists) file.Delete(); }
     }
 }

@@ -1,8 +1,8 @@
 using System.CommandLine;
+using CrypVol.Lib.Crypto;
 using System.Text;
 using System.Text.Json;
-using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Crypto.Container;
+using CrypVol.Lib.Crypto.Reading;
 using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -43,11 +43,11 @@ public static class BrowseHelper
         if (keyFile is not null)
             try
             {
-                var cvk = await CvkLoader.LoadAsync(keyFile,
+                var cvk = await CvkOperations.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Browse.Password),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKey),
                     args.GetValue(CommandDefinition.Browse.PrivkeyKeyPass), token, logger);
-                creds = cvk.ToCredentials();
+                creds = CvkOperations.ToCredentials(cvk);
             }
             catch (Exception ex)
             {
@@ -55,7 +55,7 @@ public static class BrowseHelper
                 return 1;
             }
         else
-            creds = new CvkCredentials(EncryptionMode.None, null!);
+            creds = new CvkCredentials(CvkKeyProtection.Plain, ReadOnlyMemory<byte>.Empty);
 
         // 2. Engine
         var engine = new CrypVolHelper

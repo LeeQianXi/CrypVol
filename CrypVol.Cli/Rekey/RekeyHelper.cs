@@ -1,157 +1,39 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Crypto.Container;
 using CrypVol.Lib.Crypto.Models;
-using CrypVol.Lib.Utility;
 
 namespace CrypVol.Cli.Rekey;
 
+/// <summary>将现有 CVK 重新封装到另一种保护模式。</summary>
 public static class RekeyHelper
 {
     public static async Task<int> Invoker(ParseResult args, CancellationToken token)
     {
-        var cvkFile = args.GetRequiredValue(CommandDefinition.Rekey.CvkFile);
-        var toMode = args.GetValue(CommandDefinition.Rekey.ToMode);
-        var requestedAlgorithm = args.GetValue(CommandDefinition.Rekey.Algorithm);
-        var newPassword = args.GetValue(CommandDefinition.Rekey.NewPassword);
-        var publicKeys = args.GetValue(CommandDefinition.Rekey.PublicKey)?.ToList() ?? [];
-        var logger = Program.LoggerFactory.CreateLogger(nameof(RekeyHelper));
-
-        // 1. 加载完整文档，保留注释和已有的公钥接收者槽位。
-        CvkDocument document;
+        var source = args.GetRequiredValue(CommandDefinition.Rekey.CvkFile);
+        var mode = args.GetValue(CommandDefinition.Rekey.ToMode);
+        var password = args.GetValue(CommandDefinition.Rekey.NewPassword);
+        var output = args.GetValue(CommandDefinition.Rekey.Output) ?? source;
         try
         {
-            document = await CvkLoader.LoadAsync(cvkFile,
-                args.GetValue(CommandDefinition.Rekey.Password),
-                args.GetValue(CommandDefinition.Rekey.PrivkeyKey),
-                args.GetValue(CommandDefinition.Rekey.PrivkeyKeyPass), token, logger);
+            if (mode == CvkKeyProtection.Password && string.IsNullOrWhiteSpace(password)) throw new ArgumentException("Password 模式需要 --new-password。");
+            var document = await CvkOperations.LoadAsync(source, args.GetValue(CommandDefinition.Rekey.Password), token);
+            document.KeyProtection = mode;
+            document.KeyWrapAlgorithm = mode switch
+            {
+                CvkKeyProtection.Plain => CvkKeyWrapAlgorithm.None,
+                CvkKeyProtection.Password => CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256,
+                _ => args.GetValue(CommandDefinition.Rekey.Algorithm) ?? CvkKeyWrapAlgorithm.RsaOaepSha256
+            };
+            if (mode != CvkKeyProtection.PublicKey) document.RecipientKeys.Clear();
+            foreach (var key in args.GetValue(CommandDefinition.Rekey.PublicKey) ?? []) CvkOperations.AddPublicKey(document, key);
+            await CvkOperations.WriteAsync(document, output, password, token);
+            Console.WriteLine($"密钥已重新封装 → {output.FullName}");
+            return 0;
         }
         catch (Exception ex)
         {
-            await Console.Error.WriteLineAsync($"无法加载 CVK: {ex.Message}");
+            await Console.Error.WriteLineAsync($"无法重新封装 CVK: {ex.Message}");
             return 1;
         }
-
-        // 2. 在任何写入前完成参数校验并构建内容，避免无效参数造成备份或覆写。
-        if (toMode is EncryptionMode.None || !Enum.IsDefined(toMode))
-        {
-            await Console.Error.WriteLineAsync("rekey 的目标模式必须是 PlainKey、Password、Asymmetric 或 Ecc。");
-            return 1;
-        }
-
-        if (toMode == EncryptionMode.Password && string.IsNullOrWhiteSpace(newPassword))
-        {
-            await Console.Error.WriteLineAsync("Password 模式需要 --new-password。");
-            return 1;
-        }
-
-        if (toMode != EncryptionMode.Password && !string.IsNullOrWhiteSpace(newPassword))
-        {
-            await Console.Error.WriteLineAsync("--new-password 仅可与 --to-mode Password 一起使用。");
-            return 1;
-        }
-
-        if (toMode != EncryptionMode.Asymmetric && publicKeys.Count > 0)
-        {
-            await Console.Error.WriteLineAsync("--public-key 仅可与公钥封装模式一起使用。");
-            return 1;
-        }
-
-        var output = args.GetValue(CommandDefinition.Rekey.Output);
-        var outputFile = output ?? cvkFile;
-        var sameAsSource = string.Equals(Path.GetFullPath(outputFile.FullName), Path.GetFullPath(cvkFile.FullName),
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-        if (!sameAsSource && outputFile.Exists)
-        {
-            await Console.Error.WriteLineAsync($"输出文件已存在：{outputFile.FullName}");
-            return 1;
-        }
-
-        var sourceMode = document.EncryptionMode;
-        var sourceAlgorithm = document.EncryptionAlgorithm;
-        var targetAlgorithm = requestedAlgorithm ?? sourceAlgorithm;
-        if (targetAlgorithm == EncryptionAlgorithm.Ecc && toMode != EncryptionMode.Asymmetric)
-        {
-            await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --to-mode Asymmetric 一起使用。");
-            return 1;
-        }
-        document.EncryptionMode = toMode;
-        switch (toMode)
-        {
-            case EncryptionMode.PlainKey:
-                document.Password = null;
-                document.ClearPublicKeys();
-                break;
-            case EncryptionMode.Password:
-                document.Password = newPassword;
-                document.ClearPublicKeys();
-                break;
-            case EncryptionMode.Asymmetric:
-                document.Password = null;
-                document.EncryptionAlgorithm = targetAlgorithm;
-                // RSA 与 ECC 接收者槽位格式不同，跨算法切换时不能复用旧槽位。
-                if (sourceMode != toMode || sourceAlgorithm != targetAlgorithm)
-                    document.ClearPublicKeys();
-                foreach (var publicKey in publicKeys) document.AddPublicKey(publicKey);
-                if (document.PublicKeyRecipients.Count == 0 && document.NewPublicKeyFiles.Count == 0)
-                {
-                    await Console.Error.WriteLineAsync("公钥模式至少需要一个现有或通过 --public-key 指定的接收者。");
-                    return 1;
-                }
-
-                break;
-        }
-
-        string contents;
-        try
-        {
-            contents = document.BuildBase64();
-        }
-        catch (Exception ex)
-        {
-            await Console.Error.WriteLineAsync($"无法构建 CVK: {ex.Message}");
-            return 1;
-        }
-
-        // 3. 在全部预检通过后备份，并通过同目录临时文件替换目标，避免半写入的 CVK。
-        var backupFile = new FileInfo(cvkFile.FullName + ".bak");
-        if (args.GetValue(CommandDefinition.Rekey.Backup))
-        {
-            if (backupFile.Exists)
-            {
-                await Console.Error.WriteLineAsync($"备份文件已存在，拒绝覆盖：{backupFile.FullName}");
-                return 1;
-            }
-
-            try
-            {
-                File.Copy(cvkFile.FullName, backupFile.FullName);
-            }
-            catch (Exception ex)
-            {
-                await Console.Error.WriteLineAsync($"无法创建备份: {ex.Message}");
-                return 1;
-            }
-        }
-
-        var outputDirectory = outputFile.Directory;
-        if (outputDirectory is null)
-        {
-            await Console.Error.WriteLineAsync("输出文件路径无效。");
-            return 1;
-        }
-
-        try
-        {
-            await AtomicFile.WriteTextAsync(outputFile.FullName, contents, token);
-        }
-        catch (Exception ex)
-        {
-            await Console.Error.WriteLineAsync($"无法写入 CVK: {ex.Message}");
-            return 1;
-        }
-
-        Console.WriteLine($"密钥已重新封装 → {outputFile.FullName}");
-        return 0;
     }
 }
