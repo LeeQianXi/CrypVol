@@ -7,13 +7,14 @@ namespace CrypVol.Lib.Engine.Processors;
 /// <summary>仅负责使用 AES-GCM 加密数据块并附加可选 CRC32。</summary>
 public sealed class EncryptionProcessor : DataProcessorBase
 {
-    private readonly byte[] _cek;
+    private readonly ReadOnlyMemory<byte> _cek;
 
     /// <summary>创建加密处理器。</summary>
     /// <param name="cek">内容加密密钥。</param>
-    public EncryptionProcessor(byte[] cek)
+    public EncryptionProcessor(ReadOnlyMemory<byte> cek)
     {
-        _cek = cek ?? throw new ArgumentNullException(nameof(cek));
+        if (cek.Length != 32) throw new ArgumentException("CEK 必须是 32 字节。", nameof(cek));
+        _cek = cek.ToArray();
     }
 
     /// <inheritdoc />
@@ -23,7 +24,7 @@ public sealed class EncryptionProcessor : DataProcessorBase
         var nonce = RandomNumberGenerator.GetBytes(12);
         var ciphertext = new byte[block.Length];
         var tag = new byte[16];
-        using var aes = new AesGcm(_cek, 16);
+        using var aes = new AesGcm(_cek.Span, 16);
         aes.Encrypt(nonce, block.Data.Span, ciphertext, tag);
 
         var length = nonce.Length + ciphertext.Length + tag.Length;

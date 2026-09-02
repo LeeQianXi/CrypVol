@@ -1,4 +1,4 @@
-using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;
@@ -119,17 +119,6 @@ public class BrowseOutputModeTests
     public void BrowseSortField_HasAllValues()
     {
         Assert.Equal(3, Enum.GetValues<BrowseSortField>().Length);
-    }
-}
-
-public class EnvelopeModeTests
-{
-    [Fact]
-    public void EnvelopeMode_Values()
-    {
-        Assert.Equal(0, (byte)EnvelopeMode.Plain);
-        Assert.Equal(1, (byte)EnvelopeMode.Password);
-        Assert.Equal(2, (byte)EnvelopeMode.PublicKey);
     }
 }
 

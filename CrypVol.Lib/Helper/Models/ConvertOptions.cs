@@ -1,4 +1,4 @@
-using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Models;
 
 namespace CrypVol.Lib.Helper.Models;
 

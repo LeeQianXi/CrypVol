@@ -59,14 +59,16 @@ crypvol pack --help
 
 ### CVK 密钥文件
 
-`.cvk` 是 Base64 编码的 `KEY0` v1 密钥信封，保存 32 字节 CEK 的封装结果与可选注释。CVK 管理在引擎外由 `CvkDocument` 完成：加载后可修改保护模式、密码、公钥接收者和注释，再重新构建保存。
+`.cvk` 是 Base64 编码的 CVK v3 容器，由固定 Header、明文 Metadata、密钥体（KeyBody）和 SHA-256 校验体组成。加载器先验证长度与校验体，再根据 Metadata 中的保护模式和算法自动选择解封路线。CVK 管理在引擎外由 `CvkDocument` 完成：加载后可修改保护模式、算法、密码、公钥接收者和元数据，再原子写入保存。
 
 | 模式 | CEK 的保存方式 | 使用时所需凭据 |
 | --- | --- | --- |
 | `None` | 不加密数据，也不生成 CVK | 无 |
-| `PlainKey` | CEK 直接写入 CVK | CVK 文件本身 |
+| `PlainKey` | CEK 写入明文密钥体 | CVK 文件本身 |
 | `Password` | 使用 Argon2id 派生密钥后，以 AES-256-GCM 封装 CEK | CVK + 密码 |
-| `Asymmetric` | 随机 DEK 由一个或多个 RSA 公钥封装，DEK 再以 AES-256-GCM 封装 CEK | CVK + 任一匹配私钥 |
+| `Asymmetric` | 随机 DEK 由一个或多个公钥封装，DEK 再以 AES-256-GCM 封装 CEK | CVK + 任一匹配私钥 |
+
+保护模式与算法是两个独立字段：`EncryptionMode` 只描述 CEK 如何被保护；`EncryptionAlgorithm` 描述公钥密钥体使用的算法（`AesGcm` 或 `Ecc`，其中 `Ecc` 为 P-256 ECDH）。例如 ECC CVK 使用 `--mode Asymmetric --algorithm Ecc`，而不是把 ECC 当作一种保护模式。
 
 `PlainKey` 仅适用于你能够安全存放 `.cvk` 文件的场景。密码、私钥和明文 CVK 都应视为敏感信息，不要提交到版本库或随数据卷一同公开分发。
 

@@ -11,6 +11,8 @@
         <RepositoryUrl>https://github.com/LeeQianXi/CrypVol</RepositoryUrl>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
         <NeutralLanguage>zh-Hans</NeutralLanguage>
+        <!-- CVK JSON 模型支持 self-contained 发布环境；保留运行时反射序列化能力。 -->
+        <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     </PropertyGroup>
 
     <ItemGroup>

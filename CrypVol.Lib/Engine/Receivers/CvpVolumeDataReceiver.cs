@@ -12,16 +12,16 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
 
     /// <summary>创建 CVP 卷接收阶段。</summary>
     /// <param name="cek">加密卷头所用 CEK；明文卷传 <see langword="null" />。</param>
-    public CvpFileReciver(byte[]? cek)
+    public CvpFileReciver(ReadOnlyMemory<byte>? cek)
     {
-        _cek = cek;
+        _cek = cek?.ToArray();
     }
 
     /// <summary>创建可按目标卷编号动态生成输出路径的 CVP 卷接收阶段。</summary>
     /// <param name="cek">加密卷头所用 CEK；明文卷传 <see langword="null" />。</param>
     /// <param name="outputDirectory">输出目录。</param>
     /// <param name="outputPrefix">输出卷文件名前缀。</param>
-    public CvpFileReciver(byte[]? cek, string outputDirectory, string outputPrefix)
+    public CvpFileReciver(ReadOnlyMemory<byte>? cek, string outputDirectory, string outputPrefix)
         : this(cek, index => Path.Combine(
             outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory)),
             $"{outputPrefix ?? throw new ArgumentNullException(nameof(outputPrefix))}.{index}.cvp"))
@@ -31,9 +31,9 @@ public sealed class CvpFileReciver : VolumeDataReceiverBase
     /// <summary>创建可按目标卷编号动态生成输出路径的 CVP 卷接收阶段。</summary>
     /// <param name="cek">加密卷头所用 CEK；明文卷传 <see langword="null" />。</param>
     /// <param name="outputPathFactory">根据目标卷编号生成输出路径的工厂。</param>
-    public CvpFileReciver(byte[]? cek, Func<int, string> outputPathFactory)
+    public CvpFileReciver(ReadOnlyMemory<byte>? cek, Func<int, string> outputPathFactory)
     {
-        _cek = cek;
+        _cek = cek?.ToArray();
         _outputPathFactory = outputPathFactory ?? throw new ArgumentNullException(nameof(outputPathFactory));
     }
 

@@ -1,5 +1,6 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
@@ -41,11 +42,11 @@ public static class ExtractHelper
         if (keyFile is not null)
             try
             {
-                var cvk = await CvkLoader.LoadAsync(keyFile,
+                var cvk = await CvkOperations.LoadAsync(keyFile,
                     args.GetValue(CommandDefinition.Extract.Password),
                     args.GetValue(CommandDefinition.Extract.PrivkeyKey),
                     args.GetValue(CommandDefinition.Extract.PrivkeyKeyPass), token, logger);
-                creds = cvk.ToCredentials();
+                creds = CvkOperations.ToCredentials(cvk);
             }
             catch (Exception ex)
             {
@@ -53,7 +54,7 @@ public static class ExtractHelper
                 return 1;
             }
         else
-            creds = new CvkCredentials(EncryptionMode.None, null!);
+            creds = new CvkCredentials(CvkKeyProtection.Plain, ReadOnlyMemory<byte>.Empty);
 
         // 3. Engine（最昂贵的 I/O+计算）
         var engine = new CrypVolHelper

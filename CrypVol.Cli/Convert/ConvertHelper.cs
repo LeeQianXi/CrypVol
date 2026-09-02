@@ -1,5 +1,6 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Volume;
@@ -40,11 +41,11 @@ public static class ConvertHelper
         if (oldKeyFile is not null)
             try
             {
-                var cvk = await CvkLoader.LoadAsync(oldKeyFile,
+                var cvk = await CvkOperations.LoadAsync(oldKeyFile,
                     args.GetValue(CommandDefinition.Convert.OldPassword),
                     args.GetValue(CommandDefinition.Convert.OldPrivkey),
                     args.GetValue(CommandDefinition.Convert.OldPrivkeyPass), token, logger);
-                oldCreds = cvk.ToCredentials();
+                oldCreds = CvkOperations.ToCredentials(cvk);
             }
             catch (Exception ex)
             {
@@ -52,7 +53,7 @@ public static class ConvertHelper
                 return 1;
             }
         else
-            oldCreds = new CvkCredentials(EncryptionMode.None, null!);
+            oldCreds = new CvkCredentials(CvkKeyProtection.Plain, ReadOnlyMemory<byte>.Empty);
 
         // 3. 目标必须是已有 CVK。禁止在未指定密钥时静默降级为明文。
         var newKeyFile = args.GetValue(CommandDefinition.Convert.KeyFile);
@@ -65,11 +66,11 @@ public static class ConvertHelper
         CvkCredentials newCreds;
         try
         {
-            var cvk = await CvkLoader.LoadAsync(newKeyFile,
+            var cvk = await CvkOperations.LoadAsync(newKeyFile,
                 args.GetValue(CommandDefinition.Convert.Password),
                 args.GetValue(CommandDefinition.Convert.PrivkeyKey),
                 args.GetValue(CommandDefinition.Convert.PrivkeyKeyPass), token, logger);
-            newCreds = cvk.ToCredentials();
+            newCreds = CvkOperations.ToCredentials(cvk);
         }
         catch (Exception ex)
         {
