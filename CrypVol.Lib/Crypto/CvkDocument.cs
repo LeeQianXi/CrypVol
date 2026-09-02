@@ -1,9 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Konscious.Security.Cryptography;
 using CrypVol.Lib.Utility;
 
 namespace CrypVol.Lib.Crypto;
@@ -200,30 +197,8 @@ public sealed class CvkDocument
 
     private void WritePasswordPayload(BinaryWriter writer)
     {
-        if (string.IsNullOrWhiteSpace(Password))
-            throw new InvalidOperationException("密码封装模式必须提供密码。");
-
-        var salt = RandomNumberGenerator.GetBytes(16);
-        const uint iterations = 3, memorySize = 65536, parallelism = 1;
-        using var argon = new Argon2id(Encoding.UTF8.GetBytes(Password))
-        {
-            Salt = salt,
-            DegreeOfParallelism = (int)parallelism,
-            MemorySize = (int)memorySize,
-            Iterations = (int)iterations
-        };
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var ciphertext = new byte[32];
-        var tag = new byte[16];
-        using var aes = new AesGcm(argon.GetBytes(32), 16);
-        aes.Encrypt(nonce, Cek.Span, ciphertext, tag);
-        writer.Write(salt);
-        writer.Write(BinaryPrimitives.ReverseEndianness(iterations));
-        writer.Write(BinaryPrimitives.ReverseEndianness(memorySize));
-        writer.Write(BinaryPrimitives.ReverseEndianness(parallelism));
-        writer.Write(nonce);
-        writer.Write(tag);
-        writer.Write(ciphertext);
+        var payload = PasswordKeyProtector.Protect(Cek.Span, Password);
+        writer.Write(payload);
     }
 
     private void WritePublicKeyPayload(BinaryWriter writer)

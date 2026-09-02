@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using Konscious.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Lib.Crypto;
@@ -10,10 +8,6 @@ namespace CrypVol.Lib.Crypto;
 /// <summary>CVK v3 加载器：先验证容器，再按明文元数据选择密钥体解封路线。</summary>
 public static class CvkLoader
 {
-    private const uint MinArgonMemoryKiB = 8 * 1024;
-    private const uint MaxArgonMemoryKiB = 512 * 1024;
-    private const uint MaxArgonIterations = 10;
-    private const uint MaxArgonParallelism = 16;
     private const ushort MaxRecipientCiphertextLength = 4096;
 
     /// <summary>读取 CVK 明文元数据中的保护模式。</summary>
@@ -61,7 +55,8 @@ public static class CvkLoader
                 document = new CvkDocument(ReadExact(reader, 32, end, "CEK"), metadata.ProtectionMode, metadata.Algorithm);
                 break;
             case EncryptionMode.Password:
-                document = new CvkDocument(ReadPasswordPayload(reader, password, end), metadata.ProtectionMode, metadata.Algorithm);
+                document = new CvkDocument(PasswordKeyProtector.Unprotect(keyBody, password), metadata.ProtectionMode, metadata.Algorithm);
+                reader.BaseStream.Position = end;
                 break;
             case EncryptionMode.Asymmetric when metadata.Algorithm == EncryptionAlgorithm.Ecc:
                 var ecc = await ReadEccPayloadAsync(reader, privateKeyFile, end, cancellationToken, logger);
@@ -80,26 +75,6 @@ public static class CvkLoader
         return document;
     }
 
-    private static byte[] ReadPasswordPayload(BinaryReader reader, string? password, long end)
-    {
-        if (string.IsNullOrWhiteSpace(password)) throw new InvalidOperationException("密钥受密码保护，请提供密码。");
-        var salt = ReadExact(reader, 16, end, "Argon2 salt");
-        var iterations = BinaryPrimitives.ReverseEndianness(ReadUInt32(reader, end, "Argon2 iterations"));
-        var memory = BinaryPrimitives.ReverseEndianness(ReadUInt32(reader, end, "Argon2 memory"));
-        var parallelism = BinaryPrimitives.ReverseEndianness(ReadUInt32(reader, end, "Argon2 parallelism"));
-        ValidateArgonParameters(iterations, memory, parallelism);
-        var nonce = ReadExact(reader, 12, end, "密码 nonce");
-        var tag = ReadExact(reader, 16, end, "密码 tag");
-        var ciphertext = ReadExact(reader, 32, end, "密码密文");
-        using var argon = new Argon2id(Encoding.UTF8.GetBytes(password))
-        {
-            Salt = salt, DegreeOfParallelism = (int)parallelism, MemorySize = (int)memory, Iterations = (int)iterations
-        };
-        var cek = new byte[32];
-        using var aes = new AesGcm(argon.GetBytes(32), 16);
-        aes.Decrypt(nonce, ciphertext, tag, cek);
-        return cek;
-    }
 
     private static async Task<PublicKeyPayload> ReadRsaPayloadAsync(BinaryReader reader, FileInfo? privateKeyFile,
         string? privateKeyPassword, long end, CancellationToken cancellationToken, ILogger? logger)
@@ -222,13 +197,6 @@ public static class CvkLoader
         }
     }
 
-    private static void ValidateArgonParameters(uint iterations, uint memory, uint parallelism)
-    {
-        if (iterations is 0 or > MaxArgonIterations || memory is < MinArgonMemoryKiB or > MaxArgonMemoryKiB ||
-            parallelism is 0 or > MaxArgonParallelism)
-            throw new InvalidDataException("CVK Argon2 参数超出允许范围。");
-    }
-
     private static byte[] ReadExact(BinaryReader reader, int count, long end, string field)
     {
         if (count < 0 || reader.BaseStream.Position + count > end) throw new InvalidDataException($"CVK {field}超出边界。");
@@ -239,8 +207,6 @@ public static class CvkLoader
 
     private static byte ReadByte(BinaryReader reader, long end, string field) => ReadExact(reader, 1, end, field)[0];
     private static ushort ReadUInt16(BinaryReader reader, long end, string field) => BinaryPrimitives.ReadUInt16LittleEndian(ReadExact(reader, 2, end, field));
-    private static uint ReadUInt32(BinaryReader reader, long end, string field) => BinaryPrimitives.ReadUInt32LittleEndian(ReadExact(reader, 4, end, field));
-
     private sealed record PublicKeyPayload(byte[] Cek, byte[] Dek, IReadOnlyList<CvkPublicKeyRecipient> Recipients);
 }
 
