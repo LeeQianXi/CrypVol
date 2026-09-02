@@ -71,12 +71,39 @@ public sealed class CvkWriter
 
     private static void Validate(CvkDocument document)
     {
-        if (document.Cek is null || document.Cek.Length == 0)
-            throw new InvalidDataException("CVK 必须包含 CEK。");
+        if (document.Cek is null || document.Cek.Length != 32)
+            throw new InvalidDataException("CVK 的 CEK 必须恰好为 32 字节。");
         if (document.Version == 0)
             throw new InvalidDataException("CVK 版本必须大于 0。");
-        if (document.KeyProtection == CvkKeyProtection.Plain && document.KeyWrapAlgorithm != CvkKeyWrapAlgorithm.None)
-            throw new InvalidDataException("Plain 模式必须使用 None 封装算法。");
+        var routeValid = document.KeyProtection switch
+        {
+            CvkKeyProtection.Plain => document.KeyWrapAlgorithm == CvkKeyWrapAlgorithm.None,
+            CvkKeyProtection.Password => document.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256
+                or CvkKeyWrapAlgorithm.PasswordArgon2Id,
+            CvkKeyProtection.PublicKey => document.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.RsaOaepSha256
+                or CvkKeyWrapAlgorithm.RsaOaepSha384
+                or CvkKeyWrapAlgorithm.RsaOaepSha512
+                or CvkKeyWrapAlgorithm.EcdhP256
+                or CvkKeyWrapAlgorithm.EcdhP384
+                or CvkKeyWrapAlgorithm.EcdhP521,
+            _ => false
+        };
+        if (!routeValid)
+            throw new InvalidDataException("CVK 保护模式与封装算法不匹配或未定义。");
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var recipient in document.RecipientKeys)
+        {
+            if (recipient is null)
+                throw new InvalidDataException("接收者记录不能为 null。");
+            if (string.IsNullOrWhiteSpace(recipient.KeyId))
+                throw new InvalidDataException("接收者 KeyId 不能为空。");
+            if (!ids.Add(recipient.KeyId))
+                throw new InvalidDataException($"接收者 KeyId 重复：{recipient.KeyId}。");
+            if (recipient.PublicKeyBytes.IsEmpty)
+                throw new InvalidDataException("接收者公钥不能为空。");
+        }
+
         switch (document)
         {
             case

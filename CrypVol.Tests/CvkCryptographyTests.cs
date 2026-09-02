@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 using CrypVol.Lib.Crypto.Cryptography;
 using CrypVol.Lib.Crypto.Keys;
 using CrypVol.Lib.Crypto.Models;
@@ -22,6 +23,21 @@ public sealed class CvkCryptographyTests
     {
         Assert.Throws<ArgumentException>(() => new PasswordPbkdf2Sha256Cryptor(string.Empty));
         Assert.Throws<ArgumentException>(() => new PasswordArgon2IdCryptor(string.Empty));
+        Assert.Throws<ArgumentException>(() => new PasswordPbkdf2Sha256Cryptor(null!));
+        Assert.Throws<ArgumentException>(() => new PasswordArgon2IdCryptor(null!));
+    }
+
+    [Fact]
+    public async Task PasswordCryptors_AcceptWhitespacePassword()
+    {
+        var cryptor = new PasswordPbkdf2Sha256Cryptor(" ");
+        var header = Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
+        var payload = Payload();
+        var body = await cryptor.ProtectAsync(header, payload);
+
+        var restored = await new PasswordPbkdf2Sha256Cryptor(" ").UnprotectAsync(header, body);
+
+        Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
     }
 
     [Fact]
@@ -34,6 +50,35 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
+    public async Task PayloadAdapters_ForwardArgumentsAndResultsWithoutMutation()
+    {
+        var inner = new RecordingCryptor();
+        var protector = new CvkPayloadProtectorAdapter(inner);
+        var unprotector = new CvkPayloadUnprotectorAdapter(inner);
+        var header = Header(CvkKeyWrapAlgorithm.None);
+        var payload = Payload();
+        var token = new CancellationTokenSource().Token;
+
+        var body = await protector.ProtectAsync(header, payload, token);
+        var restored = await unprotector.UnprotectAsync(header, body, token);
+
+        Assert.Same(header, inner.ProtectHeader);
+        Assert.Same(payload, inner.ProtectPayload);
+        Assert.Equal(token, inner.ProtectToken);
+        Assert.Same(header, inner.UnprotectHeader);
+        Assert.Equal(body.ToArray(), inner.UnprotectBody);
+        Assert.Equal(token, inner.UnprotectToken);
+        Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
+    }
+
+    [Fact]
+    public void PayloadAdapters_RejectNullInnerCryptor()
+    {
+        Assert.Throws<ArgumentNullException>(() => new CvkPayloadProtectorAdapter(null!));
+        Assert.Throws<ArgumentNullException>(() => new CvkPayloadUnprotectorAdapter(null!));
+    }
+
+    [Fact]
     public async Task PasswordPbkdf2_RoundTrips()
     {
         var cryptor = new PasswordPbkdf2Sha256Cryptor("correct horse battery staple");
@@ -42,6 +87,46 @@ public sealed class CvkCryptographyTests
         var body = await cryptor.ProtectAsync(header, payload);
         var restored = await cryptor.UnprotectAsync(header, body);
         Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
+    }
+
+    [Fact]
+    public async Task PasswordCryptors_RejectEachOthersKeyBodies()
+    {
+        var payload = Payload();
+        var pbkdf2 = new PasswordPbkdf2Sha256Cryptor("secret");
+        var argon2 = new PasswordArgon2IdCryptor("secret");
+        var pbkdf2Body = await pbkdf2.ProtectAsync(Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256), payload);
+        var argon2Body = await argon2.ProtectAsync(Header(CvkKeyWrapAlgorithm.PasswordArgon2Id), payload);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            argon2.UnprotectAsync(Header(CvkKeyWrapAlgorithm.PasswordArgon2Id), pbkdf2Body).AsTask());
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            pbkdf2.UnprotectAsync(Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256), argon2Body).AsTask());
+    }
+
+    [Theory]
+    [InlineData("rsa")]
+    [InlineData("ecdh")]
+    public async Task PublicKeyCryptors_RejectWhitespaceOnlyKeyBody(string algorithm)
+    {
+        var (cryptor, header) = algorithm == "rsa"
+            ? (new RsaOaepSha256Cryptor() as ICvkPayloadCryptor, Header(CvkKeyWrapAlgorithm.RsaOaepSha256))
+            : (new EcdhP256Cryptor() as ICvkPayloadCryptor, Header(CvkKeyWrapAlgorithm.EcdhP256));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => cryptor.UnprotectAsync(header, " \t\r\n"u8.ToArray()).AsTask());
+    }
+
+    [Fact]
+    public async Task PasswordCryptor_UsesFreshRandomParametersPerProtection()
+    {
+        var cryptor = new PasswordPbkdf2Sha256Cryptor("secret");
+        var header = Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
+        var payload = Payload();
+
+        var first = await cryptor.ProtectAsync(header, payload);
+        var second = await cryptor.ProtectAsync(header, payload);
+
+        Assert.NotEqual(first.ToArray(), second.ToArray());
     }
 
     [Theory]
@@ -62,6 +147,21 @@ public sealed class CvkCryptographyTests
         var header = Header(algorithm); var payload = Payload([recipient]);
         var restored = await cryptor.UnprotectAsync(header, await cryptor.ProtectAsync(header, payload));
         Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
+    }
+
+    [Fact]
+    public async Task RsaCryptor_UsesFreshRandomParametersPerProtection()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        var cryptor = new RsaOaepSha256Cryptor();
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var payload = Payload([recipient]);
+
+        var first = await cryptor.ProtectAsync(header, payload);
+        var second = await cryptor.ProtectAsync(header, payload);
+
+        Assert.NotEqual(first.ToArray(), second.ToArray());
     }
 
     [Theory]
@@ -91,6 +191,21 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
+    public async Task EcdhCryptor_UsesFreshEphemeralKeyPerProtection()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        var cryptor = new EcdhP256Cryptor();
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var payload = Payload([recipient]);
+
+        var first = await cryptor.ProtectAsync(header, payload);
+        var second = await cryptor.ProtectAsync(header, payload);
+
+        Assert.NotEqual(first.ToArray(), second.ToArray());
+    }
+
+    [Fact]
     public async Task Argon2_RoundTrips()
     {
         var cryptor = new PasswordArgon2IdCryptor("secret");
@@ -99,6 +214,46 @@ public sealed class CvkCryptographyTests
         var body = await cryptor.ProtectAsync(header, payload);
         var restored = await cryptor.UnprotectAsync(header, body);
         Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
+    }
+
+    [Fact]
+    public async Task Argon2_UsesFreshRandomParametersPerProtection()
+    {
+        var cryptor = new PasswordArgon2IdCryptor("secret");
+        var header = Header(CvkKeyWrapAlgorithm.PasswordArgon2Id);
+        var payload = Payload();
+
+        var first = await cryptor.ProtectAsync(header, payload);
+        var second = await cryptor.ProtectAsync(header, payload);
+
+        Assert.NotEqual(first.ToArray(), second.ToArray());
+    }
+
+    [Fact]
+    public async Task Argon2CiphertextTampering_IsRejected()
+    {
+        var header = Header(CvkKeyWrapAlgorithm.PasswordArgon2Id);
+        var cryptor = new PasswordArgon2IdCryptor("secret");
+        var body = (await cryptor.ProtectAsync(header, Payload())).ToArray();
+        body[^1] ^= 1;
+
+        await Assert.ThrowsAsync<CryptographicException>(() => cryptor.UnprotectAsync(header, body).AsTask());
+    }
+
+    [Theory]
+    [InlineData(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256)]
+    [InlineData(CvkKeyWrapAlgorithm.PasswordArgon2Id)]
+    public async Task ProtectedKeyBodies_DoNotExposeRawCek(CvkKeyWrapAlgorithm algorithm)
+    {
+        var cek = Enumerable.Repeat((byte)0xA5, 32).ToArray();
+        var payload = new CvkPayload(cek, []);
+        var cryptor = algorithm == CvkKeyWrapAlgorithm.PasswordArgon2Id
+            ? (ICvkPayloadCryptor)new PasswordArgon2IdCryptor("secret")
+            : new PasswordPbkdf2Sha256Cryptor("secret");
+
+        var body = (await cryptor.ProtectAsync(Header(algorithm), payload)).ToArray();
+
+        Assert.Equal(-1, body.AsSpan().IndexOf(cek));
     }
 
     [Fact]
@@ -155,6 +310,79 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
+    public async Task RsaCryptor_FallsBackAfterFirstPrivateKeyFails()
+    {
+        using var first = RSA.Create(2048);
+        using var second = RSA.Create(2048);
+        using var wrong = RSA.Create(2048);
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("first", "RSA", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "RSA", second.ExportSubjectPublicKeyInfo())
+        };
+        using var wrongMaterial = new AsymmetricPrivateKeyMaterial("first", "RSA", wrong);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "RSA", second);
+        var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = wrongMaterial,
+            ["second"] = secondMaterial
+        };
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload(recipients));
+
+        var restored = await new RsaOaepSha256Cryptor(keys).UnprotectAsync(header, body);
+
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_FallsBackAfterFirstPrivateKeyFails()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var wrong = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())
+        };
+        using var wrongMaterial = new AsymmetricPrivateKeyMaterial("first", "ECDH", wrong);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "ECDH", second);
+        var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = wrongMaterial,
+            ["second"] = secondMaterial
+        };
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload(recipients));
+
+        var restored = await new EcdhP256Cryptor(keys).UnprotectAsync(header, body);
+
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_SkipsRecipientWithoutPrivateKey()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())
+        };
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "ECDH", second);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload(recipients));
+
+        var restored = await new EcdhP256Cryptor(
+            new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["second"] = secondMaterial })
+            .UnprotectAsync(header, body);
+
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
     public async Task Cryptors_HonorCancellation()
     {
         using var cts = new CancellationTokenSource();
@@ -190,6 +418,23 @@ public sealed class CvkCryptographyTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => cryptor.ProtectAsync(wrongHeader, Payload()).AsTask());
     }
 
+    [Theory]
+    [InlineData(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256, CvkKeyWrapAlgorithm.PasswordArgon2Id)]
+    [InlineData(CvkKeyWrapAlgorithm.RsaOaepSha256, CvkKeyWrapAlgorithm.RsaOaepSha384)]
+    [InlineData(CvkKeyWrapAlgorithm.EcdhP256, CvkKeyWrapAlgorithm.EcdhP384)]
+    public async Task Cryptors_RejectRouteMismatchOnUnprotect(CvkKeyWrapAlgorithm expected, CvkKeyWrapAlgorithm actual)
+    {
+        ICvkPayloadCryptor cryptor = expected switch
+        {
+            CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256 => new PasswordPbkdf2Sha256Cryptor("secret"),
+            CvkKeyWrapAlgorithm.RsaOaepSha256 => new RsaOaepSha256Cryptor(),
+            _ => new EcdhP256Cryptor()
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            cryptor.UnprotectAsync(Header(actual), ReadOnlyMemory<byte>.Empty).AsTask());
+    }
+
     [Fact]
     public async Task RsaCryptor_RejectsMalformedRecipientPublicKey()
     {
@@ -207,11 +452,65 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
+    public async Task RsaCryptor_RejectsAlgorithmClaimWithNonRsaKeyBytes()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("fake-rsa", "RSA", ecdsa.ExportSubjectPublicKeyInfo());
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256), Payload([recipient])).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaOaepSha512_RejectsInsufficientRsaKeySize()
+    {
+        using var rsa = RSA.Create(1024);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(() =>
+            new RsaOaepSha512Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha512), Payload([recipient])).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaOaepSha256_Handles1024BitRsaKey()
+    {
+        using var rsa = RSA.Create(1024);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial };
+        var cryptor = new RsaOaepSha256Cryptor(keys);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var restored = await cryptor.UnprotectAsync(header, body);
+
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
     public async Task EcdhCryptor_RejectsNonEcdhRecipientAlgorithm()
     {
         using var rsa = RSA.Create(2048);
         var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
         await Assert.ThrowsAnyAsync<Exception>(() => new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload([recipient])).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_RejectsAlgorithmClaimWithNonEcdhKeyBytes()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("fake-ecdh", "ECDH", ecdsa.ExportSubjectPublicKeyInfo());
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload([recipient])).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhP256Cryptor_RejectsP384RecipientKey()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP384);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload([recipient])).AsTask());
     }
 
     [Theory]
@@ -225,6 +524,14 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
+    public async Task RsaCryptor_RejectsAlgorithmCaseVariant()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("id", "rsa", rsa.ExportSubjectPublicKeyInfo());
+        await Assert.ThrowsAnyAsync<Exception>(() => new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256), Payload([recipient])).AsTask());
+    }
+
+    [Fact]
     public async Task PasswordCiphertextTampering_IsRejected()
     {
         var header = Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
@@ -232,6 +539,20 @@ public sealed class CvkCryptographyTests
         var tampered = body.ToArray();
         tampered[^1] ^= 1;
         await Assert.ThrowsAsync<CryptographicException>(() => new PasswordPbkdf2Sha256Cryptor("secret").UnprotectAsync(header, tampered).AsTask());
+    }
+
+    [Theory]
+    [InlineData(1)]   // salt
+    [InlineData(17)]  // nonce
+    [InlineData(29)]  // authentication tag
+    public async Task PasswordKeyBodyMetadataTampering_IsRejected(int offset)
+    {
+        var header = Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
+        var body = (await new PasswordPbkdf2Sha256Cryptor("secret").ProtectAsync(header, Payload())).ToArray();
+        body[offset] ^= 0x01;
+
+        await Assert.ThrowsAsync<CryptographicException>(() =>
+            new PasswordPbkdf2Sha256Cryptor("secret").UnprotectAsync(header, body).AsTask());
     }
 
     [Fact]
@@ -263,6 +584,383 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
+    public async Task Rsa_HeaderAadTampering_IsRejected()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial };
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+
+        await Assert.ThrowsAsync<CryptographicException>(() =>
+            new RsaOaepSha256Cryptor(keys)
+                .UnprotectAsync(header with { Label = "changed" }, body).AsTask());
+    }
+
+    [Theory]
+    [InlineData("nonce")]
+    [InlineData("tag")]
+    [InlineData("wrappedKey")]
+    public async Task RsaKeyBodyFieldTampering_IsRejected(string field)
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial };
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = System.Text.Encoding.UTF8.GetString(body.ToArray());
+        var marker = $"\"{field}\":\"";
+        var index = json.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(index >= 0);
+        var valueIndex = index + marker.Length;
+        var chars = json.ToCharArray();
+        chars[valueIndex] = chars[valueIndex] == 'A' ? 'B' : 'A';
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(() =>
+            new RsaOaepSha256Cryptor(keys).UnprotectAsync(header,
+                System.Text.Encoding.UTF8.GetBytes(new string(chars))).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaKeyBody_RejectsUnknownFields()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["unexpected"] = true;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaKeyBody_RejectsNonStringBinaryFields()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["nonce"] = 123;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Theory]
+    [InlineData("nonce")]
+    [InlineData("tag")]
+    [InlineData("ciphertext")]
+    [InlineData("recipients")]
+    public async Task RsaKeyBodyMissingField_IsRejected(string field)
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json.Remove(field);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Theory]
+    [InlineData("keyId")]
+    [InlineData("wrappedKey")]
+    [InlineData("recipient")]
+    public async Task RsaWrappedRecipientMissingField_IsRejected(string field)
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!.AsObject().Remove(field);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Theory]
+    [InlineData("nonce")]
+    [InlineData("tag")]
+    [InlineData("ciphertext")]
+    public async Task RsaKeyBody_RejectsEmptyBinaryFields(string field)
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json[field] = string.Empty;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaKeyBody_RejectsNullRecipientsArray()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"] = null;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaKeyBody_RejectsTrailingGarbage()
+    {
+        using var rsa = RSA.Create(2048);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header,
+            Payload([new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo())]));
+        var malformed = body.ToArray().Concat(new byte[] { (byte)'x' }).ToArray();
+        using var material = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = material })
+                .UnprotectAsync(header, malformed).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaUnprotect_RejectsBlankRecipientKeyId()
+    {
+        using var rsa = RSA.Create(2048);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header,
+            Payload([new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["keyId"] = string.Empty;
+        using var material = new AsymmetricPrivateKeyMaterial(string.Empty, "RSA", rsa);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { [string.Empty] = material })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaUnprotect_RejectsDuplicateRecipientIds()
+    {
+        using var first = RSA.Create(2048);
+        using var second = RSA.Create(2048);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "RSA", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "RSA", second.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[1]!["keyId"] = "first";
+        using var material = new AsymmetricPrivateKeyMaterial("first", "RSA", first);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["first"] = material })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaWrappedRecipient_RejectsMalformedEmbeddedMetadata()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["recipient"]!["publicKey"] = string.Empty;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaWrappedRecipient_RejectsNullEmbeddedRecipient()
+    {
+        using var rsa = RSA.Create(2048);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header,
+            Payload([new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["recipient"] = null;
+        using var material = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = material })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaUnprotect_SkipsMalformedFirstRecipientAndUsesNext()
+    {
+        using var first = RSA.Create(2048);
+        using var second = RSA.Create(2048);
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("first", "RSA", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "RSA", second.ExportSubjectPublicKeyInfo())
+        };
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload(recipients));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["wrappedKey"] = "not-base64";
+        using var firstMaterial = new AsymmetricPrivateKeyMaterial("first", "RSA", first);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "RSA", second);
+
+        var restored = await new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = firstMaterial, ["second"] = secondMaterial
+        }).UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString()));
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task RsaUnprotect_SkipsNullFirstRecipientAndUsesNext()
+    {
+        using var first = RSA.Create(2048);
+        using var second = RSA.Create(2048);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "RSA", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "RSA", second.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0] = null;
+        using var firstMaterial = new AsymmetricPrivateKeyMaterial("first", "RSA", first);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "RSA", second);
+
+        var restored = await new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = firstMaterial, ["second"] = secondMaterial
+        }).UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString()));
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task RsaUnprotect_SkipsNullPrivateMaterialAndUsesNext()
+    {
+        using var first = RSA.Create(2048);
+        using var second = RSA.Create(2048);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "RSA", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "RSA", second.ExportSubjectPublicKeyInfo())]));
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "RSA", second);
+        var restored = await new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = null!, ["second"] = secondMaterial
+        }).UnprotectAsync(header, body);
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task RsaUnprotect_SkipsWrongPrivateAlgorithmAndUsesNext()
+    {
+        using var first = RSA.Create(2048);
+        using var second = RSA.Create(2048);
+        using var wrong = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "RSA", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "RSA", second.ExportSubjectPublicKeyInfo())]));
+        using var wrongMaterial = new AsymmetricPrivateKeyMaterial("first", "ECDSA", wrong);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "RSA", second);
+
+        var restored = await new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = wrongMaterial, ["second"] = secondMaterial
+        }).UnprotectAsync(header, body);
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task RsaCryptor_RejectsDuplicateRecipientIds()
+    {
+        using var rsa = RSA.Create(2048);
+        var publicKey = rsa.ExportSubjectPublicKeyInfo();
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("duplicate", "RSA", publicKey),
+            new AsymmetricRecipientKey("duplicate", "RSA", publicKey)
+        };
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256), Payload(recipients)).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaCryptor_RejectsEmptyRecipients()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256), Payload()).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaCryptor_RejectsNullRecipientElement()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256),
+                Payload([null!])).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaCryptor_RejectsNullRecipientsCollection()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256),
+                new CvkPayload(new byte[32], null!)).AsTask());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RsaCryptor_RejectsBlankRecipientKeyId(string keyId)
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey(keyId, "RSA", rsa.ExportSubjectPublicKeyInfo());
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256), Payload([recipient])).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaCryptor_DoesNotMutateRecipientMetadata()
+    {
+        using var rsa = RSA.Create(2048);
+        var publicKey = rsa.ExportSubjectPublicKeyInfo();
+        var recipients = new List<AsymmetricRecipientKey>
+        {
+            new("first", "RSA", publicKey, "one"),
+            new("second", "RSA", publicKey, "two")
+        };
+        var snapshot = recipients.ToArray();
+
+        await new RsaOaepSha256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.RsaOaepSha256), Payload(recipients.ToArray()));
+
+        Assert.Equal(snapshot, recipients);
+        for (var i = 0; i < snapshot.Length; i++)
+            Assert.Equal(snapshot[i].PublicKeyBytes.ToArray(), recipients[i].PublicKeyBytes.ToArray());
+    }
+
+    [Fact]
     public async Task EcdhCiphertextTampering_IsRejected()
     {
         using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
@@ -281,6 +979,397 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
+    public async Task Ecdh_HeaderAadTampering_IsRejected()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial };
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+
+        await Assert.ThrowsAsync<CryptographicException>(() =>
+            new EcdhP256Cryptor(keys)
+                .UnprotectAsync(header with { Label = "changed" }, body).AsTask());
+    }
+
+    [Theory]
+    [InlineData("dataNonce")]
+    [InlineData("dataTag")]
+    [InlineData("ephemeralPublicKey")]
+    [InlineData("nonce")]
+    [InlineData("tag")]
+    [InlineData("wrappedKey")]
+    public async Task EcdhKeyBodyFieldTampering_IsRejected(string field)
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var keys = new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial };
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = System.Text.Encoding.UTF8.GetString(body.ToArray());
+        var marker = $"\"{field}\":\"";
+        var index = json.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(index >= 0);
+        var chars = json.ToCharArray();
+        var valueIndex = index + marker.Length;
+        chars[valueIndex] = chars[valueIndex] == 'A' ? 'B' : 'A';
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(() =>
+            new EcdhP256Cryptor(keys).UnprotectAsync(header,
+                System.Text.Encoding.UTF8.GetBytes(new string(chars))).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhKeyBody_RejectsUnknownFields()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["unexpected"] = true;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhKeyBody_RejectsNonStringBinaryFields()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["dataNonce"] = 123;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Theory]
+    [InlineData("dataNonce")]
+    [InlineData("dataTag")]
+    [InlineData("ciphertext")]
+    public async Task EcdhKeyBody_RejectsEmptyBinaryFields(string field)
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json[field] = string.Empty;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhKeyBody_RejectsNullRecipientsArray()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"] = null;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhKeyBody_RejectsTrailingGarbage()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header,
+            Payload([new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo())]));
+        var malformed = body.ToArray().Concat(new byte[] { (byte)'x' }).ToArray();
+        using var material = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = material })
+                .UnprotectAsync(header, malformed).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_RejectsBlankRecipientKeyId()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header,
+            Payload([new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["keyId"] = string.Empty;
+        using var material = new AsymmetricPrivateKeyMaterial(string.Empty, "ECDH", ecdh);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { [string.Empty] = material })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_RejectsDuplicateRecipientIds()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[1]!["keyId"] = "first";
+        using var material = new AsymmetricPrivateKeyMaterial("first", "ECDH", first);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["first"] = material })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhWrappedRecipient_RejectsMalformedEmbeddedMetadata()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["recipient"]!["publicKey"] = string.Empty;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhWrappedRecipient_RejectsNullEmbeddedRecipient()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header,
+            Payload([new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["recipient"] = null;
+        using var material = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = material })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_SkipsMalformedFirstRecipientAndUsesNext()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())
+        };
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload(recipients));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["nonce"] = "not-base64";
+        using var firstMaterial = new AsymmetricPrivateKeyMaterial("first", "ECDH", first);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "ECDH", second);
+
+        var restored = await new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = firstMaterial, ["second"] = secondMaterial
+        }).UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString()));
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_SkipsNullFirstRecipientAndUsesNext()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0] = null;
+        using var firstMaterial = new AsymmetricPrivateKeyMaterial("first", "ECDH", first);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "ECDH", second);
+
+        var restored = await new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = firstMaterial, ["second"] = secondMaterial
+        }).UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString()));
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_SkipsNullPrivateMaterialAndUsesNext()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())]));
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "ECDH", second);
+        var restored = await new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = null!, ["second"] = secondMaterial
+        }).UnprotectAsync(header, body);
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_SkipsWrongPrivateAlgorithmAndUsesNext()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var wrong = RSA.Create(2048);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())]));
+        using var wrongMaterial = new AsymmetricPrivateKeyMaterial("first", "RSA", wrong);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "ECDH", second);
+
+        var restored = await new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = wrongMaterial, ["second"] = secondMaterial
+        }).UnprotectAsync(header, body);
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_SkipsFirstRecipientWithWrongCurve()
+    {
+        using var first = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var second = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var wrongCurve = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP384);
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("first", "ECDH", first.ExportSubjectPublicKeyInfo()),
+            new AsymmetricRecipientKey("second", "ECDH", second.ExportSubjectPublicKeyInfo())
+        };
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload(recipients));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json["recipients"]!.AsArray()[0]!["ephemeralPublicKey"] =
+            Convert.ToBase64String(wrongCurve.ExportSubjectPublicKeyInfo());
+        using var firstMaterial = new AsymmetricPrivateKeyMaterial("first", "ECDH", first);
+        using var secondMaterial = new AsymmetricPrivateKeyMaterial("second", "ECDH", second);
+
+        var restored = await new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+        {
+            ["first"] = firstMaterial, ["second"] = secondMaterial
+        }).UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString()));
+        Assert.Equal(32, restored.Cek.Length);
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_RejectsDuplicateRecipientIds()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = ecdh.ExportSubjectPublicKeyInfo();
+        var recipients = new[]
+        {
+            new AsymmetricRecipientKey("duplicate", "ECDH", publicKey),
+            new AsymmetricRecipientKey("duplicate", "ECDH", publicKey)
+        };
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload(recipients)).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_RejectsEmptyRecipients()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload()).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_RejectsNullRecipientElement()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256),
+                Payload([null!])).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_RejectsNullRecipientsCollection()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256),
+                new CvkPayload(new byte[32], null!)).AsTask());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task EcdhCryptor_RejectsBlankRecipientKeyId(string keyId)
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey(keyId, "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload([recipient])).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_DoesNotMutateRecipientMetadata()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = ecdh.ExportSubjectPublicKeyInfo();
+        var recipients = new List<AsymmetricRecipientKey>
+        {
+            new("first", "ECDH", publicKey, "one"),
+            new("second", "ECDH", publicKey, "two")
+        };
+        var snapshot = recipients.ToArray();
+
+        await new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload(recipients.ToArray()));
+
+        Assert.Equal(snapshot, recipients);
+        for (var i = 0; i < snapshot.Length; i++)
+            Assert.Equal(snapshot[i].PublicKeyBytes.ToArray(), recipients[i].PublicKeyBytes.ToArray());
+    }
+
+    [Theory]
+    [InlineData("dataNonce")]
+    [InlineData("dataTag")]
+    [InlineData("ciphertext")]
+    [InlineData("ephemeralPublicKey")]
+    [InlineData("nonce")]
+    [InlineData("tag")]
+    [InlineData("wrappedKey")]
+    [InlineData("recipients")]
+    public async Task EcdhKeyBodyMissingField_IsRejected(string field)
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        var json = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(body.ToArray()))!.AsObject();
+        json.Remove(field);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial })
+                .UnprotectAsync(header, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString())).AsTask());
+    }
+
+    [Fact]
     public async Task PasswordCryptor_RejectsInvalidCekLength()
     {
         var header = Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
@@ -296,6 +1385,71 @@ public sealed class CvkCryptographyTests
         using var cts = new CancellationTokenSource();
         cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new PasswordPbkdf2Sha256Cryptor("secret").UnprotectAsync(header, body, cts.Token).AsTask());
+    }
+
+    [Fact]
+    public async Task Argon2Cryptor_HonorsCancellation()
+    {
+        var cryptor = new PasswordArgon2IdCryptor("secret");
+        var header = Header(CvkKeyWrapAlgorithm.PasswordArgon2Id);
+        var payload = Payload();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cryptor.ProtectAsync(header, payload, cts.Token).AsTask());
+        var body = await cryptor.ProtectAsync(header, payload);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cryptor.UnprotectAsync(header, body, cts.Token).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhCryptor_HonorsCancellation()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", ecdh);
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var payload = Payload([recipient]);
+        var protector = new EcdhP256Cryptor();
+        var body = await protector.ProtectAsync(header, payload);
+        var unprotector = new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = privateMaterial });
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => protector.ProtectAsync(header, payload, cts.Token).AsTask());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => unprotector.UnprotectAsync(header, body, cts.Token).AsTask());
+    }
+
+    [Fact]
+    public async Task EcdhUnprotect_RejectsPrivateKeyOnWrongCurve()
+    {
+        using var recipientKey = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        using var wrongCurveKey = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP384);
+        var recipient = new AsymmetricRecipientKey("ec", "ECDH", recipientKey.ExportSubjectPublicKeyInfo());
+        var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
+        var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
+        using var wrongMaterial = new AsymmetricPrivateKeyMaterial("ec", "ECDH", wrongCurveKey);
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new EcdhP256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["ec"] = wrongMaterial })
+                .UnprotectAsync(header, body).AsTask());
+    }
+
+    [Fact]
+    public async Task RsaCryptor_HonorsCancellation()
+    {
+        using var rsa = RSA.Create(2048);
+        var recipient = new AsymmetricRecipientKey("rsa", "RSA", rsa.ExportSubjectPublicKeyInfo());
+        using var privateMaterial = new AsymmetricPrivateKeyMaterial("rsa", "RSA", rsa);
+        var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
+        var payload = Payload([recipient]);
+        var protector = new RsaOaepSha256Cryptor();
+        var body = await protector.ProtectAsync(header, payload);
+        var unprotector = new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["rsa"] = privateMaterial });
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => protector.ProtectAsync(header, payload, cts.Token).AsTask());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => unprotector.UnprotectAsync(header, body, cts.Token).AsTask());
     }
 
     [Theory]
@@ -320,6 +1474,20 @@ public sealed class CvkCryptographyTests
         var body = (await cryptor.ProtectAsync(Header(algorithm), Payload())).ToArray();
         body[0] = version;
         await Assert.ThrowsAsync<InvalidDataException>(() => cryptor.UnprotectAsync(Header(algorithm), body).AsTask());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(28)]
+    public async Task PasswordCryptor_RejectsTruncatedKeyBody(int length)
+    {
+        var body = new byte[length];
+        if (length > 0) body[0] = 1;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new PasswordPbkdf2Sha256Cryptor("secret")
+                .UnprotectAsync(Header(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256), body).AsTask());
     }
 
     [Fact]
@@ -347,5 +1515,31 @@ public sealed class CvkCryptographyTests
         var recipient = new AsymmetricRecipientKey("ec", "ECDH", ecdh.ExportSubjectPublicKeyInfo());
         var payload = new CvkPayload(new byte[31], [recipient]);
         await Assert.ThrowsAsync<InvalidDataException>(() => new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), payload).AsTask());
+    }
+
+    private sealed class RecordingCryptor : ICvkPayloadCryptor
+    {
+        public CvkHeader? ProtectHeader { get; private set; }
+        public CvkPayload? ProtectPayload { get; private set; }
+        public CancellationToken ProtectToken { get; private set; }
+        public CvkHeader? UnprotectHeader { get; private set; }
+        public byte[] UnprotectBody { get; private set; } = [];
+        public CancellationToken UnprotectToken { get; private set; }
+
+        public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload, CancellationToken cancellationToken = default)
+        {
+            ProtectHeader = header;
+            ProtectPayload = payload;
+            ProtectToken = cancellationToken;
+            return ValueTask.FromResult<ReadOnlyMemory<byte>>(CvkPayloadCodec.Encode(payload));
+        }
+
+        public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody, CancellationToken cancellationToken = default)
+        {
+            UnprotectHeader = header;
+            UnprotectBody = keyBody.ToArray();
+            UnprotectToken = cancellationToken;
+            return ValueTask.FromResult(CvkPayloadCodec.Decode(keyBody.Span));
+        }
     }
 }
