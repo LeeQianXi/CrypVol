@@ -92,7 +92,7 @@ public abstract class EcdhCryptorBase : CvkAlgorithmCryptorBase
         foreach (var recipient in body.Recipients)
         {
             if (recipient is null) continue;
-            if (!_privateKeys.TryGetValue(recipient.KeyId, out var material) ||
+            if (!_privateKeys.TryGetValue(recipient.KeyId, out var material) || material is null ||
                 material.Key is not ECDiffieHellman privateKey) continue;
             try
             {

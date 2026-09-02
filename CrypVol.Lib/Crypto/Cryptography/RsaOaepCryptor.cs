@@ -88,7 +88,7 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
         foreach (var recipient in body.Recipients)
         {
             if (recipient is null) continue;
-            if (!_privateKeys.TryGetValue(recipient.KeyId, out var material) || material.Key is not RSA rsa) continue;
+            if (!_privateKeys.TryGetValue(recipient.KeyId, out var material) || material is null || material.Key is not RSA rsa) continue;
             try
             {
                 dataKey = rsa.Decrypt(Convert.FromBase64String(recipient.WrappedKey), Padding);

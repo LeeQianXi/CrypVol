@@ -12,9 +12,11 @@ public sealed class PlainCvkPayloadProtector : ICvkPayloadProtector
         CvkPayload payload,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(header);
+        ArgumentNullException.ThrowIfNull(payload);
+        if (header.KeyProtection != CvkKeyProtection.Plain || header.KeyWrapAlgorithm != CvkKeyWrapAlgorithm.None)
+            throw new InvalidOperationException("明文 Payload 保护器只能用于 Plain/None 路由。");
         cancellationToken.ThrowIfCancellationRequested();
-        if (header.KeyProtection != CvkKeyProtection.Plain)
-            throw new InvalidOperationException("明文 Payload 保护器只能用于 Plain 模式。");
 
         var options = new JsonSerializerOptions
         {

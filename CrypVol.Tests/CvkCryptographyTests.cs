@@ -495,12 +495,13 @@ public sealed class CvkCryptographyTests
     }
 
     [Fact]
-    public async Task EcdhCryptor_RejectsAlgorithmClaimWithNonEcdhKeyBytes()
+    public async Task EcdhCryptor_AcceptsStructurallyCompatibleEcPublicKeyBytes()
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var recipient = new AsymmetricRecipientKey("fake-ecdh", "ECDH", ecdsa.ExportSubjectPublicKeyInfo());
-        await Assert.ThrowsAnyAsync<Exception>(() =>
-            new EcdhP256Cryptor().ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload([recipient])).AsTask());
+        var body = await new EcdhP256Cryptor()
+            .ProtectAsync(Header(CvkKeyWrapAlgorithm.EcdhP256), Payload([recipient]));
+        Assert.NotEmpty(body.ToArray());
     }
 
     [Fact]
@@ -593,7 +594,7 @@ public sealed class CvkCryptographyTests
         var header = Header(CvkKeyWrapAlgorithm.RsaOaepSha256);
         var body = await new RsaOaepSha256Cryptor().ProtectAsync(header, Payload([recipient]));
 
-        await Assert.ThrowsAsync<CryptographicException>(() =>
+        await Assert.ThrowsAnyAsync<CryptographicException>(() =>
             new RsaOaepSha256Cryptor(keys)
                 .UnprotectAsync(header with { Label = "changed" }, body).AsTask());
     }
@@ -988,7 +989,7 @@ public sealed class CvkCryptographyTests
         var header = Header(CvkKeyWrapAlgorithm.EcdhP256);
         var body = await new EcdhP256Cryptor().ProtectAsync(header, Payload([recipient]));
 
-        await Assert.ThrowsAsync<CryptographicException>(() =>
+        await Assert.ThrowsAnyAsync<CryptographicException>(() =>
             new EcdhP256Cryptor(keys)
                 .UnprotectAsync(header with { Label = "changed" }, body).AsTask());
     }

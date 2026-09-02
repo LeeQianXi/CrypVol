@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Crypto.Writing;
 
 namespace CrypVol.Lib.Crypto.Reading;
@@ -21,6 +22,7 @@ public sealed class CvkReader
     public async Task<CvkParsedFile> ReadAsync(FileInfo file, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(file);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!file.Exists) throw new FileNotFoundException("CVK 文件不存在。", file.FullName);
         await using var stream = file.OpenRead();
         using var memory = new MemoryStream();
@@ -39,6 +41,7 @@ public sealed class CvkReader
         if (_payloadUnprotector is null) throw new InvalidOperationException("未配置 Payload 解封策略。");
         var parsed = await ReadAsync(file, cancellationToken);
         var payload = await _payloadUnprotector.UnprotectAsync(parsed.Header, parsed.KeyBody, cancellationToken);
+        ValidatePayload(payload);
         var document = new CvkDocument
         {
             Cek = payload.Cek.ToArray(),
@@ -53,5 +56,18 @@ public sealed class CvkReader
         };
         foreach (var recipient in payload.RecipientKeys) document.RecipientKeys.Add(recipient);
         return document;
+    }
+
+    private static void ValidatePayload(CvkPayload payload)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        if (payload.Cek.Length != 32) throw new InvalidDataException("解封后的 CEK 必须恰好为 32 字节。");
+        ArgumentNullException.ThrowIfNull(payload.RecipientKeys);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var recipient in payload.RecipientKeys)
+        {
+            if (recipient is null || string.IsNullOrWhiteSpace(recipient.KeyId) || !ids.Add(recipient.KeyId))
+                throw new InvalidDataException("解封后的接收者元数据无效。");
+        }
     }
 }
