@@ -15,7 +15,8 @@ public static class RekeyHelper
         var output = args.GetValue(CommandDefinition.Rekey.Output) ?? source;
         try
         {
-            if (mode == CvkKeyProtection.Password && string.IsNullOrWhiteSpace(password)) throw new ArgumentException("Password 模式需要 --new-password。");
+            if (mode == CvkKeyProtection.Password && string.IsNullOrWhiteSpace(password))
+                throw new ArgumentException("Password 模式需要 --new-password。");
             var document = await CvkOperations.LoadAsync(source, args.GetValue(CommandDefinition.Rekey.Password), token);
             document.KeyProtection = mode;
             document.KeyWrapAlgorithm = mode switch
@@ -25,7 +26,8 @@ public static class RekeyHelper
                 _ => args.GetValue(CommandDefinition.Rekey.Algorithm) ?? CvkKeyWrapAlgorithm.RsaOaepSha256
             };
             if (mode != CvkKeyProtection.PublicKey) document.RecipientKeys.Clear();
-            foreach (var key in args.GetValue(CommandDefinition.Rekey.PublicKey) ?? []) CvkOperations.AddPublicKey(document, key);
+            foreach (var key in args.GetValue(CommandDefinition.Rekey.PublicKey) ?? [])
+                CvkOperations.AddPublicKey(document, key);
             await CvkOperations.WriteAsync(document, output, password, token);
             Console.WriteLine($"密钥已重新封装 → {output.FullName}");
             return 0;

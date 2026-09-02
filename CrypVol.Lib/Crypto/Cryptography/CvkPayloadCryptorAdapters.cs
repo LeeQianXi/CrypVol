@@ -8,7 +8,7 @@ namespace CrypVol.Lib.Crypto.Cryptography;
 public sealed class CvkPayloadProtectorAdapter(ICvkPayloadCryptor inner) : ICvkPayloadProtector
 {
     private readonly ICvkPayloadCryptor _inner = inner
-        ?? throw new ArgumentNullException(nameof(inner));
+                                                 ?? throw new ArgumentNullException(nameof(inner));
 
     /// <inheritdoc />
     public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload,
@@ -22,7 +22,7 @@ public sealed class CvkPayloadProtectorAdapter(ICvkPayloadCryptor inner) : ICvkP
 public sealed class CvkPayloadUnprotectorAdapter(ICvkPayloadCryptor inner) : ICvkPayloadUnprotector
 {
     private readonly ICvkPayloadCryptor _inner = inner
-        ?? throw new ArgumentNullException(nameof(inner));
+                                                 ?? throw new ArgumentNullException(nameof(inner));
 
     /// <inheritdoc />
     public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody,

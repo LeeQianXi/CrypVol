@@ -65,9 +65,7 @@ public sealed class CvkReader
         ArgumentNullException.ThrowIfNull(payload.RecipientKeys);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var recipient in payload.RecipientKeys)
-        {
             if (recipient is null || string.IsNullOrWhiteSpace(recipient.KeyId) || !ids.Add(recipient.KeyId))
                 throw new InvalidDataException("解封后的接收者元数据无效。");
-        }
     }
 }

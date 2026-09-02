@@ -23,8 +23,14 @@ public static class AsymmetricKeyFileLoader
         // EC 公钥的 SubjectPublicKeyInfo 编码无法区分 ECDSA 与 ECDH；
         // 对明确命名为 ECDH 的文件优先尝试 ECDH，其余保持 ECDSA 优先。
         var ecLoaders = IsEcdhHint(file, resolvedId)
-            ? new Func<AsymmetricPublicKeyMaterial>[] { () => LoadEcdhPublic(text, resolvedId), () => LoadEcdsaPublic(text, resolvedId) }
-            : new Func<AsymmetricPublicKeyMaterial>[] { () => LoadEcdsaPublic(text, resolvedId), () => LoadEcdhPublic(text, resolvedId) };
+            ? new[]
+            {
+                () => LoadEcdhPublic(text, resolvedId), () => LoadEcdsaPublic(text, resolvedId)
+            }
+            : new[]
+            {
+                () => LoadEcdsaPublic(text, resolvedId), () => LoadEcdhPublic(text, resolvedId)
+            };
 
         try
         {
@@ -35,10 +41,8 @@ public static class AsymmetricKeyFileLoader
         catch (Exception) { }
 
         foreach (var loader in ecLoaders)
-        {
             try { return loader(); }
             catch (Exception) { }
-        }
 
         try
         {
@@ -73,7 +77,15 @@ public static class AsymmetricKeyFileLoader
 
         var ecdhFirst = IsEcdhHint(file, resolvedId) || text.Contains("BEGIN PRIVATE KEY", StringComparison.Ordinal);
         Exception? last = null;
-        foreach (var algorithm in ecdhFirst ? new[] { "ECDH", "ECDSA" } : new[] { "ECDSA", "ECDH" })
+        foreach (var algorithm in ecdhFirst
+                     ? new[]
+                     {
+                         "ECDH", "ECDSA"
+                     }
+                     : new[]
+                     {
+                         "ECDSA", "ECDH"
+                     })
         {
             AsymmetricAlgorithm key = algorithm == "ECDH" ? ECDiffieHellman.Create() : ECDsa.Create();
             try
@@ -105,9 +117,11 @@ public static class AsymmetricKeyFileLoader
         return new AsymmetricPublicKeyMaterial(keyId, "ECDH", key);
     }
 
-    private static bool IsEcdhHint(FileInfo file, string keyId) =>
-        file.Name.Contains("ecdh", StringComparison.OrdinalIgnoreCase) ||
-        keyId.Contains("ecdh", StringComparison.OrdinalIgnoreCase);
+    private static bool IsEcdhHint(FileInfo file, string keyId)
+    {
+        return file.Name.Contains("ecdh", StringComparison.OrdinalIgnoreCase) ||
+               keyId.Contains("ecdh", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>尝试读取单行 OpenSSH authorized_keys 格式的 RSA 公钥。</summary>
     private static bool TryLoadOpenSshRsa(string text, FileInfo file, string? explicitKeyId,
@@ -132,10 +146,16 @@ public static class AsymmetricKeyFileLoader
                 throw new FormatException("OpenSSH RSA 公钥字段不完整。");
 
             var rsa = RSA.Create();
-            rsa.ImportParameters(new RSAParameters { Exponent = exponent, Modulus = modulus });
+            rsa.ImportParameters(new RSAParameters
+            {
+                Exponent = exponent,
+                Modulus = modulus
+            });
             var id = !string.IsNullOrWhiteSpace(explicitKeyId)
                 ? explicitKeyId!
-                : fields.Length >= 3 ? string.Join(' ', fields[2..]) : fallbackId;
+                : fields.Length >= 3
+                    ? string.Join(' ', fields[2..])
+                    : fallbackId;
             material = new AsymmetricPublicKeyMaterial(id, "RSA", rsa);
             return true;
         }

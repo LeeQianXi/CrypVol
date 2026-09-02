@@ -37,20 +37,10 @@ public sealed class CvkPayloadCryptorRegistry
         CvkKeyWrapAlgorithm wrapAlgorithm, ICvkPayloadCryptor cryptor)
     {
         ArgumentNullException.ThrowIfNull(cryptor);
-        if (!IsValidRoute(protection, wrapAlgorithm))
-            throw new ArgumentException($"不支持的 CVK 保护路由：{protection}/{wrapAlgorithm}。", nameof(wrapAlgorithm));
+        CvkEncapsulationRoute.Resolve(protection, wrapAlgorithm);
         _items[(protection, wrapAlgorithm)] = cryptor;
         return this;
     }
-
-    private static bool IsValidRoute(CvkKeyProtection protection, CvkKeyWrapAlgorithm algorithm) => protection switch
-    {
-        CvkKeyProtection.Plain => algorithm == CvkKeyWrapAlgorithm.None,
-        CvkKeyProtection.Password => algorithm is CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256 or CvkKeyWrapAlgorithm.PasswordArgon2Id,
-        CvkKeyProtection.PublicKey => algorithm is CvkKeyWrapAlgorithm.RsaOaepSha256 or CvkKeyWrapAlgorithm.RsaOaepSha384
-            or CvkKeyWrapAlgorithm.RsaOaepSha512 or CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521,
-        _ => false
-    };
 
     /// <summary>解析 Header 对应的实现。</summary>
     public ICvkPayloadCryptor Resolve(CvkHeader header)

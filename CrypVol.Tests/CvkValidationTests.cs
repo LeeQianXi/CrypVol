@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Crypto.Cryptography;
 using CrypVol.Lib.Crypto.Keys;
 using CrypVol.Lib.Crypto.Models;
@@ -19,7 +19,12 @@ public sealed class CvkValidationTests
     [Fact]
     public async Task Writer_RejectsEmptyCek()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = [], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+        var document = new CvkDocument
+        {
+            Cek = [],
+            KeyProtection = CvkKeyProtection.Plain,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+        };
         await Assert.ThrowsAsync<InvalidDataException>(() => Write(document));
     }
 
@@ -28,7 +33,7 @@ public sealed class CvkValidationTests
     [InlineData(33)]
     public async Task Writer_RejectsCekLengthsOtherThan32(int length)
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[length],
             KeyProtection = CvkKeyProtection.Plain,
@@ -41,14 +46,17 @@ public sealed class CvkValidationTests
     [Fact]
     public async Task Writer_InvalidDocumentPreservesExistingTarget()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[31],
             KeyProtection = CvkKeyProtection.Plain,
             KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
         };
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-invalid-preserve-{Guid.NewGuid():N}.cvk"));
-        var original = new byte[] { 1, 2, 3, 4 };
+        var original = new byte[]
+        {
+            1, 2, 3, 4
+        };
         await File.WriteAllBytesAsync(file.FullName, original);
         try
         {
@@ -56,13 +64,16 @@ public sealed class CvkValidationTests
                 new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file));
             Assert.Equal(original, await File.ReadAllBytesAsync(file.FullName));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_PreservesMaximumVersion()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             Version = ushort.MaxValue,
@@ -76,13 +87,16 @@ public sealed class CvkValidationTests
             var parsed = CvkParser.Parse(await File.ReadAllBytesAsync(file.FullName));
             Assert.Equal(ushort.MaxValue, parsed.Header.Version);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_DoesNotMutateDocumentData()
     {
-        var document = CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+        var document = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
         document.Label = "stable";
         var cekBefore = document.Cek.ToArray();
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-snapshot-{Guid.NewGuid():N}.cvk"));
@@ -93,14 +107,20 @@ public sealed class CvkValidationTests
             Assert.Equal("stable", document.Label);
             Assert.Empty(document.RecipientKeys);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_SnapshotsRecipientCollectionBeforeProtection()
     {
-        var document = CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
-        var recipient = new AsymmetricRecipientKey("one", "RSA", new byte[] { 1, 2, 3 });
+        var document = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+        var recipient = new AsymmetricRecipientKey("one", "RSA", new byte[]
+        {
+            1, 2, 3
+        });
         document.RecipientKeys.Add(recipient);
         var protector = new SnapshotProtector(document.RecipientKeys);
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-recipient-snapshot-{Guid.NewGuid():N}.cvk"));
@@ -110,7 +130,10 @@ public sealed class CvkValidationTests
             Assert.Single(protector.ObservedRecipients);
             Assert.Equal("one", protector.ObservedRecipients[0].KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -118,7 +141,12 @@ public sealed class CvkValidationTests
     {
         var writer = new CvkWriter(new PlainCvkPayloadProtector());
         await Assert.ThrowsAsync<ArgumentNullException>(() => writer.WriteAsync(null!, new FileInfo("x")));
-        var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+        var document = new CvkDocument
+        {
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.Plain,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+        };
         await Assert.ThrowsAsync<ArgumentNullException>(() => writer.WriteAsync(document, null!));
     }
 
@@ -131,14 +159,20 @@ public sealed class CvkValidationTests
     [Fact]
     public async Task Writer_RejectsInvalidVersion()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], Version = 0, KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+        var document = new CvkDocument
+        {
+            Cek = new byte[32],
+            Version = 0,
+            KeyProtection = CvkKeyProtection.Plain,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+        };
         await Assert.ThrowsAsync<InvalidDataException>(() => Write(document));
     }
 
     [Fact]
     public async Task Writer_RejectsHeaderExceedingParserLimit()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.Plain,
@@ -152,7 +186,10 @@ public sealed class CvkValidationTests
                 new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -160,7 +197,7 @@ public sealed class CvkValidationTests
     {
         var parent = new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"cvk-invalid-parent-{Guid.NewGuid():N}"));
         var file = new FileInfo(Path.Combine(parent.FullName, "nested", "value.cvk"));
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = [],
             KeyProtection = CvkKeyProtection.Plain,
@@ -172,14 +209,27 @@ public sealed class CvkValidationTests
                 new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file));
             Assert.False(parent.Exists);
         }
-        finally { if (parent.Exists) parent.Delete(true); }
+        finally
+        {
+            if (parent.Exists) parent.Delete(true);
+        }
     }
 
     [Fact]
     public async Task Writer_RejectsInvalidProtectionAlgorithmCombinations()
     {
-        var password = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Password, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.RsaOaepSha256 };
-        var publicKey = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.PublicKey, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.RsaOaepSha256 };
+        var password = new CvkDocument
+        {
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.Password,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.RsaOaepSha256
+        };
+        var publicKey = new CvkDocument
+        {
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.PublicKey,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.RsaOaepSha256
+        };
         await Assert.ThrowsAsync<InvalidDataException>(() => Write(password));
         await Assert.ThrowsAsync<InvalidDataException>(() => Write(publicKey));
     }
@@ -187,13 +237,13 @@ public sealed class CvkValidationTests
     [Fact]
     public async Task Writer_RejectsUndefinedProtectionAndWrapAlgorithms()
     {
-        var invalidProtection = new CrypVol.Lib.Crypto.CvkDocument
+        var invalidProtection = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = (CvkKeyProtection)99,
             KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
         };
-        var invalidWrap = new CrypVol.Lib.Crypto.CvkDocument
+        var invalidWrap = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.Plain,
@@ -206,53 +256,74 @@ public sealed class CvkValidationTests
     [Fact]
     public async Task Writer_RejectsDuplicateRecipientIds()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.PublicKey,
             KeyWrapAlgorithm = CvkKeyWrapAlgorithm.RsaOaepSha256
         };
-        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var publicKey = rsa.ExportSubjectPublicKeyInfo();
-        document.RecipientKeys.Add(new CrypVol.Lib.Crypto.Keys.AsymmetricRecipientKey("same", "RSA", publicKey));
-        document.RecipientKeys.Add(new CrypVol.Lib.Crypto.Keys.AsymmetricRecipientKey("same", "RSA", publicKey));
+        document.RecipientKeys.Add(new AsymmetricRecipientKey("same", "RSA", publicKey));
+        document.RecipientKeys.Add(new AsymmetricRecipientKey("same", "RSA", publicKey));
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-duplicate-{Guid.NewGuid():N}.cvk"));
         try
         {
-            await Assert.ThrowsAnyAsync<Exception>(() => new CvkWriter(new CvkPayloadProtectorAdapter(new RsaOaepSha256Cryptor())).WriteAsync(document, file));
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                new CvkWriter(new CvkPayloadProtectorAdapter(new RsaOaepSha256Cryptor())).WriteAsync(document, file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_RejectsNullRecipientEntry()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
-            Cek = new byte[32], KeyProtection = CvkKeyProtection.PublicKey,
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.PublicKey,
             KeyWrapAlgorithm = CvkKeyWrapAlgorithm.RsaOaepSha256
         };
         document.RecipientKeys.Add(null!);
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-null-recipient-{Guid.NewGuid():N}.cvk"));
         try
         {
-            await Assert.ThrowsAnyAsync<Exception>(() => new CvkWriter(new CvkPayloadProtectorAdapter(new RsaOaepSha256Cryptor())).WriteAsync(document, file));
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                new CvkWriter(new CvkPayloadProtectorAdapter(new RsaOaepSha256Cryptor())).WriteAsync(document, file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public void Registry_ResolvesEveryRegisteredAlgorithm()
     {
         var registry = CvkPayloadCryptorRegistry.CreateDefault();
-        foreach (var algorithm in new[] { CvkKeyWrapAlgorithm.None, CvkKeyWrapAlgorithm.RsaOaepSha256, CvkKeyWrapAlgorithm.RsaOaepSha384, CvkKeyWrapAlgorithm.RsaOaepSha512, CvkKeyWrapAlgorithm.EcdhP256, CvkKeyWrapAlgorithm.EcdhP384, CvkKeyWrapAlgorithm.EcdhP521 })
+        foreach (var algorithm in new[]
+                 {
+                     CvkKeyWrapAlgorithm.None,
+                     CvkKeyWrapAlgorithm.RsaOaepSha256,
+                     CvkKeyWrapAlgorithm.RsaOaepSha384,
+                     CvkKeyWrapAlgorithm.RsaOaepSha512,
+                     CvkKeyWrapAlgorithm.EcdhP256,
+                     CvkKeyWrapAlgorithm.EcdhP384,
+                     CvkKeyWrapAlgorithm.EcdhP521
+                 })
         {
             var protection = algorithm == CvkKeyWrapAlgorithm.None ? CvkKeyProtection.Plain : CvkKeyProtection.PublicKey;
             Assert.NotNull(registry.Resolve(new CvkHeader(1, protection, algorithm, null, null, null, null, null)));
         }
+
         var passwordRegistry = CvkPayloadCryptorRegistry.CreateDefault("secret");
-        Assert.NotNull(passwordRegistry.Resolve(new CvkHeader(1, CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256, null, null, null, null, null)));
-        Assert.NotNull(passwordRegistry.Resolve(new CvkHeader(1, CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordArgon2Id, null, null, null, null, null)));
+        Assert.NotNull(passwordRegistry.Resolve(new CvkHeader(1, CvkKeyProtection.Password,
+            CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256, null, null, null, null, null)));
+        Assert.NotNull(passwordRegistry.Resolve(new CvkHeader(1, CvkKeyProtection.Password,
+            CvkKeyWrapAlgorithm.PasswordArgon2Id, null, null, null, null, null)));
     }
 
     [Fact]
@@ -276,7 +347,7 @@ public sealed class CvkValidationTests
     [Fact]
     public async Task Writer_RejectsNullRecipientEntryInPlainMode()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.Plain,
@@ -290,13 +361,16 @@ public sealed class CvkValidationTests
                 new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_RejectsEmptyProtectedKeyBody()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.Plain,
@@ -309,7 +383,10 @@ public sealed class CvkValidationTests
                 new CvkWriter(new EmptyProtector()).WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -318,20 +395,23 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-concurrent-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var first = CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
-            var second = CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            var first = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            var second = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
             await Task.WhenAll(
-                CrypVol.Lib.Crypto.CvkOperations.WriteAsync(first, file),
-                CrypVol.Lib.Crypto.CvkOperations.WriteAsync(second, file));
+                CvkOperations.WriteAsync(first, file),
+                CvkOperations.WriteAsync(second, file));
 
             var parsed = CvkParser.Parse(await File.ReadAllBytesAsync(file.FullName));
             Assert.Equal(32, parsed.Integrity.Length);
             Assert.Equal(CvkKeyProtection.Plain, parsed.Header.KeyProtection);
-            var loaded = await CrypVol.Lib.Crypto.CvkOperations.LoadAsync(file);
+            var loaded = await CvkOperations.LoadAsync(file);
             Assert.True(loaded.Cek.AsSpan().SequenceEqual(first.Cek) ||
                         loaded.Cek.AsSpan().SequenceEqual(second.Cek));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -340,11 +420,11 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-concurrent-read-{Guid.NewGuid():N}.cvk"));
         try
         {
-            await CrypVol.Lib.Crypto.CvkOperations.WriteAsync(
-                CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file);
+            await CvkOperations.WriteAsync(
+                CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file);
             var writes = Enumerable.Range(0, 12).Select(_ =>
-                CrypVol.Lib.Crypto.CvkOperations.WriteAsync(
-                    CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file));
+                CvkOperations.WriteAsync(
+                    CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file));
             var reads = Enumerable.Range(0, 24).Select(async _ =>
             {
                 var parsed = await new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file);
@@ -353,7 +433,10 @@ public sealed class CvkValidationTests
 
             await Task.WhenAll(writes.Concat(reads));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -362,25 +445,29 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-concurrent-failure-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
-            var successful = CrypVol.Lib.Crypto.CvkOperations.WriteAsync(document, file);
-            var failingDocument = CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            var document = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
+            var successful = CvkOperations.WriteAsync(document, file);
+            var failingDocument = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
             var failing = new CvkWriter(new ThrowingProtector()).WriteAsync(failingDocument, file);
 
             await Assert.ThrowsAsync<InvalidOperationException>(async () => await failing);
             await successful;
 
-            var loaded = await CrypVol.Lib.Crypto.CvkOperations.LoadAsync(file);
+            var loaded = await CvkOperations.LoadAsync(file);
             Assert.Equal(document.Cek, loaded.Cek);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public void Registry_RejectsUnknownRoute()
     {
         var registry = CvkPayloadCryptorRegistry.CreateDefault();
-        Assert.Throws<NotSupportedException>(() => registry.Resolve(new CvkHeader(1, CvkKeyProtection.Password, CvkKeyWrapAlgorithm.RsaOaepSha256, null, null, null, null, null)));
+        Assert.Throws<NotSupportedException>(() => registry.Resolve(new CvkHeader(1, CvkKeyProtection.Password,
+            CvkKeyWrapAlgorithm.RsaOaepSha256, null, null, null, null, null)));
     }
 
     [Fact]
@@ -422,12 +509,15 @@ public sealed class CvkValidationTests
     public void Registry_RejectsNullAndAllowsExplicitOverride()
     {
         var registry = new CvkPayloadCryptorRegistry();
-        Assert.Throws<ArgumentNullException>(() => registry.Register(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None, null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            registry.Register(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None, null!));
         var first = new PlainCvkPayloadCryptor();
         var second = new PlainCvkPayloadCryptor();
         registry.Register(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None, first);
         registry.Register(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None, second);
-        Assert.Same(second, registry.Resolve(new CvkHeader(1, CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None, null, null, null, null, null)));
+        Assert.Same(second,
+            registry.Resolve(new CvkHeader(1, CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None, null, null, null, null,
+                null)));
         Assert.ThrowsAny<Exception>(() => registry.Resolve(null!));
     }
 
@@ -544,8 +634,10 @@ public sealed class CvkValidationTests
     public async Task PlainCryptor_RejectsMismatchedHeaderAndInvalidJson()
     {
         var cryptor = new PlainCvkPayloadCryptor();
-        var wrongHeader = new CvkHeader(1, CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256, null, null, null, null, null);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => cryptor.ProtectAsync(wrongHeader, new CvkPayload(new byte[32], [])).AsTask());
+        var wrongHeader = new CvkHeader(1, CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256, null, null,
+            null, null, null);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            cryptor.ProtectAsync(wrongHeader, new CvkPayload(new byte[32], [])).AsTask());
         var header = new CvkHeader(1, CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None, null, null, null, null, null);
         await Assert.ThrowsAsync<InvalidDataException>(() => cryptor.UnprotectAsync(header, "not-json"u8.ToArray()).AsTask());
     }
@@ -568,7 +660,10 @@ public sealed class CvkValidationTests
     [Fact]
     public void PayloadCodec_RoundTripsRecipientsAndCek()
     {
-        var recipient = new CrypVol.Lib.Crypto.Keys.AsymmetricRecipientKey("id", "RSA", new byte[] { 1, 2, 3 }, "comment");
+        var recipient = new AsymmetricRecipientKey("id", "RSA", new byte[]
+        {
+            1, 2, 3
+        }, "comment");
         var payload = new CvkPayload(new byte[32], [recipient]);
         var restored = CvkPayloadCodec.Decode(CvkPayloadCodec.Encode(payload));
         Assert.Equal(payload.Cek.ToArray(), restored.Cek.ToArray());
@@ -585,29 +680,31 @@ public sealed class CvkValidationTests
     [Fact]
     public void PayloadCodec_RejectsDuplicateFields()
     {
-        var json = "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[]}";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        var json =
+            "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[]}";
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
     public void PayloadCodec_RejectsDuplicateNestedRecipientFields()
     {
-        var json = "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"keyId\":\"other\",\"algorithm\":\"RSA\",\"publicKey\":\"AQI=\"}]}";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        var json =
+            "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"keyId\":\"other\",\"algorithm\":\"RSA\",\"publicKey\":\"AQI=\"}]}";
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
     public void PayloadCodec_RejectsTrailingGarbage()
     {
         var json = "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[]}garbage";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
     public void PayloadCodec_RejectsUnknownFields()
     {
         var json = "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[],\"unexpected\":true}";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Theory]
@@ -616,7 +713,7 @@ public sealed class CvkValidationTests
     public void PayloadCodec_RejectsNonCanonicalFieldCasing(string field)
     {
         var json = field == "CEK"
-            ? "{\"CEK\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[]}" 
+            ? "{\"CEK\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[]}"
             : "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"RecipientKeys\":[]}";
         Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
@@ -627,7 +724,7 @@ public sealed class CvkValidationTests
     [InlineData("{\"cek\":\"AQI=\",\"recipientKeys\":null}")]
     public void PayloadCodec_RejectsMissingRequiredData(string json)
     {
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
@@ -639,7 +736,8 @@ public sealed class CvkValidationTests
 
     [Theory]
     [InlineData("{\"cek\":123,\"recipientKeys\":[]}")]
-    [InlineData("{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"algorithm\":\"RSA\",\"publicKey\":123}]}")]
+    [InlineData(
+        "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"algorithm\":\"RSA\",\"publicKey\":123}]}")]
     public void PayloadCodec_RejectsNumericBinaryFields(string json)
     {
         Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
@@ -669,7 +767,8 @@ public sealed class CvkValidationTests
     [Fact]
     public void PayloadCodec_RejectsNonArrayRecipients()
     {
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode("{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":{}}"u8));
+        Assert.ThrowsAny<Exception>(() =>
+            CvkPayloadCodec.Decode("{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":{}}"u8));
     }
 
     [Theory]
@@ -683,7 +782,7 @@ public sealed class CvkValidationTests
     public void PayloadCodec_RejectsInvalidRecipientMetadata(string recipient)
     {
         var json = $"{{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{recipient}]}}";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Theory]
@@ -692,36 +791,40 @@ public sealed class CvkValidationTests
     [InlineData("rsa")]
     public void PayloadCodec_RejectsUnsupportedRecipientAlgorithms(string algorithm)
     {
-        var json = $"{{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{{\"keyId\":\"id\",\"algorithm\":\"{algorithm}\",\"publicKey\":\"AQI=\"}}]}}";
+        var json =
+            $"{{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{{\"keyId\":\"id\",\"algorithm\":\"{algorithm}\",\"publicKey\":\"AQI=\"}}]}}";
         Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
     public void PayloadCodec_RejectsNullRecipientPublicKey()
     {
-        var json = "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"algorithm\":\"RSA\",\"publicKey\":null}]}";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        var json =
+            "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"algorithm\":\"RSA\",\"publicKey\":null}]}";
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
     public void PayloadCodec_RejectsEmptyRecipientPublicKey()
     {
-        var json = "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"algorithm\":\"RSA\",\"publicKey\":\"\"}]}";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        var json =
+            "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[{\"keyId\":\"id\",\"algorithm\":\"RSA\",\"publicKey\":\"\"}]}";
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
     public void PayloadCodec_RejectsNullRecipientElement()
     {
         var json = "{\"cek\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"recipientKeys\":[null]}";
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes(json)));
+        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
     public void PayloadCodec_RejectsOversizedCek()
     {
         var oversized = Convert.ToBase64String(new byte[33]);
-        Assert.ThrowsAny<Exception>(() => CvkPayloadCodec.Decode(System.Text.Encoding.UTF8.GetBytes($"{{\"cek\":\"{oversized}\",\"recipientKeys\":[]}}")));
+        Assert.ThrowsAny<Exception>(() =>
+            CvkPayloadCodec.Decode(Encoding.UTF8.GetBytes($"{{\"cek\":\"{oversized}\",\"recipientKeys\":[]}}")));
     }
 
     [Fact]
@@ -735,17 +838,27 @@ public sealed class CvkValidationTests
     [Fact]
     public void Parser_RejectsInvalidSemanticEnums()
     {
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":99,\"keyWrapAlgorithm\":\"None\"}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"RsaOaepSha256\"}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Password\",\"keyWrapAlgorithm\":\"RsaOaepSha256\"}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"PublicKey\",\"keyWrapAlgorithm\":\"PasswordPbkdf2Sha256\"}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":99,\"keyWrapAlgorithm\":\"None\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(
+                BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"RsaOaepSha256\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(
+                BuildHeader("{\"version\":1,\"keyProtection\":\"Password\",\"keyWrapAlgorithm\":\"RsaOaepSha256\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(
+                BuildHeader(
+                    "{\"version\":1,\"keyProtection\":\"PublicKey\",\"keyWrapAlgorithm\":\"PasswordPbkdf2Sha256\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(BuildHeader("{\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\"}")));
     }
 
     [Fact]
     public void Parser_AcceptsMaximumSupportedVersion()
     {
-        var parsed = CvkParser.Parse(BuildHeader("{\"version\":65535,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\"}"));
+        var parsed = CvkParser.Parse(
+            BuildHeader("{\"version\":65535,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\"}"));
         Assert.Equal(ushort.MaxValue, parsed.Header.Version);
     }
 
@@ -774,9 +887,12 @@ public sealed class CvkValidationTests
     [Fact]
     public void Parser_RejectsUnknownEnumNames()
     {
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Unknown\",\"keyWrapAlgorithm\":\"None\"}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"Unknown\"}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"0\",\"keyWrapAlgorithm\":\"None\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Unknown\",\"keyWrapAlgorithm\":\"None\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"Unknown\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"0\",\"keyWrapAlgorithm\":\"None\"}")));
     }
 
     [Theory]
@@ -793,8 +909,10 @@ public sealed class CvkValidationTests
     public void Parser_RejectsMissingOrNullRouteFields()
     {
         Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":null,\"keyWrapAlgorithm\":\"None\"}")));
-        Assert.Throws<InvalidDataException>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":null}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":null,\"keyWrapAlgorithm\":\"None\"}")));
+        Assert.Throws<InvalidDataException>(() =>
+            CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":null}")));
     }
 
     [Fact]
@@ -818,14 +936,17 @@ public sealed class CvkValidationTests
     [InlineData("123")]
     public void Parser_RejectsInvalidCreatedAt(string createdAt)
     {
-        var json = $"{{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\",\"createdAt\":\"{createdAt}\"}}";
+        var json =
+            $"{{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\",\"createdAt\":\"{createdAt}\"}}";
         Assert.ThrowsAny<Exception>(() => CvkParser.Parse(BuildHeader(json)));
     }
 
     [Fact]
     public void Parser_RejectsWrongCreatedAtType()
     {
-        Assert.ThrowsAny<Exception>(() => CvkParser.Parse(BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\",\"createdAt\":123}")));
+        Assert.ThrowsAny<Exception>(() =>
+            CvkParser.Parse(
+                BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\",\"createdAt\":123}")));
     }
 
     [Theory]
@@ -911,7 +1032,10 @@ public sealed class CvkValidationTests
     public void Parser_RejectsTrailingBytesAfterIntegritySegment()
     {
         var valid = BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\"}");
-        var withTrailing = valid.Concat(new byte[] { 0x7F }).ToArray();
+        var withTrailing = valid.Concat(new byte[]
+        {
+            0x7F
+        }).ToArray();
         Assert.Throws<InvalidDataException>(() => CvkParser.Parse(withTrailing));
     }
 
@@ -943,10 +1067,15 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-zero-integrity-{Guid.NewGuid():N}.cvk"));
         try
         {
-            await File.WriteAllBytesAsync(file.FullName, BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\"}"));
-            await Assert.ThrowsAsync<CryptographicException>(() => new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file));
+            await File.WriteAllBytesAsync(file.FullName,
+                BuildHeader("{\"version\":1,\"keyProtection\":\"Plain\",\"keyWrapAlgorithm\":\"None\"}"));
+            await Assert.ThrowsAsync<CryptographicException>(() =>
+                new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -955,11 +1084,19 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-integrity-exception-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
             await Assert.ThrowsAsync<InvalidOperationException>(() => new CvkReader(new ThrowingIntegrity()).ReadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1032,7 +1169,7 @@ public sealed class CvkValidationTests
     [Fact]
     public async Task Reader_DocumentLoad_HonorsCancellation()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.Plain,
@@ -1045,9 +1182,13 @@ public sealed class CvkValidationTests
         try
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                new CvkReader(new Sha256IntegrityCalculator(), new PlainCvkPayloadUnprotector()).ReadDocumentAsync(file, cts.Token));
+                new CvkReader(new Sha256IntegrityCalculator(), new PlainCvkPayloadUnprotector()).ReadDocumentAsync(file,
+                    cts.Token));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1057,7 +1198,8 @@ public sealed class CvkValidationTests
         directory.Create();
         try
         {
-            await Assert.ThrowsAnyAsync<Exception>(() => new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(new FileInfo(directory.FullName)));
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(new FileInfo(directory.FullName)));
         }
         finally { directory.Delete(); }
     }
@@ -1091,11 +1233,20 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-reader-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => new CvkReader(new Sha256IntegrityCalculator()).ReadDocumentAsync(file));
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new CvkReader(new Sha256IntegrityCalculator()).ReadDocumentAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1104,13 +1255,22 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-reader-cancel-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
             using var cts = new CancellationTokenSource();
             cts.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file, cts.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file, cts.Token));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1119,7 +1279,7 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-reader-document-cancel-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument
+            var document = new CvkDocument
             {
                 Cek = new byte[32],
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1133,7 +1293,10 @@ public sealed class CvkValidationTests
                 new CvkReader(new Sha256IntegrityCalculator(), new PlainCvkPayloadUnprotector())
                     .ReadDocumentAsync(file, cts.Token));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1142,43 +1305,39 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-integrity-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
             var wrong = new CvkReader(new ConstantIntegrityCalculator());
-            await Assert.ThrowsAsync<System.Security.Cryptography.CryptographicException>(() => wrong.ReadAsync(file));
+            await Assert.ThrowsAsync<CryptographicException>(() => wrong.ReadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
-    }
-
-    private sealed class ConstantIntegrityCalculator : ICvkIntegrityCalculator
-    {
-        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody) => new byte[32];
-    }
-
-    private sealed class CapturingIntegrity : ICvkIntegrityCalculator
-    {
-        public ReadOnlyMemory<byte> Header { get; private set; }
-        public ReadOnlyMemory<byte> Body { get; private set; }
-
-        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
+        finally
         {
-            Header = headerJson.ToArray();
-            Body = keyBody.ToArray();
-            return new byte[32];
+            if (file.Exists) file.Delete();
         }
     }
 
     [Fact]
     public async Task Writer_RejectsDuplicateRecipientIdsInPlainMode()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.Plain,
             KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
         };
-        document.RecipientKeys.Add(new CrypVol.Lib.Crypto.Keys.AsymmetricRecipientKey("duplicate", "RSA", new byte[] { 1 }));
-        document.RecipientKeys.Add(new CrypVol.Lib.Crypto.Keys.AsymmetricRecipientKey("duplicate", "RSA", new byte[] { 2 }));
+        document.RecipientKeys.Add(new AsymmetricRecipientKey("duplicate", "RSA", new byte[]
+        {
+            1
+        }));
+        document.RecipientKeys.Add(new AsymmetricRecipientKey("duplicate", "RSA", new byte[]
+        {
+            2
+        }));
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-duplicate-plain-{Guid.NewGuid():N}.cvk"));
         try
         {
@@ -1186,7 +1345,10 @@ public sealed class CvkValidationTests
                 new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -1197,19 +1359,20 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-integrity-length-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
             var calculator = new VariableIntegrityCalculator(length);
             await Assert.ThrowsAsync<CryptographicException>(() => new CvkReader(calculator).ReadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
-    }
-
-    private sealed class VariableIntegrityCalculator : ICvkIntegrityCalculator
-    {
-        private readonly int _length;
-        public VariableIntegrityCalculator(int length) => _length = length;
-        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody) => new byte[_length];
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1218,16 +1381,25 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-order-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
             var bytes = await File.ReadAllBytesAsync(file.FullName);
             bytes[^1] ^= 1;
             await File.WriteAllBytesAsync(file.FullName, bytes);
             var unprotector = new CountingUnprotector();
-            await Assert.ThrowsAsync<CryptographicException>(() => new CvkReader(new Sha256IntegrityCalculator(), unprotector).ReadDocumentAsync(file));
+            await Assert.ThrowsAsync<CryptographicException>(() =>
+                new CvkReader(new Sha256IntegrityCalculator(), unprotector).ReadDocumentAsync(file));
             Assert.Equal(0, unprotector.Calls);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1235,9 +1407,15 @@ public sealed class CvkValidationTests
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+        var document = new CvkDocument
+        {
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.Plain,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+        };
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-cancel-{Guid.NewGuid():N}.cvk"));
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file, cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file, cts.Token));
         Assert.False(file.Exists);
     }
 
@@ -1250,10 +1428,19 @@ public sealed class CvkValidationTests
             await File.WriteAllBytesAsync(file, [1, 2, 3]);
             using var cts = new CancellationTokenSource();
             cts.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => AtomicFile.WriteBytesAsync(file, new byte[] { 9, 9, 9 }, cts.Token));
-            Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(file));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => AtomicFile.WriteBytesAsync(file, new byte[]
+            {
+                9, 9, 9
+            }, cts.Token));
+            Assert.Equal(new byte[]
+            {
+                1, 2, 3
+            }, await File.ReadAllBytesAsync(file));
         }
-        finally { if (File.Exists(file)) File.Delete(file); }
+        finally
+        {
+            if (File.Exists(file)) File.Delete(file);
+        }
     }
 
     [Fact]
@@ -1266,14 +1453,20 @@ public sealed class CvkValidationTests
             using var cts = new CancellationTokenSource();
             cts.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                AtomicFile.WriteBytesAsync(file, new byte[] { 1, 2, 3 }, cts.Token));
+                AtomicFile.WriteBytesAsync(file, new byte[]
+                {
+                    1, 2, 3
+                }, cts.Token));
 
             Assert.Empty(Directory.EnumerateFiles(directory, $".{Path.GetFileName(file)}.*.tmp"));
         }
-        finally { if (File.Exists(file)) File.Delete(file); }
+        finally
+        {
+            if (File.Exists(file)) File.Delete(file);
+        }
     }
 
-    private static Task Write(CrypVol.Lib.Crypto.CvkDocument document)
+    private static Task Write(CvkDocument document)
     {
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-invalid-{Guid.NewGuid():N}.cvk"));
         return new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
@@ -1289,7 +1482,9 @@ public sealed class CvkValidationTests
         BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), (uint)header.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(8), (uint)body.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(12), (uint)integrity.Length);
-        header.CopyTo(result, 16); body.CopyTo(result, 16 + header.Length); integrity.CopyTo(result, 16 + header.Length + body.Length);
+        header.CopyTo(result, 16);
+        body.CopyTo(result, 16 + header.Length);
+        integrity.CopyTo(result, 16 + header.Length + body.Length);
         return result;
     }
 
@@ -1299,18 +1494,32 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-protector-fail-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
-            await Assert.ThrowsAsync<InvalidOperationException>(() => new CvkWriter(new ThrowingProtector()).WriteAsync(document, file));
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new CvkWriter(new ThrowingProtector()).WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_CreatesMissingParentDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), $"cvk-missing-parent-{Guid.NewGuid():N}", "nested", "file.cvk");
-        var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+        var document = new CvkDocument
+        {
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.Plain,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+        };
         try
         {
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, new FileInfo(path));
@@ -1319,7 +1528,7 @@ public sealed class CvkValidationTests
         finally
         {
             var root = Directory.GetParent(Path.GetDirectoryName(path)!)!.FullName;
-            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
 
@@ -1329,7 +1538,7 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-order-valid-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var source = new CrypVol.Lib.Crypto.CvkDocument
+            var source = new CvkDocument
             {
                 Cek = new byte[32],
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1344,7 +1553,10 @@ public sealed class CvkValidationTests
             Assert.NotEmpty(unprotector.KeyBody);
             Assert.Equal(source.Cek, loaded.Cek);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1354,7 +1566,7 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-capture-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument
+            var document = new CvkDocument
             {
                 Cek = new byte[32],
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1366,7 +1578,10 @@ public sealed class CvkValidationTests
             Assert.Equal(parsed.HeaderJson.ToArray(), calculator.Header.ToArray());
             Assert.Equal(parsed.KeyBody.ToArray(), calculator.Body.ToArray());
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -1374,8 +1589,11 @@ public sealed class CvkValidationTests
     [InlineData("   ")]
     public async Task Writer_RejectsBlankRecipientKeyId(string keyId)
     {
-        var document = CrypVol.Lib.Crypto.CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
-        document.RecipientKeys.Add(new CrypVol.Lib.Crypto.Keys.AsymmetricRecipientKey(keyId, "RSA", new byte[] { 1, 2, 3 }));
+        var document = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
+        document.RecipientKeys.Add(new AsymmetricRecipientKey(keyId, "RSA", new byte[]
+        {
+            1, 2, 3
+        }));
 
         await Assert.ThrowsAnyAsync<Exception>(() => Write(document));
     }
@@ -1386,26 +1604,47 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-integrity-fail-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
-            await Assert.ThrowsAsync<InvalidOperationException>(() => new CvkWriter(new PlainCvkPayloadProtector(), new ThrowingIntegrity()).WriteAsync(document, file));
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new CvkWriter(new PlainCvkPayloadProtector(), new ThrowingIntegrity()).WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_FailurePreservesExistingTarget()
     {
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-preserve-{Guid.NewGuid():N}.cvk"));
-        var original = new byte[] { 4, 5, 6, 7 };
+        var original = new byte[]
+        {
+            4, 5, 6, 7
+        };
         try
         {
             await File.WriteAllBytesAsync(file.FullName, original);
-            var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
-            await Assert.ThrowsAsync<InvalidOperationException>(() => new CvkWriter(new PlainCvkPayloadProtector(), new ThrowingIntegrity()).WriteAsync(document, file));
+            var document = new CvkDocument
+            {
+                Cek = new byte[32],
+                KeyProtection = CvkKeyProtection.Plain,
+                KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+            };
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new CvkWriter(new PlainCvkPayloadProtector(), new ThrowingIntegrity()).WriteAsync(document, file));
             Assert.Equal(original, await File.ReadAllBytesAsync(file.FullName));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1414,14 +1653,14 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-replace-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var first = new CrypVol.Lib.Crypto.CvkDocument
+            var first = new CvkDocument
             {
                 Cek = Enumerable.Repeat((byte)1, 32).ToArray(),
                 KeyProtection = CvkKeyProtection.Plain,
                 KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None,
                 Label = "first"
             };
-            var second = new CrypVol.Lib.Crypto.CvkDocument
+            var second = new CvkDocument
             {
                 Cek = Enumerable.Repeat((byte)2, 32).ToArray(),
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1432,75 +1671,56 @@ public sealed class CvkValidationTests
             await writer.WriteAsync(first, file);
             await writer.WriteAsync(second, file);
 
-            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new PlainCvkPayloadUnprotector()).ReadDocumentAsync(file);
+            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new PlainCvkPayloadUnprotector())
+                .ReadDocumentAsync(file);
             Assert.Equal(second.Cek, loaded.Cek);
             Assert.Equal("second", loaded.Label);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_RejectsIntegritySegmentExceedingParserLimit()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+        var document = new CvkDocument
+        {
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.Plain,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+        };
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-large-integrity-{Guid.NewGuid():N}.cvk"));
         try
         {
-            await Assert.ThrowsAsync<InvalidDataException>(() => new CvkWriter(new PlainCvkPayloadProtector(), new LargeIntegrity()).WriteAsync(document, file));
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                new CvkWriter(new PlainCvkPayloadProtector(), new LargeIntegrity()).WriteAsync(document, file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_RejectsEmptyIntegritySegment()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument { Cek = new byte[32], KeyProtection = CvkKeyProtection.Plain, KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None };
+        var document = new CvkDocument
+        {
+            Cek = new byte[32],
+            KeyProtection = CvkKeyProtection.Plain,
+            KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
+        };
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-empty-integrity-{Guid.NewGuid():N}.cvk"));
         try
         {
-            await Assert.ThrowsAsync<InvalidDataException>(() => new CvkWriter(new PlainCvkPayloadProtector(), new EmptyIntegrity()).WriteAsync(document, file));
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                new CvkWriter(new PlainCvkPayloadProtector(), new EmptyIntegrity()).WriteAsync(document, file));
         }
-        finally { if (file.Exists) file.Delete(); }
-    }
-
-    private sealed class ThrowingProtector : ICvkPayloadProtector
-    {
-        public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("protector failure");
-    }
-
-    private sealed class EmptyProtector : ICvkPayloadProtector
-    {
-        public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload,
-            CancellationToken cancellationToken = default) => ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
-    }
-
-    private sealed class SnapshotProtector(IList<AsymmetricRecipientKey> source) : ICvkPayloadProtector
-    {
-        public IReadOnlyList<AsymmetricRecipientKey> ObservedRecipients { get; private set; } = [];
-
-        public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload,
-            CancellationToken cancellationToken = default)
+        finally
         {
-            ObservedRecipients = payload.RecipientKeys.ToArray();
-            source.Clear();
-            return new PlainCvkPayloadProtector().ProtectAsync(header, payload, cancellationToken);
-        }
-    }
-
-    private sealed class ThrowingIntegrity : ICvkIntegrityCalculator
-    {
-        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
-            => throw new InvalidOperationException("integrity failure");
-    }
-
-    private sealed class CountingUnprotector : ICvkPayloadUnprotector
-    {
-        public int Calls { get; private set; }
-        public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            throw new InvalidOperationException("must not be called");
+            if (file.Exists) file.Delete();
         }
     }
 
@@ -1530,9 +1750,12 @@ public sealed class CvkValidationTests
             BinaryPrimitives.WriteUInt32LittleEndian(mutated.AsSpan(8), (uint)(body.Length + 1));
             await File.WriteAllBytesAsync(file.FullName, mutated);
 
-            await Assert.ThrowsAsync<CryptographicException>(() => CrypVol.Lib.Crypto.CvkOperations.LoadAsync(file));
+            await Assert.ThrowsAsync<CryptographicException>(() => CvkOperations.LoadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -1545,7 +1768,7 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-reader-malformed-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var source = new CrypVol.Lib.Crypto.CvkDocument
+            var source = new CvkDocument
             {
                 Cek = new byte[32],
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1563,28 +1786,10 @@ public sealed class CvkValidationTests
             await Assert.ThrowsAnyAsync<Exception>(() =>
                 new CvkReader(new Sha256IntegrityCalculator(), new ReturningUnprotector(malformed)).ReadDocumentAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
-    }
-
-    private sealed class RecordingUnprotector : ICvkPayloadUnprotector
-    {
-        public int Calls { get; private set; }
-        public byte[] HeaderJson { get; private set; } = [];
-        public byte[] KeyBody { get; private set; } = [];
-
-        public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody, CancellationToken cancellationToken = default)
+        finally
         {
-            Calls++;
-            HeaderJson = CvkPayloadCodec.EncodeHeader(header);
-            KeyBody = keyBody.ToArray();
-            return ValueTask.FromResult(new CvkPayload(new byte[32], []));
+            if (file.Exists) file.Delete();
         }
-    }
-
-    private sealed class ReturningUnprotector(CvkPayload payload) : ICvkPayloadUnprotector
-    {
-        public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(payload);
     }
 
     [Fact]
@@ -1593,7 +1798,7 @@ public sealed class CvkValidationTests
         var file = new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-prefix-lengths-{Guid.NewGuid():N}.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument
+            var document = new CvkDocument
             {
                 Cek = new byte[32],
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1607,13 +1812,16 @@ public sealed class CvkValidationTests
             Assert.Equal((uint)parsed.KeyBody.Length, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8)));
             Assert.Equal((uint)parsed.Integrity.Length, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12)));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
     public async Task Writer_RejectsPublicKeyDocumentWithoutEcdhRecipients()
     {
-        var document = new CrypVol.Lib.Crypto.CvkDocument
+        var document = new CvkDocument
         {
             Cek = new byte[32],
             KeyProtection = CvkKeyProtection.PublicKey,
@@ -1625,17 +1833,10 @@ public sealed class CvkValidationTests
             await Assert.ThrowsAsync<InvalidDataException>(() =>
                 new CvkWriter(new CvkPayloadProtectorAdapter(new EcdhP256Cryptor())).WriteAsync(document, file));
         }
-        finally { if (file.Exists) file.Delete(); }
-    }
-
-    private sealed class LargeIntegrity : ICvkIntegrityCalculator
-    {
-        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody) => new byte[4097];
-    }
-
-    private sealed class EmptyIntegrity : ICvkIntegrityCalculator
-    {
-        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody) => ReadOnlyMemory<byte>.Empty;
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -1646,7 +1847,7 @@ public sealed class CvkValidationTests
         var target = new FileInfo(Path.Combine(parent.FullName, "child.cvk"));
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument
+            var document = new CvkDocument
             {
                 Cek = new byte[32],
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1656,7 +1857,10 @@ public sealed class CvkValidationTests
                 new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, target));
             Assert.False(target.Exists);
         }
-        finally { if (parent.Exists) parent.Delete(); }
+        finally
+        {
+            if (parent.Exists) parent.Delete();
+        }
     }
 
     [Fact]
@@ -1666,7 +1870,7 @@ public sealed class CvkValidationTests
         directory.Create();
         try
         {
-            var document = new CrypVol.Lib.Crypto.CvkDocument
+            var document = new CvkDocument
             {
                 Cek = new byte[32],
                 KeyProtection = CvkKeyProtection.Plain,
@@ -1677,6 +1881,137 @@ public sealed class CvkValidationTests
             Assert.True(directory.Exists);
             Assert.Empty(directory.EnumerateFileSystemInfos());
         }
-        finally { if (directory.Exists) directory.Delete(true); }
+        finally
+        {
+            if (directory.Exists) directory.Delete(true);
+        }
+    }
+
+    private sealed class ConstantIntegrityCalculator : ICvkIntegrityCalculator
+    {
+        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
+        {
+            return new byte[32];
+        }
+    }
+
+    private sealed class CapturingIntegrity : ICvkIntegrityCalculator
+    {
+        public ReadOnlyMemory<byte> Header { get; private set; }
+        public ReadOnlyMemory<byte> Body { get; private set; }
+
+        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
+        {
+            Header = headerJson.ToArray();
+            Body = keyBody.ToArray();
+            return new byte[32];
+        }
+    }
+
+    private sealed class VariableIntegrityCalculator : ICvkIntegrityCalculator
+    {
+        private readonly int _length;
+
+        public VariableIntegrityCalculator(int length)
+        {
+            _length = length;
+        }
+
+        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
+        {
+            return new byte[_length];
+        }
+    }
+
+    private sealed class ThrowingProtector : ICvkPayloadProtector
+    {
+        public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload,
+            CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("protector failure");
+        }
+    }
+
+    private sealed class EmptyProtector : ICvkPayloadProtector
+    {
+        public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload,
+            CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
+        }
+    }
+
+    private sealed class SnapshotProtector(IList<AsymmetricRecipientKey> source) : ICvkPayloadProtector
+    {
+        public IReadOnlyList<AsymmetricRecipientKey> ObservedRecipients { get; private set; } = [];
+
+        public ValueTask<ReadOnlyMemory<byte>> ProtectAsync(CvkHeader header, CvkPayload payload,
+            CancellationToken cancellationToken = default)
+        {
+            ObservedRecipients = payload.RecipientKeys.ToArray();
+            source.Clear();
+            return new PlainCvkPayloadProtector().ProtectAsync(header, payload, cancellationToken);
+        }
+    }
+
+    private sealed class ThrowingIntegrity : ICvkIntegrityCalculator
+    {
+        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
+        {
+            throw new InvalidOperationException("integrity failure");
+        }
+    }
+
+    private sealed class CountingUnprotector : ICvkPayloadUnprotector
+    {
+        public int Calls { get; private set; }
+
+        public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new InvalidOperationException("must not be called");
+        }
+    }
+
+    private sealed class RecordingUnprotector : ICvkPayloadUnprotector
+    {
+        public int Calls { get; private set; }
+        public byte[] HeaderJson { get; private set; } = [];
+        public byte[] KeyBody { get; private set; } = [];
+
+        public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            HeaderJson = CvkPayloadCodec.EncodeHeader(header);
+            KeyBody = keyBody.ToArray();
+            return ValueTask.FromResult(new CvkPayload(new byte[32], []));
+        }
+    }
+
+    private sealed class ReturningUnprotector(CvkPayload payload) : ICvkPayloadUnprotector
+    {
+        public ValueTask<CvkPayload> UnprotectAsync(CvkHeader header, ReadOnlyMemory<byte> keyBody,
+            CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(payload);
+        }
+    }
+
+    private sealed class LargeIntegrity : ICvkIntegrityCalculator
+    {
+        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
+        {
+            return new byte[4097];
+        }
+    }
+
+    private sealed class EmptyIntegrity : ICvkIntegrityCalculator
+    {
+        public ReadOnlyMemory<byte> Compute(ReadOnlyMemory<byte> headerJson, ReadOnlyMemory<byte> keyBody)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
     }
 }

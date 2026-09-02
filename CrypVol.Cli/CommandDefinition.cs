@@ -1,5 +1,4 @@
 using System.CommandLine;
-using CrypVol.Lib.Crypto.Models;
 using System.IO.Compression;
 using CrypVol.Cli.Browse;
 using CrypVol.Cli.Convert;
@@ -10,6 +9,7 @@ using CrypVol.Cli.Pack;
 using CrypVol.Cli.Rekey;
 using CrypVol.Cli.Repair;
 using CrypVol.Cli.Verify;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Volume;
 using Microsoft.Extensions.Logging;
 

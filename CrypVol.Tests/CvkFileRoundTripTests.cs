@@ -36,8 +36,11 @@ public sealed class CvkFileRoundTripTests
         var file = TempFile();
         try
         {
-            await new CvkWriter(new CvkPayloadProtectorAdapter(new PasswordArgon2IdCryptor("right"))).WriteAsync(document, file);
-            await Assert.ThrowsAnyAsync<CryptographicException>(() => new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(new PasswordArgon2IdCryptor("wrong"))).ReadDocumentAsync(file));
+            await new CvkWriter(new CvkPayloadProtectorAdapter(new PasswordArgon2IdCryptor("right"))).WriteAsync(document,
+                file);
+            await Assert.ThrowsAnyAsync<CryptographicException>(() =>
+                new CvkReader(new Sha256IntegrityCalculator(),
+                    new CvkPayloadUnprotectorAdapter(new PasswordArgon2IdCryptor("wrong"))).ReadDocumentAsync(file));
         }
         finally { Delete(file); }
     }
@@ -50,8 +53,10 @@ public sealed class CvkFileRoundTripTests
         const string password = "密码🔐-пароль";
         try
         {
-            await new CvkWriter(new CvkPayloadProtectorAdapter(new PasswordArgon2IdCryptor(password))).WriteAsync(document, file);
-            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(new PasswordArgon2IdCryptor(password))).ReadDocumentAsync(file);
+            await new CvkWriter(new CvkPayloadProtectorAdapter(new PasswordArgon2IdCryptor(password))).WriteAsync(document,
+                file);
+            var loaded = await new CvkReader(new Sha256IntegrityCalculator(),
+                new CvkPayloadUnprotectorAdapter(new PasswordArgon2IdCryptor(password))).ReadDocumentAsync(file);
             Assert.Equal(document.Cek, loaded.Cek);
         }
         finally { Delete(file); }
@@ -79,10 +84,17 @@ public sealed class CvkFileRoundTripTests
         {
             var writerCryptor = CreateRsa(algorithm);
             await new CvkWriter(new CvkPayloadProtectorAdapter(writerCryptor)).WriteAsync(document, file);
-            foreach (var privateKey in new[] { firstPrivate, secondPrivate })
+            foreach (var privateKey in new[]
+                     {
+                         firstPrivate, secondPrivate
+                     })
             {
-                var readerCryptor = CreateRsa(algorithm, new Dictionary<string, AsymmetricPrivateKeyMaterial> { [privateKey.KeyId] = privateKey });
-                var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(readerCryptor)).ReadDocumentAsync(file);
+                var readerCryptor = CreateRsa(algorithm, new Dictionary<string, AsymmetricPrivateKeyMaterial>
+                {
+                    [privateKey.KeyId] = privateKey
+                });
+                var loaded = await new CvkReader(new Sha256IntegrityCalculator(),
+                    new CvkPayloadUnprotectorAdapter(readerCryptor)).ReadDocumentAsync(file);
                 Assert.Equal(document.Cek, loaded.Cek);
                 Assert.Equal(2, loaded.RecipientKeys.Count);
                 Assert.Equal("second recipient", loaded.RecipientKeys[1].Comment);
@@ -116,12 +128,14 @@ public sealed class CvkFileRoundTripTests
     {
         using var rsa = RSA.Create(2048);
         var document = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
-        document.RecipientKeys.Add(new AsymmetricRecipientKey("optional", "RSA", rsa.ExportSubjectPublicKeyInfo(), "metadata"));
+        document.RecipientKeys.Add(
+            new AsymmetricRecipientKey("optional", "RSA", rsa.ExportSubjectPublicKeyInfo(), "metadata"));
         var file = TempFile();
         try
         {
             await new CvkWriter(new PlainCvkPayloadProtector()).WriteAsync(document, file);
-            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new PlainCvkPayloadUnprotector()).ReadDocumentAsync(file);
+            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new PlainCvkPayloadUnprotector())
+                .ReadDocumentAsync(file);
             Assert.Single(loaded.RecipientKeys);
             Assert.Equal("optional", loaded.RecipientKeys[0].KeyId);
             Assert.Equal("metadata", loaded.RecipientKeys[0].Comment);
@@ -156,10 +170,17 @@ public sealed class CvkFileRoundTripTests
         try
         {
             await new CvkWriter(new CvkPayloadProtectorAdapter(CreateEcdh(algorithm))).WriteAsync(document, file);
-            foreach (var privateKey in new[] { firstPrivate, secondPrivate })
+            foreach (var privateKey in new[]
+                     {
+                         firstPrivate, secondPrivate
+                     })
             {
-                var privateKeys = new Dictionary<string, AsymmetricPrivateKeyMaterial> { [privateKey.KeyId] = privateKey };
-                var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(CreateEcdh(algorithm, privateKeys))).ReadDocumentAsync(file);
+                var privateKeys = new Dictionary<string, AsymmetricPrivateKeyMaterial>
+                {
+                    [privateKey.KeyId] = privateKey
+                };
+                var loaded = await new CvkReader(new Sha256IntegrityCalculator(),
+                    new CvkPayloadUnprotectorAdapter(CreateEcdh(algorithm, privateKeys))).ReadDocumentAsync(file);
                 Assert.Equal(document.Cek, loaded.Cek);
                 Assert.Equal(2, loaded.RecipientKeys.Count);
                 for (var i = 0; i < recipients.Length; i++)
@@ -180,7 +201,8 @@ public sealed class CvkFileRoundTripTests
         using var recipientKey = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
         using var wrongKey = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP384);
         var document = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.EcdhP256);
-        document.RecipientKeys.Add(new AsymmetricRecipientKey("recipient", "ECDH", recipientKey.ExportSubjectPublicKeyInfo()));
+        document.RecipientKeys.Add(new AsymmetricRecipientKey("recipient", "ECDH",
+            recipientKey.ExportSubjectPublicKeyInfo()));
         var file = TempFile();
         try
         {
@@ -191,25 +213,41 @@ public sealed class CvkFileRoundTripTests
                 [wrongMaterial.KeyId] = wrongMaterial
             });
             await Assert.ThrowsAnyAsync<Exception>(() =>
-                new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(cryptor)).ReadDocumentAsync(file));
+                new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(cryptor))
+                    .ReadDocumentAsync(file));
         }
         finally { Delete(file); }
     }
 
-    private static ICvkPayloadCryptor CreateRsa(CvkKeyWrapAlgorithm algorithm, IReadOnlyDictionary<string, AsymmetricPrivateKeyMaterial>? keys = null) => algorithm switch
+    private static ICvkPayloadCryptor CreateRsa(CvkKeyWrapAlgorithm algorithm,
+        IReadOnlyDictionary<string, AsymmetricPrivateKeyMaterial>? keys = null)
     {
-        CvkKeyWrapAlgorithm.RsaOaepSha384 => new RsaOaepSha384Cryptor(keys),
-        CvkKeyWrapAlgorithm.RsaOaepSha512 => new RsaOaepSha512Cryptor(keys),
-        _ => new RsaOaepSha256Cryptor(keys)
-    };
+        return algorithm switch
+        {
+            CvkKeyWrapAlgorithm.RsaOaepSha384 => new RsaOaepSha384Cryptor(keys),
+            CvkKeyWrapAlgorithm.RsaOaepSha512 => new RsaOaepSha512Cryptor(keys),
+            _ => new RsaOaepSha256Cryptor(keys)
+        };
+    }
 
-    private static ICvkPayloadCryptor CreateEcdh(CvkKeyWrapAlgorithm algorithm, IReadOnlyDictionary<string, AsymmetricPrivateKeyMaterial>? keys = null) => algorithm switch
+    private static ICvkPayloadCryptor CreateEcdh(CvkKeyWrapAlgorithm algorithm,
+        IReadOnlyDictionary<string, AsymmetricPrivateKeyMaterial>? keys = null)
     {
-        CvkKeyWrapAlgorithm.EcdhP384 => new EcdhP384Cryptor(keys),
-        CvkKeyWrapAlgorithm.EcdhP521 => new EcdhP521Cryptor(keys),
-        _ => new EcdhP256Cryptor(keys)
-    };
+        return algorithm switch
+        {
+            CvkKeyWrapAlgorithm.EcdhP384 => new EcdhP384Cryptor(keys),
+            CvkKeyWrapAlgorithm.EcdhP521 => new EcdhP521Cryptor(keys),
+            _ => new EcdhP256Cryptor(keys)
+        };
+    }
 
-    private static FileInfo TempFile() => new(Path.Combine(Path.GetTempPath(), $"cvk-file-{Guid.NewGuid():N}.cvk"));
-    private static void Delete(FileInfo file) { if (file.Exists) file.Delete(); }
+    private static FileInfo TempFile()
+    {
+        return new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-file-{Guid.NewGuid():N}.cvk"));
+    }
+
+    private static void Delete(FileInfo file)
+    {
+        if (file.Exists) file.Delete();
+    }
 }

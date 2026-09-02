@@ -12,7 +12,8 @@ public static class GenKeyHelper
         var name = args.GetValue(CommandDefinition.GenKey.Name)!;
         var mode = args.GetValue(CommandDefinition.GenKey.Mode);
         var algorithm = args.GetValue(CommandDefinition.GenKey.Algorithm);
-        if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 && mode != CvkKeyProtection.PublicKey)
+        if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 &&
+            mode != CvkKeyProtection.PublicKey)
         {
             await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --mode Asymmetric 一起使用。");
             return 1;
@@ -55,7 +56,8 @@ public static class GenKeyHelper
             var cvk = CvkOperations.CreateNew(mode, algorithm);
             cvk.Comment = args.GetValue(CommandDefinition.GenKey.Comment);
             foreach (var publicKey in pubKeys) CvkOperations.AddPublicKey(cvk, publicKey);
-            await CvkOperations.WriteAsync(cvk, new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), password, token);
+            await CvkOperations.WriteAsync(cvk, new FileInfo(Path.Combine(outputDir.FullName, $"{name}.cvk")), password,
+                token);
             Console.WriteLine($"密钥已生成: {Path.Combine(outputDir.FullName, name + ".cvk")} ({mode})");
             return 0;
         }

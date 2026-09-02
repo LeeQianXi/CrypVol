@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using CrypVol.Lib.Crypto.Keys;
 using Xunit;
 
@@ -34,7 +35,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal(publicBytes, material.PublicKeyBytes);
             Assert.Throws<ObjectDisposedException>(() => ((RSA)material.Key).ExportParameters(false));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -55,7 +59,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal(publicBytes, material.PublicKeyBytes);
             Assert.Throws<ObjectDisposedException>(() => ((RSA)material.Key).ExportParameters(false));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -118,7 +125,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -132,7 +142,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -142,13 +155,16 @@ public sealed class CvkKeyLoaderTests
         var file = Temp("receiver-bom.pub");
         try
         {
-            var pem = System.Text.Encoding.UTF8.GetBytes(rsa.ExportSubjectPublicKeyInfoPem());
-            File.WriteAllBytes(file.FullName, [.. System.Text.Encoding.UTF8.GetPreamble(), .. pem]);
+            var pem = Encoding.UTF8.GetBytes(rsa.ExportSubjectPublicKeyInfoPem());
+            File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -166,7 +182,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
             Assert.Equal("RSA", material.Algorithm);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -180,7 +199,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, "custom-id");
             Assert.Equal("custom-id", material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -194,7 +216,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, "   ");
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -204,12 +229,15 @@ public sealed class CvkKeyLoaderTests
         var file = Temp("private-fallback.pem");
         try
         {
-            var pem = System.Text.Encoding.UTF8.GetBytes(rsa.ExportPkcs8PrivateKeyPem());
-            File.WriteAllBytes(file.FullName, [.. System.Text.Encoding.UTF8.GetPreamble(), .. pem]);
+            var pem = Encoding.UTF8.GetBytes(rsa.ExportPkcs8PrivateKeyPem());
+            File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
             using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, keyId: "\t");
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -223,7 +251,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -236,14 +267,26 @@ public sealed class CvkKeyLoaderTests
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
+
         Assert.Throws<FileNotFoundException>(() => AsymmetricKeyFileLoader.LoadPublicKey(new FileInfo(file.FullName)));
     }
 
     [Fact]
     public void EmptyWhitespaceAndBinaryKeyFiles_AreRejected()
     {
-        foreach (var content in new[] { Array.Empty<byte>(), System.Text.Encoding.UTF8.GetBytes("   \n\t"), new byte[] { 0xFF, 0xFE, 0x00 } })
+        foreach (var content in new[]
+                 {
+                     Array.Empty<byte>(),
+                     Encoding.UTF8.GetBytes("   \n\t"),
+                     new byte[]
+                     {
+                         0xFF, 0xFE, 0x00
+                     }
+                 })
         {
             var file = Temp("invalid-content.pem");
             try
@@ -252,7 +295,10 @@ public sealed class CvkKeyLoaderTests
                 Assert.ThrowsAny<Exception>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
                 Assert.ThrowsAny<Exception>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
             }
-            finally { if (file.Exists) file.Delete(); }
+            finally
+            {
+                if (file.Exists) file.Delete();
+            }
         }
     }
 
@@ -279,7 +325,10 @@ public sealed class CvkKeyLoaderTests
             File.WriteAllText(file.FullName, rsa.ExportPkcs8PrivateKeyPem());
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -293,7 +342,10 @@ public sealed class CvkKeyLoaderTests
             File.WriteAllText(file.FullName, mixed);
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -306,7 +358,10 @@ public sealed class CvkKeyLoaderTests
             File.WriteAllText(file.FullName, rsa.ExportSubjectPublicKeyInfoPem());
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -323,7 +378,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file));
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file, "wrong"));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -333,13 +391,16 @@ public sealed class CvkKeyLoaderTests
         var file = Temp("private-bom.pem");
         try
         {
-            var pem = System.Text.Encoding.UTF8.GetBytes(rsa.ExportPkcs8PrivateKeyPem());
-            File.WriteAllBytes(file.FullName, [.. System.Text.Encoding.UTF8.GetPreamble(), .. pem]);
+            var pem = Encoding.UTF8.GetBytes(rsa.ExportPkcs8PrivateKeyPem());
+            File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
             using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -350,12 +411,15 @@ public sealed class CvkKeyLoaderTests
         try
         {
             var pbe = new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100_000);
-            var pem = System.Text.Encoding.UTF8.GetBytes(rsa.ExportEncryptedPkcs8PrivateKeyPem("secret", pbe));
-            File.WriteAllBytes(file.FullName, [.. System.Text.Encoding.UTF8.GetPreamble(), .. pem]);
+            var pem = Encoding.UTF8.GetBytes(rsa.ExportEncryptedPkcs8PrivateKeyPem("secret", pbe));
+            File.WriteAllBytes(file.FullName, [.. Encoding.UTF8.GetPreamble(), .. pem]);
             using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file, "secret");
             Assert.Equal("RSA", material.Algorithm);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -369,7 +433,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Throws<AsymmetricKeyFileFormatException>(() =>
                 AsymmetricKeyFileLoader.LoadPrivateKey(file, "unexpected-password"));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -383,7 +450,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
             Assert.Equal("RSA", material.Algorithm);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -398,7 +468,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -416,7 +489,11 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("ECDSA", publicMaterial.Algorithm);
             Assert.Equal("ECDSA", privateMaterial.Algorithm);
         }
-        finally { if (publicFile.Exists) publicFile.Delete(); if (privateFile.Exists) privateFile.Delete(); }
+        finally
+        {
+            if (publicFile.Exists) publicFile.Delete();
+            if (privateFile.Exists) privateFile.Delete();
+        }
     }
 
     [Theory]
@@ -438,7 +515,11 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("ECDSA", privateMaterial.Algorithm);
             Assert.Equal(publicMaterial.PublicKeyBytes, privateMaterial.PublicKeyBytes);
         }
-        finally { if (publicFile.Exists) publicFile.Delete(); if (privateFile.Exists) privateFile.Delete(); }
+        finally
+        {
+            if (publicFile.Exists) publicFile.Delete();
+            if (privateFile.Exists) privateFile.Delete();
+        }
     }
 
     [Fact]
@@ -452,7 +533,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPrivateKey(file);
             Assert.Equal("ECDH", material.Algorithm);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -467,7 +551,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("ECDH", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -488,7 +575,11 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("ECDH", publicMaterial.Algorithm);
             Assert.Equal("ECDH", privateMaterial.Algorithm);
         }
-        finally { if (publicFile.Exists) publicFile.Delete(); if (privateFile.Exists) privateFile.Delete(); }
+        finally
+        {
+            if (publicFile.Exists) publicFile.Delete();
+            if (privateFile.Exists) privateFile.Delete();
+        }
     }
 
     [Fact]
@@ -504,7 +595,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("ECDH", material.Algorithm);
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file, "wrong"));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -520,7 +614,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("ECDSA", material.Algorithm);
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPrivateKey(file, "wrong"));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -528,7 +625,8 @@ public sealed class CvkKeyLoaderTests
     {
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=CVK-Test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
+        using var certificate =
+            request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
         var file = Temp("certificate.pem");
         try
         {
@@ -537,7 +635,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -547,12 +648,16 @@ public sealed class CvkKeyLoaderTests
         var file = Temp("authorized_keys");
         try
         {
-            File.WriteAllText(file.FullName, $"ssh-rsa {Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)))} user@example.com\n");
+            File.WriteAllText(file.FullName,
+                $"ssh-rsa {Convert.ToBase64String(BuildOpenSshRsaBlob(rsa.ExportParameters(false)))} user@example.com\n");
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
             Assert.Equal("RSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -567,7 +672,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
             Assert.Equal("alice@example.com", material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -582,7 +690,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file);
             Assert.Equal(Path.GetFileNameWithoutExtension(file.Name), material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -597,7 +708,10 @@ public sealed class CvkKeyLoaderTests
             using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, "explicit-id");
             Assert.Equal("explicit-id", material.KeyId);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -613,7 +727,10 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("alice@example.com", material.KeyId);
             Assert.Equal(rsa.ExportSubjectPublicKeyInfo(), material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -629,7 +746,10 @@ public sealed class CvkKeyLoaderTests
             File.WriteAllText(file.FullName, content + "\n");
             Assert.Throws<AsymmetricKeyFileFormatException>(() => AsymmetricKeyFileLoader.LoadPublicKey(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -637,7 +757,8 @@ public sealed class CvkKeyLoaderTests
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest("CN=CVK-ECDSA", ecdsa, HashAlgorithmName.SHA256);
-        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
+        using var certificate =
+            request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
         var file = Temp("ecdsa-certificate.pem");
         try
         {
@@ -646,10 +767,16 @@ public sealed class CvkKeyLoaderTests
             Assert.Equal("ECDSA", material.Algorithm);
             Assert.NotEmpty(material.PublicKeyBytes);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
-    private static FileInfo Temp(string name) => new(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}-{name}"));
+    private static FileInfo Temp(string name)
+    {
+        return new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}-{name}"));
+    }
 
     private static byte[] BuildOpenSshRsaBlob(RSAParameters parameters)
     {

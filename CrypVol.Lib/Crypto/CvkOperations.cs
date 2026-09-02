@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using CrypVol.Lib.Crypto.Cryptography;
 using CrypVol.Lib.Crypto.Keys;
 using CrypVol.Lib.Crypto.Models;
@@ -14,8 +15,7 @@ public static class CvkOperations
     /// <summary>创建包含随机 CEK 的新文档。</summary>
     public static CvkDocument CreateNew(CvkKeyProtection protection, CvkKeyWrapAlgorithm algorithm)
     {
-        if (!IsValidRoute(protection, algorithm))
-            throw new ArgumentException($"不支持的 CVK 保护路由：{protection}/{algorithm}。", nameof(algorithm));
+        CvkEncapsulationRoute.Resolve(protection, algorithm);
         return new CvkDocument
         {
             Cek = RandomNumberGenerator.GetBytes(32),
@@ -26,31 +26,17 @@ public static class CvkOperations
         };
     }
 
-    /// <summary>判断保护模式与封装算法是否为已定义且匹配的路由。</summary>
-    private static bool IsValidRoute(CvkKeyProtection protection, CvkKeyWrapAlgorithm algorithm) =>
-        protection switch
-        {
-            CvkKeyProtection.Plain => algorithm == CvkKeyWrapAlgorithm.None,
-            CvkKeyProtection.Password => algorithm is CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256
-                or CvkKeyWrapAlgorithm.PasswordArgon2Id,
-            CvkKeyProtection.PublicKey => algorithm is CvkKeyWrapAlgorithm.RsaOaepSha256
-                or CvkKeyWrapAlgorithm.RsaOaepSha384
-                or CvkKeyWrapAlgorithm.RsaOaepSha512
-                or CvkKeyWrapAlgorithm.EcdhP256
-                or CvkKeyWrapAlgorithm.EcdhP384
-                or CvkKeyWrapAlgorithm.EcdhP521,
-            _ => false
-        };
-
     /// <summary>将公钥文件材料加入文档。</summary>
     public static void AddPublicKey(CvkDocument document, FileInfo file, string? keyId = null)
     {
         ArgumentNullException.ThrowIfNull(document);
+        var route = CvkEncapsulationRoute.Resolve(document.KeyProtection, document.KeyWrapAlgorithm);
         using var material = AsymmetricKeyFileLoader.LoadPublicKey(file, keyId);
-        if (document.KeyProtection != CvkKeyProtection.PublicKey)
+        if (!route.RequiresRecipients)
             throw new InvalidOperationException("只有 PublicKey 保护模式才能添加公钥接收者。");
-        ValidateRecipientAlgorithm(document.KeyWrapAlgorithm, material);
-        if (document.RecipientKeys.Any(x => x is not null && string.Equals(x.KeyId, material.KeyId, StringComparison.Ordinal)))
+        ValidateRecipientAlgorithm(route.Algorithm, material);
+        if (document.RecipientKeys.Any(x =>
+                x is not null && string.Equals(x.KeyId, material.KeyId, StringComparison.Ordinal)))
             throw new InvalidOperationException($"接收者 KeyId 已存在：{material.KeyId}。");
         document.RecipientKeys.Add(new AsymmetricRecipientKey(material.KeyId, material.Algorithm, material.PublicKeyBytes));
     }
@@ -58,7 +44,9 @@ public static class CvkOperations
     /// <summary>校验公钥材料与文档声明的封装算法匹配。</summary>
     private static void ValidateRecipientAlgorithm(CvkKeyWrapAlgorithm algorithm, AsymmetricPublicKeyMaterial material)
     {
-        if (algorithm is CvkKeyWrapAlgorithm.RsaOaepSha256 or CvkKeyWrapAlgorithm.RsaOaepSha384 or CvkKeyWrapAlgorithm.RsaOaepSha512)
+        if (algorithm is CvkKeyWrapAlgorithm.RsaOaepSha256
+            or CvkKeyWrapAlgorithm.RsaOaepSha384
+            or CvkKeyWrapAlgorithm.RsaOaepSha512)
         {
             if (!string.Equals(material.Algorithm, "RSA", StringComparison.Ordinal))
                 throw new InvalidOperationException("RSA 封装算法必须使用 RSA 公钥。");
@@ -67,7 +55,8 @@ public static class CvkOperations
 
         if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521)
         {
-            if (!string.Equals(material.Algorithm, "ECDH", StringComparison.Ordinal) || material.Key is not ECDiffieHellman ecdh)
+            if (!string.Equals(material.Algorithm, "ECDH", StringComparison.Ordinal) ||
+                material.Key is not ECDiffieHellman ecdh)
                 throw new InvalidOperationException("ECDH 封装算法必须使用 ECDH 公钥。");
             var expectedBits = algorithm switch
             {
@@ -177,24 +166,28 @@ public static class CvkOperations
 
     /// <summary>创建带私钥候选集的非对称密钥体处理器。</summary>
     private static ICvkPayloadCryptor CreateAsymmetricCryptor(CvkKeyWrapAlgorithm algorithm,
-        IReadOnlyDictionary<string, AsymmetricPrivateKeyMaterial> privateKeys) => algorithm switch
+        IReadOnlyDictionary<string, AsymmetricPrivateKeyMaterial> privateKeys)
     {
-        CvkKeyWrapAlgorithm.RsaOaepSha256 => new RsaOaepSha256Cryptor(privateKeys),
-        CvkKeyWrapAlgorithm.RsaOaepSha384 => new RsaOaepSha384Cryptor(privateKeys),
-        CvkKeyWrapAlgorithm.RsaOaepSha512 => new RsaOaepSha512Cryptor(privateKeys),
-        CvkKeyWrapAlgorithm.EcdhP256 => new EcdhP256Cryptor(privateKeys),
-        CvkKeyWrapAlgorithm.EcdhP384 => new EcdhP384Cryptor(privateKeys),
-        CvkKeyWrapAlgorithm.EcdhP521 => new EcdhP521Cryptor(privateKeys),
-        _ => throw new NotSupportedException($"不支持的非对称封装算法：{algorithm}。")
-    };
+        return algorithm switch
+        {
+            CvkKeyWrapAlgorithm.RsaOaepSha256 => new RsaOaepSha256Cryptor(privateKeys),
+            CvkKeyWrapAlgorithm.RsaOaepSha384 => new RsaOaepSha384Cryptor(privateKeys),
+            CvkKeyWrapAlgorithm.RsaOaepSha512 => new RsaOaepSha512Cryptor(privateKeys),
+            CvkKeyWrapAlgorithm.EcdhP256 => new EcdhP256Cryptor(privateKeys),
+            CvkKeyWrapAlgorithm.EcdhP384 => new EcdhP384Cryptor(privateKeys),
+            CvkKeyWrapAlgorithm.EcdhP521 => new EcdhP521Cryptor(privateKeys),
+            _ => throw new NotSupportedException($"不支持的非对称封装算法：{algorithm}。")
+        };
+    }
 
     private static IEnumerable<string> ExtractRecipientIds(ReadOnlyMemory<byte> keyBody)
     {
-        using var json = System.Text.Json.JsonDocument.Parse(keyBody.ToArray());
-        if (!json.RootElement.TryGetProperty("recipients", out var recipients) || recipients.ValueKind != System.Text.Json.JsonValueKind.Array)
+        using var json = JsonDocument.Parse(keyBody.ToArray());
+        if (!json.RootElement.TryGetProperty("recipients", out var recipients) || recipients.ValueKind != JsonValueKind.Array)
             yield break;
         foreach (var item in recipients.EnumerateArray())
-            if (item.ValueKind == System.Text.Json.JsonValueKind.Object && item.TryGetProperty("keyId", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.String)
+            if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("keyId", out var id) &&
+                id.ValueKind == JsonValueKind.String)
                 yield return id.GetString()!;
     }
 }

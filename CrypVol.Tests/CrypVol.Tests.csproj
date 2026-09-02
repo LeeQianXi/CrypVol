@@ -19,7 +19,7 @@
     </ItemGroup>
     <ItemGroup>
         <!-- 旧引擎测试依赖已删除的历史 CVK API；CVK 测试全部迁移到新契约。 -->
-        <Compile Remove="CrypVolEngineTests.cs" />
-        <Compile Remove="UtilityTests.cs" />
+        <Compile Remove="CrypVolEngineTests.cs"/>
+        <Compile Remove="UtilityTests.cs"/>
     </ItemGroup>
 </Project>

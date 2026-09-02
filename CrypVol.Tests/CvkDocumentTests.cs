@@ -1,8 +1,9 @@
 using System.Security.Cryptography;
+using System.Text;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Crypto.Cryptography;
-using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Crypto.Keys;
+using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Crypto.Reading;
 using CrypVol.Lib.Crypto.Writing;
 using Xunit;
@@ -17,7 +18,8 @@ public sealed class CvkDocumentTests
     {
         var file = TempFile();
         await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.WriteAsync(null!, file));
-        await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), null!));
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), null!));
         await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.LoadAsync(null!));
         Assert.ThrowsAny<Exception>(() => CvkOperations.ToCredentials(null!));
         Assert.ThrowsAny<Exception>(() => CvkOperations.AddPublicKey(null!, file));
@@ -57,7 +59,10 @@ public sealed class CvkDocumentTests
             Assert.Equal(source.CreatedAt, loaded.CreatedAt);
             Assert.Equal(source.Generator, loaded.Generator);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -76,7 +81,10 @@ public sealed class CvkDocumentTests
             Assert.Equal(source.Description, loaded.Description);
             Assert.Equal(source.Comment, loaded.Comment);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -93,7 +101,10 @@ public sealed class CvkDocumentTests
             Assert.NotEmpty(parsed.KeyBody.ToArray());
             Assert.Equal(32, parsed.Integrity.Length);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -104,12 +115,15 @@ public sealed class CvkDocumentTests
         {
             await CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file);
             var parsed = await new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file);
-            var json = System.Text.Encoding.UTF8.GetString(parsed.HeaderJson.ToArray());
+            var json = Encoding.UTF8.GetString(parsed.HeaderJson.ToArray());
             Assert.Contains("\"version\"", json);
             Assert.Contains("\"keyProtection\"", json);
             Assert.Contains("\"keyWrapAlgorithm\"", json);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -126,10 +140,15 @@ public sealed class CvkDocumentTests
             source.Comment = "comment";
             source.CreatedAt = created;
             source.Generator = "generator";
-            source.RecipientKeys.Add(new AsymmetricRecipientKey("id", "RSA", rsa.ExportSubjectPublicKeyInfo(), "mail@example.com"));
+            source.RecipientKeys.Add(new AsymmetricRecipientKey("id", "RSA", rsa.ExportSubjectPublicKeyInfo(),
+                "mail@example.com"));
             await new CvkWriter(new CvkPayloadProtectorAdapter(new RsaOaepSha256Cryptor())).WriteAsync(source, file);
             using var privateMaterial = new AsymmetricPrivateKeyMaterial("id", "RSA", rsa);
-            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial> { ["id"] = privateMaterial }))).ReadDocumentAsync(file);
+            var loaded = await new CvkReader(new Sha256IntegrityCalculator(), new CvkPayloadUnprotectorAdapter(
+                new RsaOaepSha256Cryptor(new Dictionary<string, AsymmetricPrivateKeyMaterial>
+                {
+                    ["id"] = privateMaterial
+                }))).ReadDocumentAsync(file);
             Assert.Equal(source.Label, loaded.Label);
             Assert.Equal(source.Description, loaded.Description);
             Assert.Equal(source.Comment, loaded.Comment);
@@ -140,7 +159,10 @@ public sealed class CvkDocumentTests
             Assert.Equal(source.RecipientKeys[0].Comment, loaded.RecipientKeys[0].Comment);
             Assert.Equal(source.RecipientKeys[0].PublicKeyBytes.ToArray(), loaded.RecipientKeys[0].PublicKeyBytes.ToArray());
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -156,7 +178,10 @@ public sealed class CvkDocumentTests
             Assert.Equal(source.Cek, loaded.Cek);
             Assert.Equal(CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256, loaded.KeyWrapAlgorithm);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -172,7 +197,10 @@ public sealed class CvkDocumentTests
             Assert.Equal(source.Cek, loaded.Cek);
             await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.LoadAsync(file, "密码🔐-wrong"));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -185,7 +213,10 @@ public sealed class CvkDocumentTests
             await CvkOperations.WriteAsync(source, file, "secret");
             await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.LoadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -197,7 +228,10 @@ public sealed class CvkDocumentTests
             var source = CvkOperations.CreateNew(CvkKeyProtection.Password, CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256);
             await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.WriteAsync(source, file, ""));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -209,7 +243,10 @@ public sealed class CvkDocumentTests
             var source = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
             await Assert.ThrowsAsync<InvalidDataException>(() => CvkOperations.WriteAsync(source, file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -224,14 +261,21 @@ public sealed class CvkDocumentTests
             await File.WriteAllBytesAsync(file.FullName, bytes);
             await Assert.ThrowsAsync<CryptographicException>(() => CvkOperations.LoadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
     [InlineData(16)]
     public async Task HeaderTampering_IsRejected(int relativeOffset)
     {
-        await AssertTamperedFileAsync(bytes => { bytes[relativeOffset] ^= 1; return bytes; });
+        await AssertTamperedFileAsync(bytes =>
+        {
+            bytes[relativeOffset] ^= 1;
+            return bytes;
+        });
     }
 
     [Fact]
@@ -248,7 +292,11 @@ public sealed class CvkDocumentTests
     [Fact]
     public async Task IntegrityLengthTampering_IsRejected()
     {
-        await AssertTamperedFileAsync(bytes => { bytes[12] = 0; return bytes; });
+        await AssertTamperedFileAsync(bytes =>
+        {
+            bytes[12] = 0;
+            return bytes;
+        });
     }
 
     [Fact]
@@ -260,7 +308,7 @@ public sealed class CvkDocumentTests
     [Fact]
     public async Task AppendedFile_IsRejected()
     {
-        await AssertTamperedFileAsync(bytes => [.. bytes, (byte)0]);
+        await AssertTamperedFileAsync(bytes => [.. bytes, 0]);
     }
 
     [Fact]
@@ -285,8 +333,9 @@ public sealed class CvkDocumentTests
     [Fact]
     public void Credentials_RejectUndefinedRouteValues()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CvkCredentials((CvkKeyProtection)99, new byte[32], CvkKeyWrapAlgorithm.None));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CvkCredentials(CvkKeyProtection.Plain, new byte[32], (CvkKeyWrapAlgorithm)99));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CvkCredentials((CvkKeyProtection)99, new byte[32]));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CvkCredentials(CvkKeyProtection.Plain, new byte[32], (CvkKeyWrapAlgorithm)99));
     }
 
     [Theory]
@@ -301,7 +350,7 @@ public sealed class CvkDocumentTests
     [Fact]
     public void Parser_RejectsInvalidMagic()
     {
-        Assert.Throws<InvalidDataException>(() => CrypVol.Lib.Crypto.Reading.CvkParser.Parse("bad"u8.ToArray()));
+        Assert.Throws<InvalidDataException>(() => CvkParser.Parse("bad"u8.ToArray()));
     }
 
     [Theory]
@@ -426,7 +475,10 @@ public sealed class CvkDocumentTests
             file.Delete();
             Assert.Equal(publicKeyBytes, document.RecipientKeys[0].PublicKeyBytes.ToArray());
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -442,7 +494,7 @@ public sealed class CvkDocumentTests
     {
         var document = CvkOperations.CreateNew(CvkKeyProtection.PublicKey, CvkKeyWrapAlgorithm.RsaOaepSha256);
         Assert.Throws<ArgumentNullException>(() => CvkOperations.AddPublicKey(document, (FileInfo)null!));
-        Assert.Throws<ArgumentNullException>(() => CvkOperations.AddPublicKey(document, (string)null!));
+        Assert.Throws<ArgumentNullException>(() => CvkOperations.AddPublicKey(document, null!));
         Assert.ThrowsAny<ArgumentException>(() => CvkOperations.AddPublicKey(document, string.Empty));
     }
 
@@ -459,7 +511,10 @@ public sealed class CvkDocumentTests
             Assert.ThrowsAny<Exception>(() => CvkOperations.AddPublicKey(document, file, "same-id"));
             Assert.Single(document.RecipientKeys);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -474,7 +529,10 @@ public sealed class CvkDocumentTests
             Assert.ThrowsAny<Exception>(() => CvkOperations.AddPublicKey(document, file, "ec"));
             Assert.Empty(document.RecipientKeys);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -489,7 +547,10 @@ public sealed class CvkDocumentTests
             Assert.ThrowsAny<Exception>(() => CvkOperations.AddPublicKey(document, file, "rsa"));
             Assert.Empty(document.RecipientKeys);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -504,7 +565,10 @@ public sealed class CvkDocumentTests
             Assert.ThrowsAny<Exception>(() => CvkOperations.AddPublicKey(document, file, "ec384"));
             Assert.Empty(document.RecipientKeys);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -522,7 +586,10 @@ public sealed class CvkDocumentTests
             Assert.ThrowsAny<Exception>(() => CvkOperations.AddPublicKey(document, file, "rsa"));
             Assert.Empty(document.RecipientKeys);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -565,7 +632,8 @@ public sealed class CvkDocumentTests
 
             var loaded = await CvkOperations.LoadAsync(cvkFile, null, privateFile, password, CancellationToken.None);
             Assert.Equal(document.Cek, loaded.Cek);
-            var loadedWithUnusedCvkPassword = await CvkOperations.LoadAsync(cvkFile, "unused-cvk-password", privateFile, password, CancellationToken.None);
+            var loadedWithUnusedCvkPassword = await CvkOperations.LoadAsync(cvkFile, "unused-cvk-password", privateFile,
+                password, CancellationToken.None);
             Assert.Equal(document.Cek, loadedWithUnusedCvkPassword.Cek);
             await Assert.ThrowsAnyAsync<Exception>(() =>
                 CvkOperations.LoadAsync(cvkFile, null, privateFile, "wrong-password", CancellationToken.None));
@@ -590,7 +658,7 @@ public sealed class CvkDocumentTests
                 KeyWrapAlgorithm = CvkKeyWrapAlgorithm.None
             }, file);
             var parsed = await new CvkReader(new Sha256IntegrityCalculator()).ReadAsync(file);
-            var json = System.Text.Encoding.UTF8.GetString(parsed.HeaderJson.ToArray());
+            var json = Encoding.UTF8.GetString(parsed.HeaderJson.ToArray());
 
             Assert.DoesNotContain("\"label\"", json);
             Assert.DoesNotContain("\"description\"", json);
@@ -598,7 +666,10 @@ public sealed class CvkDocumentTests
             Assert.DoesNotContain("\"createdAt\"", json);
             Assert.DoesNotContain("\"generator\"", json);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -646,7 +717,10 @@ public sealed class CvkDocumentTests
             var loaded = await CvkOperations.LoadAsync(file, " ");
             Assert.Equal(source.Cek, loaded.Cek);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -661,7 +735,10 @@ public sealed class CvkDocumentTests
             Assert.Equal(source.Cek, loaded.Cek);
             Assert.Equal(CvkKeyWrapAlgorithm.PasswordArgon2Id, loaded.KeyWrapAlgorithm);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -727,7 +804,10 @@ public sealed class CvkDocumentTests
             await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -740,10 +820,14 @@ public sealed class CvkDocumentTests
         try
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file, null, cts.Token));
+                CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file,
+                    null, cts.Token));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -756,10 +840,14 @@ public sealed class CvkDocumentTests
         try
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file, cts.Token));
+                CvkOperations.WriteAsync(CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None), file,
+                    cts.Token));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Theory]
@@ -780,7 +868,10 @@ public sealed class CvkDocumentTests
             await Assert.ThrowsAsync<InvalidDataException>(() => CvkOperations.WriteAsync(document, file));
             Assert.False(file.Exists);
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -795,7 +886,10 @@ public sealed class CvkDocumentTests
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CvkOperations.LoadAsync(file, null, cts.Token));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -813,7 +907,10 @@ public sealed class CvkDocumentTests
             await Assert.ThrowsAsync<FileNotFoundException>(() =>
                 CvkOperations.LoadAsync(cvkFile, null, privateFile, null, CancellationToken.None));
         }
-        finally { if (cvkFile.Exists) cvkFile.Delete(); }
+        finally
+        {
+            if (cvkFile.Exists) cvkFile.Delete();
+        }
     }
 
     [Fact]
@@ -825,11 +922,15 @@ public sealed class CvkDocumentTests
             var document = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
             using var cts = new CancellationTokenSource();
             cts.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CvkOperations.WriteAsync(document, file, cts.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                CvkOperations.WriteAsync(document, file, cts.Token));
             Assert.False(file.Exists);
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CvkOperations.LoadAsync(file, null, cts.Token));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 
     [Fact]
@@ -843,10 +944,16 @@ public sealed class CvkDocumentTests
             Assert.True(file.Exists);
             Assert.NotNull(await CvkOperations.LoadAsync(file));
         }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
     }
 
-    private static FileInfo TempFile() => new(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}.cvk"));
+    private static FileInfo TempFile()
+    {
+        return new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}.cvk"));
+    }
 
     private static async Task AssertTamperedFileAsync(Func<byte[], byte[]> mutate)
     {
@@ -859,6 +966,9 @@ public sealed class CvkDocumentTests
             await File.WriteAllBytesAsync(file.FullName, bytes);
             await Assert.ThrowsAnyAsync<Exception>(() => CvkOperations.LoadAsync(file));
         }
-        finally { if (file.Exists) file.Delete(); }
+        finally
+        {
+            if (file.Exists) file.Delete();
+        }
     }
 }

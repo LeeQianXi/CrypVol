@@ -38,14 +38,18 @@ public static class CvkParser
         try
         {
             var headerBytes = headerJson.ToArray();
-            if (headerBytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF })) headerBytes = headerBytes[3..];
+            if (headerBytes.AsSpan().StartsWith(new byte[]
+                {
+                    0xEF, 0xBB, 0xBF
+                })) headerBytes = headerBytes[3..];
             using var headerDocument = JsonDocument.Parse(headerBytes, new JsonDocumentOptions
             {
                 CommentHandling = JsonCommentHandling.Disallow,
                 AllowTrailingCommas = false
             });
             ValidateHeaderJson(headerDocument.RootElement);
-            header = JsonSerializer.Deserialize<CvkHeader>(headerDocument.RootElement.GetRawText(), jsonOptions ?? CreateJsonOptions())
+            header = JsonSerializer.Deserialize<CvkHeader>(headerDocument.RootElement.GetRawText(),
+                         jsonOptions ?? CreateJsonOptions())
                      ?? throw new InvalidDataException("CVK Header 为空。");
         }
         catch (JsonException ex) { throw new InvalidDataException("CVK Header JSON 无效。", ex); }
@@ -66,15 +70,11 @@ public static class CvkParser
         if (header.Version == 0) throw new InvalidDataException("CVK 版本无效。");
         if (!Enum.IsDefined(header.KeyProtection)) throw new InvalidDataException("CVK 保护模式无效。");
         if (!Enum.IsDefined(header.KeyWrapAlgorithm)) throw new InvalidDataException("CVK 封装算法无效。");
-        var validRoute = header.KeyProtection switch
+        try { CvkEncapsulationRoute.Resolve(header.KeyProtection, header.KeyWrapAlgorithm); }
+        catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
         {
-            CvkKeyProtection.Plain => header.KeyWrapAlgorithm == CvkKeyWrapAlgorithm.None,
-            CvkKeyProtection.Password => header.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256 or CvkKeyWrapAlgorithm.PasswordArgon2Id,
-            CvkKeyProtection.PublicKey => header.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.RsaOaepSha256 or CvkKeyWrapAlgorithm.RsaOaepSha384
-                or CvkKeyWrapAlgorithm.RsaOaepSha512 or CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521,
-            _ => false
-        };
-        if (!validRoute) throw new InvalidDataException("CVK 保护模式与封装算法不匹配。");
+            throw new InvalidDataException("CVK 保护模式与封装算法不匹配。", ex);
+        }
     }
 
     private static void ValidateHeaderJson(JsonElement root)
@@ -82,10 +82,22 @@ public static class CvkParser
         if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException("CVK Header 必须是 JSON 对象。");
         var known = new HashSet<string>(StringComparer.Ordinal)
         {
-            "version", "keyProtection", "keyWrapAlgorithm", "label", "description", "comment", "createdAt", "generator"
+            "version",
+            "keyProtection",
+            "keyWrapAlgorithm",
+            "label",
+            "description",
+            "comment",
+            "createdAt",
+            "generator"
         };
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var required = new HashSet<string>(StringComparer.Ordinal) { "version", "keyProtection", "keyWrapAlgorithm" };
+        var required = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "version",
+            "keyProtection",
+            "keyWrapAlgorithm"
+        };
         foreach (var property in root.EnumerateObject())
         {
             if (!seen.Add(property.Name)) throw new InvalidDataException($"CVK Header 字段重复：{property.Name}。");
@@ -110,6 +122,7 @@ public static class CvkParser
                     break;
             }
         }
+
         if (required.Count != 0) throw new InvalidDataException("CVK Header 缺少必要字段。");
     }
 

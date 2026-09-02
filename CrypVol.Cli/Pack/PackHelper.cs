@@ -1,6 +1,5 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto;
-using CrypVol.Lib.Crypto.Reading;
 using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
@@ -25,7 +24,8 @@ public static class PackHelper
         var outputDir = args.GetRequiredValue(CommandDefinition.Pack.OutputPath);
         var mode = args.GetValue(CommandDefinition.Pack.Mode);
         var algorithm = args.GetValue(CommandDefinition.Pack.Algorithm);
-        if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 && mode != CvkKeyProtection.PublicKey)
+        if (algorithm is CvkKeyWrapAlgorithm.EcdhP256 or CvkKeyWrapAlgorithm.EcdhP384 or CvkKeyWrapAlgorithm.EcdhP521 &&
+            mode != CvkKeyProtection.PublicKey)
         {
             await Console.Error.WriteLineAsync("--algorithm Ecc 仅可与 --mode Asymmetric 一起使用。");
             return 1;
@@ -144,7 +144,8 @@ public static class PackHelper
                 foreach (var publicKey in publicKeys) CvkOperations.AddPublicKey(cvk, publicKey);
                 var keyDirectory = args.GetValue(CommandDefinition.Pack.KeyOutputPath) ?? outputDir;
                 keyDirectory.Create();
-                await CvkOperations.WriteAsync(cvk, new FileInfo(Path.Combine(keyDirectory.FullName, $"{prefix}.cvk")), password, token);
+                await CvkOperations.WriteAsync(cvk, new FileInfo(Path.Combine(keyDirectory.FullName, $"{prefix}.cvk")),
+                    password, token);
                 creds = CvkOperations.ToCredentials(cvk);
             }
             catch (Exception ex)

@@ -28,7 +28,11 @@ internal static class CvkPayloadCodec
     {
         try
         {
-            using var json = JsonDocument.Parse(bytes.ToArray(), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false });
+            using var json = JsonDocument.Parse(bytes.ToArray(), new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Disallow,
+                AllowTrailingCommas = false
+            });
             ValidatePayloadJson(json.RootElement);
             var payload = JsonSerializer.Deserialize<CvkPayload>(json.RootElement.GetRawText(), Options)
                           ?? throw new InvalidDataException("CVK Payload 为空。");
@@ -59,13 +63,18 @@ internal static class CvkPayloadCodec
                 default: throw new InvalidDataException($"CVK Payload 存在未知字段：{property.Name}。");
             }
         }
+
         if (!names.Contains("cek") || cek.ValueKind != JsonValueKind.String)
             throw new InvalidDataException("CVK Payload 缺少有效 cek。");
         if (!names.Contains("recipientKeys") || recipients.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException("CVK Payload 缺少有效 recipientKeys。");
         byte[] cekBytes;
         try { cekBytes = Convert.FromBase64String(cek.GetString()!); }
-        catch (Exception ex) when (ex is FormatException or ArgumentNullException) { throw new InvalidDataException("CVK CEK 编码无效。", ex); }
+        catch (Exception ex) when (ex is FormatException or ArgumentNullException)
+        {
+            throw new InvalidDataException("CVK CEK 编码无效。", ex);
+        }
+
         if (cekBytes.Length != 32) throw new InvalidDataException("CVK CEK 必须恰好为 32 字节。");
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -82,11 +91,16 @@ internal static class CvkPayloadCodec
                     case "keyId": keyId = property.Value; break;
                     case "algorithm": algorithm = property.Value; break;
                     case "publicKey": publicKey = property.Value; break;
-                    case "comment": if (property.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) throw new InvalidDataException("comment 类型无效。"); break;
+                    case "comment":
+                        if (property.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
+                            throw new InvalidDataException("comment 类型无效。");
+                        break;
                     default: throw new InvalidDataException($"接收者存在未知字段：{property.Name}。");
                 }
             }
-            if (keyId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(keyId.GetString()) || !ids.Add(keyId.GetString()!))
+
+            if (keyId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(keyId.GetString()) ||
+                !ids.Add(keyId.GetString()!))
                 throw new InvalidDataException("接收者 KeyId 缺失、为空或重复。");
             if (algorithm.ValueKind != JsonValueKind.String || algorithm.GetString() is not ("RSA" or "ECDH"))
                 throw new InvalidDataException("接收者算法不受支持。");

@@ -110,7 +110,9 @@ public abstract class EcdhCryptorBase : CvkAlgorithmCryptorBase
                 break;
             }
             catch (Exception ex) when (ex is CryptographicException or FormatException or ArgumentException)
-            { dataKey = null; }
+            {
+                dataKey = null;
+            }
         }
 
         if (dataKey is null) throw new CryptographicException("没有可用的 ECDH 私钥接收者。");
@@ -123,14 +125,19 @@ public abstract class EcdhCryptorBase : CvkAlgorithmCryptorBase
                 CvkPayloadCodec.EncodeHeader(header));
             return ValueTask.FromResult(CvkPayloadCodec.Decode(plain));
         }
+        catch (FormatException ex) { throw new CryptographicException("ECDH 密钥体编码无效。", ex); }
         finally { CryptographicOperations.ZeroMemory(dataKey); }
     }
 
     private static void ValidateBody(JsonElement root)
     {
         ValidateObject(root, ["dataNonce", "dataTag", "ciphertext", "recipients"]);
-        foreach (var name in new[] { "dataNonce", "dataTag", "ciphertext" })
-            if (root.GetProperty(name).ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(root.GetProperty(name).GetString()))
+        foreach (var name in new[]
+                 {
+                     "dataNonce", "dataTag", "ciphertext"
+                 })
+            if (root.GetProperty(name).ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(root.GetProperty(name).GetString()))
                 throw new InvalidDataException($"ECDH 密钥体字段无效：{name}。");
         var recipients = root.GetProperty("recipients");
         if (recipients.ValueKind != JsonValueKind.Array || recipients.GetArrayLength() == 0)
@@ -142,11 +149,16 @@ public abstract class EcdhCryptorBase : CvkAlgorithmCryptorBase
             ValidateObject(item, ["keyId", "ephemeralPublicKey", "nonce", "tag", "wrappedKey", "recipient"]);
             var id = RequireString(item, "keyId");
             if (string.IsNullOrWhiteSpace(id) || !ids.Add(id)) throw new InvalidDataException("ECDH 接收者 KeyId 为空或重复。");
-            foreach (var name in new[] { "ephemeralPublicKey", "nonce", "tag", "wrappedKey" })
-                if (string.IsNullOrWhiteSpace(RequireString(item, name))) throw new InvalidDataException($"ECDH 字段为空：{name}。");
+            foreach (var name in new[]
+                     {
+                         "ephemeralPublicKey", "nonce", "tag", "wrappedKey"
+                     })
+                if (string.IsNullOrWhiteSpace(RequireString(item, name)))
+                    throw new InvalidDataException($"ECDH 字段为空：{name}。");
             var embedded = item.GetProperty("recipient");
             ValidateObject(embedded, ["keyId", "algorithm", "publicKey", "comment"]);
-            if (RequireString(embedded, "keyId") != id || RequireString(embedded, "algorithm") != "ECDH" || string.IsNullOrWhiteSpace(RequireString(embedded, "publicKey")))
+            if (RequireString(embedded, "keyId") != id || RequireString(embedded, "algorithm") != "ECDH" ||
+                string.IsNullOrWhiteSpace(RequireString(embedded, "publicKey")))
                 throw new InvalidDataException("ECDH 嵌入接收者元数据无效。");
         }
     }
@@ -163,10 +175,8 @@ public abstract class EcdhCryptorBase : CvkAlgorithmCryptorBase
         if (element.ValueKind != JsonValueKind.Object) throw new InvalidDataException("ECDH 密钥体对象无效。");
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var property in element.EnumerateObject())
-        {
             if (!seen.Add(property.Name) || !allowed.Contains(property.Name, StringComparer.Ordinal))
                 throw new InvalidDataException($"ECDH 密钥体字段无效：{property.Name}。");
-        }
     }
 
     private sealed record EcdhKeyBody(string DataNonce,

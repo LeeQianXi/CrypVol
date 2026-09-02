@@ -84,21 +84,11 @@ public sealed class CvkWriter
             throw new InvalidDataException("CVK 的 CEK 必须恰好为 32 字节。");
         if (document.Version == 0)
             throw new InvalidDataException("CVK 版本必须大于 0。");
-        var routeValid = document.KeyProtection switch
+        try { CvkEncapsulationRoute.Resolve(document.KeyProtection, document.KeyWrapAlgorithm); }
+        catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
         {
-            CvkKeyProtection.Plain => document.KeyWrapAlgorithm == CvkKeyWrapAlgorithm.None,
-            CvkKeyProtection.Password => document.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.PasswordPbkdf2Sha256
-                or CvkKeyWrapAlgorithm.PasswordArgon2Id,
-            CvkKeyProtection.PublicKey => document.KeyWrapAlgorithm is CvkKeyWrapAlgorithm.RsaOaepSha256
-                or CvkKeyWrapAlgorithm.RsaOaepSha384
-                or CvkKeyWrapAlgorithm.RsaOaepSha512
-                or CvkKeyWrapAlgorithm.EcdhP256
-                or CvkKeyWrapAlgorithm.EcdhP384
-                or CvkKeyWrapAlgorithm.EcdhP521,
-            _ => false
-        };
-        if (!routeValid)
-            throw new InvalidDataException("CVK 保护模式与封装算法不匹配或未定义。");
+            throw new InvalidDataException("CVK 保护模式与封装算法不匹配或未定义。", ex);
+        }
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var recipient in document.RecipientKeys)

@@ -4,6 +4,7 @@ using System.Text;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Crypto.Reading;
+using CrypVol.Lib.Crypto.Writing;
 using Xunit;
 
 namespace CrypVol.Tests;
@@ -158,9 +159,9 @@ public sealed class CvkFormatBoundaryTests
         var document = CvkOperations.CreateNew(CvkKeyProtection.Plain, CvkKeyWrapAlgorithm.None);
         document.Cek = [];
         await Assert.ThrowsAsync<InvalidDataException>(() =>
-            new CrypVol.Lib.Crypto.Writing.CvkWriter(
-                new CrypVol.Lib.Crypto.Writing.PlainCvkPayloadProtector()).WriteAsync(
-                    document, new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}.cvk"))));
+            new CvkWriter(
+                new PlainCvkPayloadProtector()).WriteAsync(
+                document, new FileInfo(Path.Combine(Path.GetTempPath(), $"cvk-{Guid.NewGuid():N}.cvk"))));
     }
 
     private static async Task<FileInfo> WritePlainAsync()

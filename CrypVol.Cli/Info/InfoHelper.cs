@@ -1,6 +1,5 @@
 using System.CommandLine;
 using CrypVol.Lib.Crypto.Cryptography;
-using CrypVol.Lib.Crypto.Keys;
 using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Crypto.Reading;
 using CrypVol.Lib.Crypto.Writing;

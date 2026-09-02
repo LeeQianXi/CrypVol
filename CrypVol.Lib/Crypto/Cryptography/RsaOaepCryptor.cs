@@ -88,7 +88,8 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
         foreach (var recipient in body.Recipients)
         {
             if (recipient is null) continue;
-            if (!_privateKeys.TryGetValue(recipient.KeyId, out var material) || material is null || material.Key is not RSA rsa) continue;
+            if (!_privateKeys.TryGetValue(recipient.KeyId, out var material) || material is null ||
+                material.Key is not RSA rsa) continue;
             try
             {
                 dataKey = rsa.Decrypt(Convert.FromBase64String(recipient.WrappedKey), Padding);
@@ -114,8 +115,12 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
     private static void ValidateBody(JsonElement root)
     {
         ValidateObject(root, ["nonce", "tag", "ciphertext", "recipients"]);
-        foreach (var name in new[] { "nonce", "tag", "ciphertext" })
-            if (root.GetProperty(name).ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(root.GetProperty(name).GetString()))
+        foreach (var name in new[]
+                 {
+                     "nonce", "tag", "ciphertext"
+                 })
+            if (root.GetProperty(name).ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(root.GetProperty(name).GetString()))
                 throw new InvalidDataException($"RSA 密钥体字段无效：{name}。");
         var recipients = root.GetProperty("recipients");
         if (recipients.ValueKind != JsonValueKind.Array || recipients.GetArrayLength() == 0)
@@ -127,10 +132,12 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
             ValidateObject(item, ["keyId", "wrappedKey", "recipient"]);
             var id = RequireString(item, "keyId");
             if (string.IsNullOrWhiteSpace(id) || !ids.Add(id)) throw new InvalidDataException("RSA 接收者 KeyId 为空或重复。");
-            if (string.IsNullOrWhiteSpace(RequireString(item, "wrappedKey"))) throw new InvalidDataException("RSA wrappedKey 为空。");
+            if (string.IsNullOrWhiteSpace(RequireString(item, "wrappedKey")))
+                throw new InvalidDataException("RSA wrappedKey 为空。");
             var embedded = item.GetProperty("recipient");
             ValidateObject(embedded, ["keyId", "algorithm", "publicKey", "comment"]);
-            if (RequireString(embedded, "keyId") != id || RequireString(embedded, "algorithm") != "RSA" || string.IsNullOrWhiteSpace(RequireString(embedded, "publicKey")))
+            if (RequireString(embedded, "keyId") != id || RequireString(embedded, "algorithm") != "RSA" ||
+                string.IsNullOrWhiteSpace(RequireString(embedded, "publicKey")))
                 throw new InvalidDataException("RSA 嵌入接收者元数据无效。");
         }
     }
@@ -147,10 +154,8 @@ public abstract class RsaOaepCryptorBase : CvkAlgorithmCryptorBase
         if (element.ValueKind != JsonValueKind.Object) throw new InvalidDataException("RSA 密钥体对象无效。");
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var property in element.EnumerateObject())
-        {
             if (!seen.Add(property.Name) || !allowed.Contains(property.Name, StringComparer.Ordinal))
                 throw new InvalidDataException($"RSA 密钥体字段无效：{property.Name}。");
-        }
     }
 
     private sealed record RsaKeyBody(string Nonce,
