@@ -168,29 +168,10 @@ public sealed class CvkDocument
             }
         }
         var keyBody = keyBodyStream.ToArray();
-        var metadata = JsonSerializer.SerializeToUtf8Bytes(new CvkMetadataPayload(
+        var metadata = new CvkMetadataPayload(
             EncryptionMode, EncryptionAlgorithm, CreatedAt, Label, Description, Generator,
-            Comment, KeyIds, keyBody.Length), CvkJson.Options);
-        if (metadata.Length > CvkFormat.MaxSectionLength)
-            throw new InvalidOperationException("CVK 元数据过大。");
-
-        using var stream = new MemoryStream(CvkFormat.HeaderSize + metadata.Length + keyBody.Length + CvkFormat.IntegritySize);
-        using var writer = new BinaryWriter(stream, Encoding.UTF8, true);
-        writer.Write(CvkFormat.Magic);
-        writer.Write(CvkFormat.Version);
-        writer.Write(CvkFormat.Flags);
-        WriteUInt32(writer, metadata.Length);
-        WriteUInt32(writer, keyBody.Length);
-        writer.Write(metadata);
-        writer.Write(keyBody);
-        var integrity = SHA256.HashData(stream.ToArray());
-        writer.Write(integrity);
-        return stream.ToArray();
-    }
-
-    private static void WriteUInt32(BinaryWriter writer, int value)
-    {
-        writer.Write(BinaryPrimitives.ReverseEndianness(value));
+            Comment, KeyIds, keyBody.Length);
+        return Convert.FromBase64String(CvkContainerCodec.Encode(metadata, keyBody));
     }
 
     /// <summary>构建可直接保存为 .cvk 文件的 Base64 文本。</summary>
