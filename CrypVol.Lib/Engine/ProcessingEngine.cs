@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Threading.Channels;
 using CrypVol.Lib.Engine.Models;
 using CrypVol.Lib.Engine.Processors;
@@ -150,8 +149,8 @@ public sealed partial class ProcessingEngine
                 _receiver.GetType().Name);
             await InitializeStagesAsync(linkedCancellation.Token);
             await ValidateStagesAsync(linkedCancellation.Token);
-            await PrepareStagesAsync(linkedCancellation.Token);
             BindChannels();
+            await PrepareStagesAsync(linkedCancellation.Token);
             Starting?.Invoke(this, new ProcessingEngineEventArgs());
             LogInformation("数据流程启动: {ProcessorCount} 个处理器，通道容量 {ChannelCapacity}",
                 _processors.Count, ChannelCapacity);
@@ -227,78 +226,63 @@ public sealed partial class ProcessingEngine
         });
     }
 
-    private Task InitializeStagesAsync(CancellationToken cancellationToken)
+    private async Task InitializeStagesAsync(CancellationToken cancellationToken)
     {
-        return Task.WhenAll([
-            RunLifecycleAsync("初始化", "Provider", _provider,
-                () => _provider.InitializeAsync(this, cancellationToken)),
-            RunLifecycleAsync("初始化", "Receiver", _receiver,
-                () => _receiver.InitializeAsync(this, cancellationToken)),
-            .. _processors.Select((processor, index) => RunLifecycleAsync("初始化", $"Processor#{index}", processor,
-                () => processor.InitializeAsync(this, cancellationToken)))
+        LogDebug("生命周期初始化开始");
+        await Task.WhenAll([
+            _provider.InitializeAsync(this, cancellationToken),
+            _receiver.InitializeAsync(this, cancellationToken),
+            .. _processors.Select(processor => processor.InitializeAsync(this, cancellationToken))
         ]);
+        LogDebug("生命周期初始化完成");
     }
 
-    private Task ValidateStagesAsync(CancellationToken cancellationToken)
+    private async Task ValidateStagesAsync(CancellationToken cancellationToken)
     {
-        return Task.WhenAll([
-            RunLifecycleAsync("校验", "Provider", _provider, () => _provider.ValidateAsync(cancellationToken)),
-            RunLifecycleAsync("校验", "Receiver", _receiver, () => _receiver.ValidateAsync(cancellationToken)),
-            .. _processors.Select((processor, index) => RunLifecycleAsync("校验", $"Processor#{index}", processor,
-                () => processor.ValidateAsync(cancellationToken)))
+        LogDebug("生命周期静态校验开始");
+        await Task.WhenAll([
+            _provider.ValidateAsync(cancellationToken),
+            _receiver.ValidateAsync(cancellationToken),
+            .. _processors.Select(processor => processor.ValidateAsync(cancellationToken))
         ]);
+        LogDebug("生命周期静态校验完成");
     }
 
-    private Task PrepareStagesAsync(CancellationToken cancellationToken)
+    private async Task PrepareStagesAsync(CancellationToken cancellationToken)
     {
-        return Task.WhenAll([
-            RunLifecycleAsync("预处理", "Provider", _provider, () => _provider.PrepareAsync(cancellationToken)),
-            RunLifecycleAsync("预处理", "Receiver", _receiver, () => _receiver.PrepareAsync(cancellationToken)),
-            .. _processors.Select((processor, index) => RunLifecycleAsync("预处理", $"Processor#{index}", processor,
-                () => processor.PrepareAsync(cancellationToken)))
+        LogDebug("生命周期资源预处理开始");
+        await Task.WhenAll([
+            _provider.PrepareAsync(cancellationToken),
+            _receiver.PrepareAsync(cancellationToken),
+            .. _processors.Select(processor => processor.PrepareAsync(cancellationToken))
         ]);
+        LogDebug("生命周期资源预处理完成");
     }
 
     private async Task StartStagesAsync(CancellationToken cancellationToken)
     {
-        await RunLifecycleAsync("启动", "Receiver", _receiver, () => _receiver.StartAsync(cancellationToken));
+        LogDebug("Receiver {Receiver} 生命周期启动", _receiver.GetType().Name);
+        await _receiver.StartAsync(cancellationToken);
         for (var index = _processors.Count - 1; index >= 0; index--)
         {
             var processor = _processors[index];
-            await RunLifecycleAsync("启动", $"Processor#{index}", processor,
-                () => processor.StartAsync(cancellationToken));
+            LogDebug("Processor#{Index} {Processor} 生命周期启动", index, processor.GetType().Name);
+            await processor.StartAsync(cancellationToken);
         }
 
-        await RunLifecycleAsync("启动", "Provider", _provider, () => _provider.StartAsync(cancellationToken));
+        LogDebug("Provider {Provider} 生命周期启动", _provider.GetType().Name);
+        await _provider.StartAsync(cancellationToken);
     }
 
-    private Task DisposeStagesAsync(CancellationToken cancellationToken)
+    private async Task DisposeStagesAsync(CancellationToken cancellationToken)
     {
-        return Task.WhenAll([
-            RunLifecycleAsync("释放", "Provider", _provider, () => _provider.DisposeAsync(cancellationToken)),
-            RunLifecycleAsync("释放", "Receiver", _receiver, () => _receiver.DisposeAsync(cancellationToken)),
-            .. _processors.Select((processor, index) => RunLifecycleAsync("释放", $"Processor#{index}", processor,
-                () => processor.DisposeAsync(cancellationToken)))
+        LogDebug("生命周期资源释放开始");
+        await Task.WhenAll([
+            _provider.DisposeAsync(cancellationToken),
+            _receiver.DisposeAsync(cancellationToken),
+            .. _processors.Select(processor => processor.DisposeAsync(cancellationToken))
         ]);
-    }
-
-    private async Task RunLifecycleAsync(string phase, string role, IAsyncLifeCycle stage, Func<Task> action)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        LogDebug("{Role} {Stage} 开始{Phase}", role, stage.GetType().Name, phase);
-        try
-        {
-            await action();
-            LogDebug("{Role} {Stage} 完成{Phase}，耗时 {ElapsedMilliseconds} ms", role, stage.GetType().Name,
-                phase, stopwatch.ElapsedMilliseconds);
-        }
-        catch (Exception exception)
-        {
-            LogDebug("{Role} {Stage} {Phase}失败，耗时 {ElapsedMilliseconds} ms，异常 {ExceptionType}: {Message}",
-                role, stage.GetType().Name, phase, stopwatch.ElapsedMilliseconds, exception.GetType().Name,
-                exception.Message);
-            throw;
-        }
+        LogDebug("生命周期资源释放完成");
     }
 
     private async Task RunProviderAsync(CancellationTokenSource cancellation)

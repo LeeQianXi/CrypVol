@@ -27,27 +27,27 @@ public abstract class DataProcessorBase : IDataProcessor
     }
 
     /// <inheritdoc />
-    public virtual Task ValidateAsync(CancellationToken cancellationToken = default)
+    public Task ValidateAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        return OnValidateAsync(cancellationToken);
     }
 
     /// <inheritdoc />
-    public virtual Task PrepareAsync(CancellationToken cancellationToken = default)
+    public Task PrepareAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        return OnPrepareAsync(cancellationToken);
     }
 
     /// <inheritdoc />
-    public virtual Task StartAsync(CancellationToken cancellationToken = default)
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        return OnStartAsync(cancellationToken);
     }
 
     /// <inheritdoc />
-    public virtual Task DisposeAsync(CancellationToken cancellationToken = default)
+    public Task DisposeAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        return OnDisposeAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -107,9 +107,40 @@ public abstract class DataProcessorBase : IDataProcessor
         }
     }
 
+    /// <summary>确认 Engine 已为 Processor 绑定输入和输出通道。</summary>
+    protected void EnsureChannelsBound()
+    {
+        if (_reader is null || _writer is null)
+            throw new InvalidOperationException("Processor 尚未绑定输入或输出通道。");
+    }
+
     /// <summary>Engine 注入后初始化阶段私有状态。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     protected virtual Task OnInitializeAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>执行静态配置校验。</summary>
+    protected virtual Task OnValidateAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>在通道绑定后准备运行资源。</summary>
+    protected virtual Task OnPrepareAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>进入运行状态前执行阶段特定启动逻辑。</summary>
+    protected virtual Task OnStartAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>释放阶段特定资源。</summary>
+    protected virtual Task OnDisposeAsync(CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;
     }

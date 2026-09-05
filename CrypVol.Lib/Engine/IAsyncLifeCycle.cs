@@ -1,6 +1,6 @@
 namespace CrypVol.Lib.Engine;
 
-/// <summary>异步阶段的启动、校验、预处理与停止生命周期。</summary>
+/// <summary>异步阶段的初始化、静态校验、通道绑定后预处理、启动与释放生命周期。</summary>
 public interface IAsyncLifeCycle
 {
     /// <summary>注入引擎并初始化阶段内部状态。</summary>
@@ -8,11 +8,11 @@ public interface IAsyncLifeCycle
     /// <param name="cancellationToken">取消令牌。</param>
     Task InitializeAsync(ProcessingEngine engine, CancellationToken cancellationToken = default);
 
-    /// <summary>校验阶段配置与运行前置条件。</summary>
+    /// <summary>静态校验阶段配置与运行前置条件，不应处理数据或创建运行资源。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     Task ValidateAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>执行启动前预处理。</summary>
+    /// <summary>在 Engine 完成通道绑定后执行启动前资源预处理。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     Task PrepareAsync(CancellationToken cancellationToken = default);
 

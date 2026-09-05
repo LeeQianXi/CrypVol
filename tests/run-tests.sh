@@ -180,6 +180,14 @@ check_out "pack --include" "卷"  run pack "$TMP/pack-filter/input" -m Plain -o 
 # --dry-run
 check_out "pack --dry-run" "卷"  run pack "$TMP/pack-filter/input" -m Plain -o "$TMP/_dry" --dry-run
 
+# --dry-run 文件名校验（CVP 文件头最多容纳 230 个 UTF-8 字节）
+DRY_NAME_DIR="$TMP/pack-dryrun-name"
+LONG_NAME_DIR="$DRY_NAME_DIR/input/$(printf 'a%.0s' {1..120})/$(printf 'b%.0s' {1..120})"
+mkdir -p "$LONG_NAME_DIR"
+echo "long-name" > "$LONG_NAME_DIR/file.txt"
+check_fail "pack --dry-run 拒绝超长文件名" run pack "$DRY_NAME_DIR/input" -m Plain \
+    -o "$DRY_NAME_DIR/output" --dry-run
+
 # --key-output 分离密钥目录
 mkdir -p "$TMP/pack-ko/input" "$TMP/pack-ko/out" "$TMP/pack-ko/keys"
 echo "x" > "$TMP/pack-ko/input/a.txt"

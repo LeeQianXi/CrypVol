@@ -12,7 +12,7 @@ public sealed class SourceFileDataProvider : DataProviderBase
     private const int LengthFieldSize = sizeof(int);
     private readonly int _chunkSize;
     private readonly bool _enableCompression;
-    private readonly IReadOnlyList<FileInfo> _files;
+    private readonly FileInfo[] _files;
     private readonly int _headerSize;
     private readonly IntegrityLevel _integrityLevel;
     private readonly DirectoryInfo _sourceDirectory;
@@ -36,14 +36,25 @@ public sealed class SourceFileDataProvider : DataProviderBase
     }
 
     /// <inheritdoc />
-    public override Task ValidateAsync(CancellationToken cancellationToken = default)
+    protected override Task OnValidateAsync(CancellationToken cancellationToken = default)
     {
+        if (!_sourceDirectory.Exists)
+            throw new DirectoryNotFoundException($"源目录不存在: {_sourceDirectory.FullName}");
         if (_chunkSize <= 0) throw new InvalidOperationException("数据块大小必须大于零。");
         if (_headerSize <= 0 || _volumeCapacity <= _headerSize + LengthFieldSize)
             throw new InvalidOperationException("卷容量不足以容纳文件头和数据块长度字段。");
         if (_chunkSize > _volumeCapacity - _headerSize - LengthFieldSize)
             throw new InvalidOperationException("数据块大小必须小于单卷可用容量。");
-        if (_files.Any(file => !file.Exists)) throw new FileNotFoundException("待打包的源文件不存在。");
+        foreach (var file in _files)
+        {
+            if (!file.Exists) throw new FileNotFoundException("待打包的源文件不存在。", file.FullName);
+
+            var relativePath = Path.GetRelativePath(_sourceDirectory.FullName, file.FullName);
+            VolumePathSafety.ValidateRelativePath(relativePath);
+            if (Encoding.UTF8.GetByteCount(relativePath) > 230)
+                throw new InvalidOperationException($"文件相对路径超过 CVP 头限制: {relativePath}");
+        }
+
         return Task.CompletedTask;
     }
 
@@ -52,16 +63,13 @@ public sealed class SourceFileDataProvider : DataProviderBase
     {
         foreach (var file in _files)
             await ProduceFileAsync(file, cancellationToken);
-        Engine.LogDebug("源文件数据提供完成: {FileCount} 文件，最后卷 {VolumeIndex}", _files.Count, _currentVolume);
+        Engine.LogDebug("源文件数据提供完成: {FileCount} 文件，最后卷 {VolumeIndex}", _files.Length, _currentVolume);
     }
 
     private async Task ProduceFileAsync(FileInfo file, CancellationToken cancellationToken)
     {
         var relativePath = Path.GetRelativePath(_sourceDirectory.FullName, file.FullName);
-        VolumePathSafety.ValidateRelativePath(relativePath);
         Engine.LogDebug("源文件读取开始: {Path}, {Length} 字节", relativePath, file.Length);
-        if (Encoding.UTF8.GetByteCount(relativePath) > 230)
-            throw new InvalidOperationException($"文件相对路径超过 CVP 头限制: {relativePath}");
 
         if (file.Length == 0)
         {
@@ -94,7 +102,7 @@ public sealed class SourceFileDataProvider : DataProviderBase
             }
             finally
             {
-                if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer);
+                ArrayPool<byte>.Shared.Return(buffer);
             }
         }
 

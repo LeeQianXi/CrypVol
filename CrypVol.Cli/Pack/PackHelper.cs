@@ -1,9 +1,11 @@
 using System.CommandLine;
+using System.Text;
 using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Helper;
 using CrypVol.Lib.Helper.Models;
 using CrypVol.Lib.Utility;
+using CrypVol.Lib.Volume;
 
 namespace CrypVol.Cli.Pack;
 
@@ -122,6 +124,24 @@ public static class PackHelper
         // Dry-run: 仅估算，不调用引擎
         if (args.GetValue(CommandDefinition.Pack.DryRun))
         {
+            foreach (var relativePath in files.Select(file => Path.GetRelativePath(sourceFolder.FullName, file.FullName)))
+            {
+                try
+                {
+                    VolumePathSafety.ValidateRelativePath(relativePath);
+                }
+                catch (Exception ex) when (ex is InvalidDataException or ArgumentException)
+                {
+                    await Console.Error.WriteLineAsync($"文件名无效: {ex.Message}");
+                    return 1;
+                }
+
+                if (Encoding.UTF8.GetByteCount(relativePath) <= 230)
+                    continue;
+                await Console.Error.WriteLineAsync($"文件名过长（UTF-8 超过 230 字节）: {relativePath}");
+                return 1;
+            }
+
             var cap = 1L * 1024 * 1024 * args.GetValue(CommandDefinition.Pack.VolumeSize);
             var chunk = Math.Min(cap, (long)chunkSizeMb * 1024 * 1024);
             var blocks = files.Sum(file => Math.Max(1, (file.Length + chunk - 1) / chunk));
