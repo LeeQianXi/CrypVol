@@ -159,8 +159,7 @@ public static class CvkOperations
             }
 
             throw new InvalidOperationException(
-                last is null ? "未找到能够解封当前 CVK 的成对 SSH 私钥。" :
-                    $"未找到能够解封当前 CVK 的成对 SSH 私钥。最近一次尝试失败：{last.Message}", last);
+                last is null ? "未找到能够解封当前 CVK 的成对 SSH 私钥。" : $"未找到能够解封当前 CVK 的成对 SSH 私钥。最近一次尝试失败：{last.Message}", last);
         }
 
         return await LoadWithPrivateKeyAsync(file, parsed, registry, privateKeyFile,
@@ -190,6 +189,7 @@ public static class CvkOperations
                 registry.Register(parsed.Header.KeyProtection, parsed.Header.KeyWrapAlgorithm,
                     CreateAsymmetricCryptor(parsed.Header.KeyWrapAlgorithm, keys));
             }
+
             var cryptor = registry.Resolve(parsed.Header);
             logger?.LogDebug("已选择 CVK 解封算法：{Protection}/{WrapAlgorithm}",
                 parsed.Header.KeyProtection, parsed.Header.KeyWrapAlgorithm);

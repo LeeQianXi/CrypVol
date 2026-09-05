@@ -6,22 +6,37 @@ namespace CrypVol.Lib.Engine.Providers;
 /// <summary>从 CVP 卷文件读取数据块的数据提供者。</summary>
 public sealed class CvpFileDataProvider : DataProviderBase
 {
-    private readonly IReadOnlyList<BlockMetadata> _blocks;
+    private readonly BlockMetadata[] _blocks;
     private string? _openPath;
     private FileStream? _stream;
 
     /// <summary>创建 CVP 文件数据提供者。</summary>
     /// <param name="blocks">按读取顺序排列的数据块元数据。</param>
-    public CvpFileDataProvider(IReadOnlyList<BlockMetadata> blocks)
+    public CvpFileDataProvider(IEnumerable<BlockMetadata> blocks)
     {
-        _blocks = blocks ?? throw new ArgumentNullException(nameof(blocks));
+        _blocks = blocks?.ToArray() ?? throw new ArgumentNullException(nameof(blocks));
     }
 
     /// <inheritdoc />
-    public override Task ValidateAsync(CancellationToken cancellationToken = default)
+    protected override Task OnValidateAsync(CancellationToken cancellationToken = default)
     {
-        if (_blocks.Any(block => block.Length < 0))
-            throw new InvalidOperationException("数据块长度不能为负数。");
+        foreach (var block in _blocks)
+        {
+            if (string.IsNullOrWhiteSpace(block.SourceFullPath))
+                throw new InvalidDataException("数据块缺少源文件路径。");
+            if (block.SourceOffset < 0)
+                throw new InvalidDataException($"数据块源偏移不能为负数: {block.SourceFullPath}");
+            if (block.Length < 0)
+                throw new InvalidDataException("数据块长度不能为负数。");
+
+            var source = new FileInfo(block.SourceFullPath);
+            if (!source.Exists)
+                throw new FileNotFoundException("CVP 源文件不存在。", source.FullName);
+            if (block.SourceOffset > source.Length || block.Length > source.Length - block.SourceOffset)
+                throw new InvalidDataException(
+                    $"数据块超出源文件范围: {block.SourceFullPath} offset={block.SourceOffset:X}, length={block.Length}");
+        }
+
         return Task.CompletedTask;
     }
 
@@ -42,11 +57,11 @@ public sealed class CvpFileDataProvider : DataProviderBase
             }
         }
 
-        Engine.LogDebug("CVP 数据提供完成: {BlockCount} 块", _blocks.Count);
+        Engine.LogDebug("CVP 数据提供完成: {BlockCount} 块", _blocks.Length);
     }
 
     /// <inheritdoc />
-    public override async Task DisposeAsync(CancellationToken cancellationToken = default)
+    protected override async Task OnDisposeAsync(CancellationToken cancellationToken = default)
     {
         if (_stream is not null) await _stream.DisposeAsync();
         _stream = null;

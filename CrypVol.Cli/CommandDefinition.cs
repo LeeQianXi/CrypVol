@@ -922,6 +922,8 @@ public static class CommandDefinition
         public static readonly Option<CvkKeyWrapAlgorithm?> Algorithm;
         public static readonly Option<string> NewPassword;
         public static readonly Option<IEnumerable<FileInfo>> PublicKey;
+        public static readonly Option<IEnumerable<string>> RemovePublicKey;
+        public static readonly Option<bool> ClearPublicKeys;
         public static readonly Option<bool> Backup;
         public static readonly Option<string?> Label;
         public static readonly Option<string?> Description;
@@ -949,7 +951,7 @@ public static class CommandDefinition
                     Plain       —— 将 CEK 以明文存储（降低安全性）
                     Password   —— 用密码包裹 CEK
                     PublicKey  —— 用公钥包裹 CEK
-                    （必需指定）
+                    未指定时保持当前封装级别
                     """
             };
 
@@ -976,6 +978,16 @@ public static class CommandDefinition
                 HelpName = "pem-file"
             }.AcceptExistingOnly();
 
+            RemovePublicKey = new Option<IEnumerable<string>>("--remove-public-key")
+            {
+                Description = "按 KeyId 删除现有公钥接收者，可重复指定"
+            };
+
+            ClearPublicKeys = new Option<bool>("--clear-public-keys")
+            {
+                Description = "清空现有公钥接收者"
+            };
+
             PrivkeyKey = new Option<FileInfo>("--privkey-key")
             {
                 Description = "当前 .cvk 的解密私钥（Asymmetric 模式会自动尝试 ~/.ssh；指定后优先使用）",
@@ -990,7 +1002,8 @@ public static class CommandDefinition
 
             Backup = new Option<bool>("--backup", "-b")
             {
-                Description = "操作前备份原始 .cvk 文件（追加 .bak 后缀）"
+                Description = "操作前备份原始 .cvk 文件（默认启用，追加 .bak 后缀）",
+                DefaultValueFactory = _ => true
             };
             Label = new Option<string?>("--label")
             {
@@ -1010,10 +1023,10 @@ public static class CommandDefinition
         {
             var cmd = new Command("rekey",
                 """
-                重新封装 .cvk 密钥文件的封装级别。
+                修改 .cvk 的封装和载荷内容。
 
-                CEK 不变，仅更换密钥信封的封装层。不读取 .cvp 数据卷。
-                Plain、Password、PublicKey 是互斥的封装级别，算法只能选择对应级别内部的实现。
+                CEK 不变，不读取 .cvp 数据卷。
+                可单独修改公钥接收者和元数据，也可同时更换封装级别。
 
                 示例：
                   crypvol rekey ./archive.cvk --to-mode Password --new-password "betterpass" -b
@@ -1021,6 +1034,12 @@ public static class CommandDefinition
 
                   crypvol rekey ./archive.cvk --to-mode PublicKey --public-key alice.pem -o ./new.cvk
                     将 .cvk 转为公钥保护，输出到新文件
+
+                  crypvol rekey ./archive.cvk --remove-public-key old-key-id
+                    仅删除指定公钥接收者（默认备份原文件）
+
+                  crypvol rekey ./archive.cvk --clear-public-keys --public-key alice.pem
+                    清空现有公钥并添加新的公钥接收者
                 """)
             {
                 CvkFile,
@@ -1030,6 +1049,8 @@ public static class CommandDefinition
                 Password,
                 NewPassword,
                 PublicKey,
+                RemovePublicKey,
+                ClearPublicKeys,
                 PrivkeyKey,
                 PrivkeyKeyPass,
                 Backup,

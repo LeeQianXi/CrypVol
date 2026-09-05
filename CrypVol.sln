@@ -12,6 +12,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrypVol.Cli", "CrypVol.Cli\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrypVol.Tests", "CrypVol.Tests\CrypVol.Tests.csproj", "{4651311E-8E64-4E08-987C-8C671EBB63AD}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution", "Solution", "{8E22EA5B-ADE7-4896-BA71-483C52B26BE4}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+		tests\run-tests.sh = tests\run-tests.sh
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

@@ -58,7 +58,7 @@ public sealed class FileIntegrityVerificationProcessor : DataProcessorBase
     }
 
     /// <inheritdoc />
-    public override Task DisposeAsync(CancellationToken cancellationToken = default)
+    protected override Task OnDisposeAsync(CancellationToken cancellationToken = default)
     {
         foreach (var hash in _hashes.Values) hash.Dispose();
         _hashes.Clear();

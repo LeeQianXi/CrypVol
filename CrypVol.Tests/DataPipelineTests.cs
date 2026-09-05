@@ -334,7 +334,7 @@ public sealed class ProcessingEngineTests
         }
 
         /// <inheritdoc />
-        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        protected override Task OnDisposeAsync(CancellationToken cancellationToken = default)
         {
             Disposed = true;
             return Task.CompletedTask;
@@ -355,21 +355,22 @@ public sealed class ProcessingEngineTests
         }
 
         /// <inheritdoc />
-        public override Task ValidateAsync(CancellationToken cancellationToken = default)
+        protected override Task OnValidateAsync(CancellationToken cancellationToken = default)
         {
             LifeCycle.Add("validate");
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public override Task PrepareAsync(CancellationToken cancellationToken = default)
+        protected override Task OnPrepareAsync(CancellationToken cancellationToken = default)
         {
+            EnsureChannelsBound();
             LifeCycle.Add("prepare");
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public override Task StartAsync(CancellationToken cancellationToken = default)
+        protected override Task OnStartAsync(CancellationToken cancellationToken = default)
         {
             LifeCycle.Add("start");
             return Task.CompletedTask;
@@ -390,7 +391,7 @@ public sealed class ProcessingEngineTests
         }
 
         /// <inheritdoc />
-        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        protected override Task OnDisposeAsync(CancellationToken cancellationToken = default)
         {
             LifeCycle.Add("dispose");
             return Task.CompletedTask;
@@ -415,7 +416,7 @@ public sealed class ProcessingEngineTests
     private sealed class StartOrderProvider(List<string> order) : DataProviderBase
     {
         /// <inheritdoc />
-        public override Task StartAsync(CancellationToken cancellationToken = default)
+        protected override Task OnStartAsync(CancellationToken cancellationToken = default)
         {
             order.Add("provider");
             return Task.CompletedTask;
@@ -432,7 +433,7 @@ public sealed class ProcessingEngineTests
     private sealed class StartOrderProcessor(List<string> order, string name) : DataProcessorBase
     {
         /// <inheritdoc />
-        public override Task StartAsync(CancellationToken cancellationToken = default)
+        protected override Task OnStartAsync(CancellationToken cancellationToken = default)
         {
             order.Add(name);
             return Task.CompletedTask;
@@ -450,7 +451,7 @@ public sealed class ProcessingEngineTests
     private sealed class StartOrderReceiver(List<string> order) : DataReceiverBase
     {
         /// <inheritdoc />
-        public override Task StartAsync(CancellationToken cancellationToken = default)
+        protected override Task OnStartAsync(CancellationToken cancellationToken = default)
         {
             order.Add("receiver");
             return Task.CompletedTask;
@@ -490,7 +491,7 @@ public sealed class ProcessingEngineTests
         }
 
         /// <inheritdoc />
-        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        protected override Task OnDisposeAsync(CancellationToken cancellationToken = default)
         {
             Disposed = true;
             return Task.CompletedTask;
@@ -511,7 +512,7 @@ public sealed class ProcessingEngineTests
         }
 
         /// <inheritdoc />
-        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        protected override Task OnDisposeAsync(CancellationToken cancellationToken = default)
         {
             Disposed = true;
             return Task.CompletedTask;
@@ -543,7 +544,7 @@ public sealed class ProcessingEngineTests
         }
 
         /// <inheritdoc />
-        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        protected override Task OnDisposeAsync(CancellationToken cancellationToken = default)
         {
             Disposed = true;
             return Task.CompletedTask;
@@ -563,7 +564,7 @@ public sealed class ProcessingEngineTests
         }
 
         /// <inheritdoc />
-        public override Task DisposeAsync(CancellationToken cancellationToken = default)
+        protected override Task OnDisposeAsync(CancellationToken cancellationToken = default)
         {
             Disposed = true;
             return Task.CompletedTask;

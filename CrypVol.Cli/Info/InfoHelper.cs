@@ -4,7 +4,6 @@ using CrypVol.Lib.Crypto;
 using CrypVol.Lib.Crypto.Models;
 using CrypVol.Lib.Crypto.Reading;
 using CrypVol.Lib.Crypto.Writing;
-using Microsoft.Extensions.Logging;
 
 namespace CrypVol.Cli.Info;
 

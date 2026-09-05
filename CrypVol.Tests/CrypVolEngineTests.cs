@@ -50,6 +50,24 @@ public class CrypVolEngineTests : IDisposable
         return r.VolumePaths.Select(p => new FileInfo(p)).ToList();
     }
 
+    [Fact]
+    public async Task SourceProvider_RejectsInvalidArchivePathDuringValidation()
+    {
+        var relativePath = $"{new string('a', 120)}{Path.DirectorySeparatorChar}{new string('b', 120)}{Path.DirectorySeparatorChar}data.bin";
+        var sourceFile = MakeFile(relativePath, "data");
+        var provider = new CrypVol.Lib.Engine.Providers.SourceFileDataProvider(
+            [sourceFile], _workDir, 1024, 1024 * 1024, FileEntryHeader.HeaderSize,
+            IntegrityLevel.None, false);
+        var engine = CrypVol.Lib.Engine.ProcessingEngine.Builder()
+            .UseProvider(provider)
+            .UseReceiver(new CrypVol.Lib.Engine.Receivers.NullDataReceiver())
+            .Build();
+
+        await provider.InitializeAsync(engine);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.ValidateAsync());
+        Assert.Contains("文件相对路径超过 CVP 头限制", error.Message);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Pack → Extract (None mode)
     // ═══════════════════════════════════════════════════════

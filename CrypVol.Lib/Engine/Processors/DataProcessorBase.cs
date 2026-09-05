@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using CrypVol.Lib.Engine.Models;
 
@@ -6,6 +7,11 @@ namespace CrypVol.Lib.Engine.Processors;
 /// <summary>数据处理阶段基类，封装 Engine 与相邻通道的绑定和块所有权。</summary>
 public abstract class DataProcessorBase : IDataProcessor
 {
+    private long _filteredBlocks;
+    private long _inputBlocks;
+    private long _inputBytes;
+    private long _outputBlocks;
+    private long _outputBytes;
     private ChannelReader<DataBlock>? _reader;
     private ChannelWriter<DataBlock>? _writer;
 
@@ -22,32 +28,78 @@ public abstract class DataProcessorBase : IDataProcessor
     /// <inheritdoc />
     public async Task InitializeAsync(ProcessingEngine engine, CancellationToken cancellationToken = default)
     {
-        Engine = engine ?? throw new ArgumentNullException(nameof(engine));
-        await OnInitializeAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(engine);
+        var stopwatch = Stopwatch.StartNew();
+        Engine = engine;
+        try
+        {
+            await OnInitializeAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Processor {Processor} 初始化耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public virtual Task ValidateAsync(CancellationToken cancellationToken = default)
+    public async Task ValidateAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnValidateAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Processor {Processor} 静态校验耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public virtual Task PrepareAsync(CancellationToken cancellationToken = default)
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnPrepareAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Processor {Processor} 资源预处理耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public virtual Task StartAsync(CancellationToken cancellationToken = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnStartAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Processor {Processor} 启动钩子耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public virtual Task DisposeAsync(CancellationToken cancellationToken = default)
+    public async Task DisposeAsync(CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnDisposeAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Processor {Processor} 释放钩子耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
@@ -55,11 +107,14 @@ public abstract class DataProcessorBase : IDataProcessor
     {
         var reader = _reader ?? throw new InvalidOperationException("Processor 尚未绑定输入通道。");
         var writer = _writer ?? throw new InvalidOperationException("Processor 尚未绑定输出通道。");
+        var stopwatch = Stopwatch.StartNew();
         Exception? error = null;
         try
         {
             await foreach (var block in reader.ReadAllAsync(cancellationToken))
             {
+                _inputBlocks++;
+                _inputBytes += block.Length;
                 DataBlock? output = null;
                 try
                 {
@@ -77,10 +132,13 @@ public abstract class DataProcessorBase : IDataProcessor
                             GetType().Name, output.Metadata.RelativePath, output.Metadata.Sequence,
                             output.Metadata.TargetIndex, output.Length, output.Metadata.Flags);
                         await writer.WriteAsync(output, cancellationToken);
+                        _outputBlocks++;
+                        _outputBytes += output.Length;
                         output = null;
                     }
                     else
                     {
+                        _filteredBlocks++;
                         Engine.LogTrace("Processor {Processor} 过滤块: {Path}, Seq={Sequence}", GetType().Name,
                             block.Metadata.RelativePath, block.Metadata.Sequence);
                     }
@@ -100,16 +158,51 @@ public abstract class DataProcessorBase : IDataProcessor
         finally
         {
             writer.TryComplete(error);
-            if (error is null) Engine.LogDebug("Processor {Processor} 已完成输出通道", GetType().Name);
-            else
-                Engine.LogDebug("Processor {Processor} 因 {ExceptionType} 完成输出通道", GetType().Name,
-                    error.GetType().Name);
+            var status = error is null ? "Completed" : error is OperationCanceledException ? "Canceled" : "Faulted";
+            var throughput = stopwatch.Elapsed.TotalSeconds > 0
+                ? _outputBytes / 1024d / 1024d / stopwatch.Elapsed.TotalSeconds
+                : 0d;
+            Engine.LogDebug(
+                "Processor {Processor} 处理完成: Status={Status}, InputBlocks={InputBlocks}, InputBytes={InputBytes}, OutputBlocks={OutputBlocks}, OutputBytes={OutputBytes}, FilteredBlocks={FilteredBlocks}, ElapsedMs={ElapsedMilliseconds}, ThroughputMiBPerSecond={ThroughputMiBPerSecond:F2}, ExceptionType={ExceptionType}",
+                GetType().Name, status, _inputBlocks, _inputBytes, _outputBlocks, _outputBytes, _filteredBlocks,
+                stopwatch.ElapsedMilliseconds, throughput, error?.GetType().Name ?? "None");
         }
+    }
+
+    /// <summary>确认 Engine 已为 Processor 绑定输入和输出通道。</summary>
+    protected void EnsureChannelsBound()
+    {
+        if (_reader is null || _writer is null)
+            throw new InvalidOperationException("Processor 尚未绑定输入或输出通道。");
     }
 
     /// <summary>Engine 注入后初始化阶段私有状态。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     protected virtual Task OnInitializeAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>执行静态配置校验。</summary>
+    protected virtual Task OnValidateAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>在通道绑定后准备运行资源。</summary>
+    protected virtual Task OnPrepareAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>进入运行状态前执行阶段特定启动逻辑。</summary>
+    protected virtual Task OnStartAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>释放阶段特定资源。</summary>
+    protected virtual Task OnDisposeAsync(CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;
     }
