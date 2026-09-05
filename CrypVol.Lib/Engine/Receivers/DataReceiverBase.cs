@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using CrypVol.Lib.Engine.Models;
@@ -12,6 +13,12 @@ public abstract class DataReceiverBase : IDataReceiver
     /// <summary>生命周期期间注入的处理引擎。</summary>
     protected ProcessingEngine Engine { get; private set; } = null!;
 
+    /// <summary>已从最终输入通道读取的数据块数量。</summary>
+    protected long ReceivedBlockCount { get; private set; }
+
+    /// <summary>已从最终输入通道读取的数据字节数。</summary>
+    protected long ReceivedByteCount { get; private set; }
+
     /// <inheritdoc />
     public void BindChannel(ChannelReader<DataBlock> reader)
     {
@@ -21,32 +28,78 @@ public abstract class DataReceiverBase : IDataReceiver
     /// <inheritdoc />
     public async Task InitializeAsync(ProcessingEngine engine, CancellationToken cancellationToken = default)
     {
-        Engine = engine ?? throw new ArgumentNullException(nameof(engine));
-        await OnInitializeAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(engine);
+        var stopwatch = Stopwatch.StartNew();
+        Engine = engine;
+        try
+        {
+            await OnInitializeAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Receiver {Receiver} 初始化耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task ValidateAsync(CancellationToken cancellationToken = default)
+    public async Task ValidateAsync(CancellationToken cancellationToken = default)
     {
-        return OnValidateAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnValidateAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Receiver {Receiver} 静态校验耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task PrepareAsync(CancellationToken cancellationToken = default)
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
     {
-        return OnPrepareAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnPrepareAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Receiver {Receiver} 资源预处理耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task StartAsync(CancellationToken cancellationToken = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        return OnStartAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnStartAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Receiver {Receiver} 启动钩子耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync(CancellationToken cancellationToken = default)
+    public async Task DisposeAsync(CancellationToken cancellationToken = default)
     {
-        return OnDisposeAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnDisposeAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Receiver {Receiver} 释放钩子耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
@@ -65,13 +118,29 @@ public abstract class DataReceiverBase : IDataReceiver
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var reader = _reader ?? throw new InvalidOperationException("Receiver 尚未绑定输入通道。");
-        await foreach (var block in reader.ReadAllAsync(cancellationToken))
+        var stopwatch = Stopwatch.StartNew();
+        try
         {
-            Engine.LogTrace(
-                "Receiver {Receiver} 接收块: {Path}, Seq={Sequence}, Target={TargetIndex}, Length={Length}, Flags=0x{Flags:X2}",
-                GetType().Name, block.Metadata.RelativePath, block.Metadata.Sequence, block.Metadata.TargetIndex,
-                block.Length, block.Metadata.Flags);
-            yield return block;
+            await foreach (var block in reader.ReadAllAsync(cancellationToken))
+            {
+                ReceivedBlockCount++;
+                ReceivedByteCount += block.Length;
+                Engine.LogTrace(
+                    "Receiver {Receiver} 接收块: {Path}, Seq={Sequence}, Target={TargetIndex}, Length={Length}, Flags=0x{Flags:X2}",
+                    GetType().Name, block.Metadata.RelativePath, block.Metadata.Sequence, block.Metadata.TargetIndex,
+                    block.Length, block.Metadata.Flags);
+                yield return block;
+            }
+        }
+        finally
+        {
+            var status = cancellationToken.IsCancellationRequested ? "Canceled" : "Finished";
+            var throughput = stopwatch.Elapsed.TotalSeconds > 0
+                ? ReceivedByteCount / 1024d / 1024d / stopwatch.Elapsed.TotalSeconds
+                : 0d;
+            Engine.LogDebug(
+                "Receiver {Receiver} 输入完成: Status={Status}, Blocks={Blocks}, Bytes={Bytes}, ElapsedMs={ElapsedMilliseconds}, ThroughputMiBPerSecond={ThroughputMiBPerSecond:F2}",
+                GetType().Name, status, ReceivedBlockCount, ReceivedByteCount, stopwatch.ElapsedMilliseconds, throughput);
         }
     }
 

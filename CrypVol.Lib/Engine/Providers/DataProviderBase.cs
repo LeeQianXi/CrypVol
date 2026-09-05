@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using CrypVol.Lib.Engine.Models;
 
@@ -6,6 +7,8 @@ namespace CrypVol.Lib.Engine.Providers;
 /// <summary>数据提供阶段基类，封装 Engine 与输出通道的绑定。</summary>
 public abstract class DataProviderBase : IDataProvider
 {
+    private long _producedBlocks;
+    private long _producedBytes;
     private ChannelWriter<DataBlock>? _writer;
 
     /// <summary>生命周期期间注入的处理引擎。</summary>
@@ -20,38 +23,85 @@ public abstract class DataProviderBase : IDataProvider
     /// <inheritdoc />
     public async Task InitializeAsync(ProcessingEngine engine, CancellationToken cancellationToken = default)
     {
-        Engine = engine ?? throw new ArgumentNullException(nameof(engine));
-        await OnInitializeAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(engine);
+        var stopwatch = Stopwatch.StartNew();
+        Engine = engine;
+        try
+        {
+            await OnInitializeAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Provider {Provider} 初始化耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task ValidateAsync(CancellationToken cancellationToken = default)
+    public async Task ValidateAsync(CancellationToken cancellationToken = default)
     {
-        return OnValidateAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnValidateAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Provider {Provider} 静态校验耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task PrepareAsync(CancellationToken cancellationToken = default)
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
     {
-        return OnPrepareAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnPrepareAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Provider {Provider} 资源预处理耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task StartAsync(CancellationToken cancellationToken = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        return OnStartAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnStartAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Provider {Provider} 启动钩子耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync(CancellationToken cancellationToken = default)
+    public async Task DisposeAsync(CancellationToken cancellationToken = default)
     {
-        return OnDisposeAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await OnDisposeAsync(cancellationToken);
+        }
+        finally
+        {
+            Engine.LogDebug("Provider {Provider} 释放钩子耗时 {ElapsedMilliseconds} ms", GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
     public async Task ProduceAsync(CancellationToken cancellationToken = default)
     {
         var writer = _writer ?? throw new InvalidOperationException("Provider 尚未绑定输出通道。");
+        var stopwatch = Stopwatch.StartNew();
         Exception? error = null;
         try
         {
@@ -65,10 +115,14 @@ public abstract class DataProviderBase : IDataProvider
         finally
         {
             writer.TryComplete(error);
-            if (error is null) Engine.LogDebug("Provider {Provider} 已完成输出通道", GetType().Name);
-            else
-                Engine.LogDebug("Provider {Provider} 因 {ExceptionType} 完成输出通道", GetType().Name,
-                    error.GetType().Name);
+            var status = error is null ? "Completed" : error is OperationCanceledException ? "Canceled" : "Faulted";
+            var throughput = stopwatch.Elapsed.TotalSeconds > 0
+                ? _producedBytes / 1024d / 1024d / stopwatch.Elapsed.TotalSeconds
+                : 0d;
+            Engine.LogDebug(
+                "Provider {Provider} 输出完成: Status={Status}, Blocks={Blocks}, Bytes={Bytes}, ElapsedMs={ElapsedMilliseconds}, ThroughputMiBPerSecond={ThroughputMiBPerSecond:F2}, ExceptionType={ExceptionType}",
+                GetType().Name, status, _producedBlocks, _producedBytes, stopwatch.ElapsedMilliseconds, throughput,
+                error?.GetType().Name ?? "None");
         }
     }
 
@@ -89,6 +143,8 @@ public abstract class DataProviderBase : IDataProvider
             block.Metadata.SourceOffset, block.Length, block.Metadata.Flags);
         await (_writer ?? throw new InvalidOperationException("Provider 尚未绑定输出通道."))
             .WriteAsync(block, cancellationToken);
+        _producedBlocks++;
+        _producedBytes += block.Length;
     }
 
     /// <summary>Engine 注入后初始化阶段私有状态。</summary>

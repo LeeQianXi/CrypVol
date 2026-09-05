@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace CrypVol.Lib.Engine.Receivers;
 
 /// <summary>按目标编号路由到多个输出卷的接收阶段基类。</summary>
@@ -36,6 +38,7 @@ public abstract class VolumeDataReceiverBase : DataReceiverBase
     /// <inheritdoc />
     public override async Task ReceiveAsync(CancellationToken cancellationToken = default)
     {
+        var stopwatch = Stopwatch.StartNew();
         using var receiveCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         foreach (var context in _volumes.Values)
             StartReceiver(context, receiveCancellation);
@@ -98,6 +101,19 @@ public abstract class VolumeDataReceiverBase : DataReceiverBase
                 foreach (var context in _volumes.Values)
                     while (context.OutputChannel.Reader.TryRead(out var block))
                         block.Dispose();
+
+                var status = routingError is null
+                    ? cancellationToken.IsCancellationRequested ? "Canceled" : "Completed"
+                    : routingError is OperationCanceledException
+                        ? "Canceled"
+                        : "Faulted";
+                var throughput = stopwatch.Elapsed.TotalSeconds > 0
+                    ? ReceivedByteCount / 1024d / 1024d / stopwatch.Elapsed.TotalSeconds
+                    : 0d;
+                Engine.LogDebug(
+                    "Receiver {Receiver} 路由完成: Status={Status}, Blocks={Blocks}, Bytes={Bytes}, Targets={Targets}, ElapsedMs={ElapsedMilliseconds}, ThroughputMiBPerSecond={ThroughputMiBPerSecond:F2}, ExceptionType={ExceptionType}",
+                    GetType().Name, status, ReceivedBlockCount, ReceivedByteCount, _volumes.Count,
+                    stopwatch.ElapsedMilliseconds, throughput, routingError?.GetType().Name ?? "None");
             }
         }
     }

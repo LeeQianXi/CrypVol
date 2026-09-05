@@ -96,13 +96,13 @@ public sealed class SourceFileDataProvider : DataProviderBase
                 var isLast = offset + read >= file.Length;
                 await WriteBlockAsync(buffer, read, file, relativePath, offset, isFirstFileBlock,
                     isLast, isLast ? hash.GetHashAndReset() : null, cancellationToken);
-                buffer = null!;
+                buffer = null;
                 offset += read;
                 isFirstFileBlock = false;
             }
             finally
             {
-                ArrayPool<byte>.Shared.Return(buffer);
+                if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer);
             }
         }
 
