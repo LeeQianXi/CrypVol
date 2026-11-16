@@ -1,0 +1,10 @@
+[package]
+name = "crypvol-core"
+description = "CrypVol 核心库：卷格式、处理引擎、密钥信封与工具"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]

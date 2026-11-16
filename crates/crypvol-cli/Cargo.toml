@@ -1,0 +1,11 @@
+[package]
+name = "crypvol-cli"
+description = "CrypVol 命令行工具"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+crypvol-core = { path = "../crypvol-core" }
