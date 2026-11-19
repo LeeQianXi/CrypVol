@@ -1,89 +1,57 @@
 # 贡献指南
 
-感谢你对 CrypVol 的关注！欢迎任何形式的贡献。
+欢迎改进 CrypVol。提交前请以仓库当前 Rust 实现和测试为准，不依据尚未实现的命令帮助推断功能已经可用。
 
-## 🚀 快速开始
+## 开发环境
 
-1. **Fork** 本仓库
-2. 创建特性分支：`git checkout -b feature/my-feature`
-3. 提交你的变更：`git commit -m 'feat: add some feature'`
-4. 推送到分支：`git push origin feature/my-feature`
-5. 提交 Pull Request
-
-## 🛠️ 开发环境
-
-- **SDK**: [.NET 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
-- **IDE**: Rider / VS Code / Visual Studio 2026+
-- **操作系统**: Windows / macOS / Linux
+- Rust `1.100` 或更新版本。
+- Windows、macOS 或 Linux。
+- 构建 vendored OpenSSL 所需的本机 C 工具链和 Perl。
 
 ```bash
-# 克隆仓库
 git clone https://github.com/LeeQianXi/CrypVol.git
 cd CrypVol
-
-# 还原依赖
-dotnet restore
-
-# 构建
-dotnet build
-
-# 运行 CLI
-dotnet run --project CrypVol.Cli -- --help
-
-# 运行桌面应用
-dotnet run --project CrypVol
+cargo build --workspace
+cargo run -p crypvol-cli -- --help
 ```
 
-## 📐 代码风格
+## 代码约定
 
-- 遵循 [C# 代码约定](https://docs.microsoft.com/zh-cn/dotnet/csharp/fundamentals/coding-style/coding-conventions)
-- 使用项目已有的 `.sln.DotSettings` 配置（Rider / ReSharper）
-- 命名：PascalCase（类/方法）、camelCase（局部变量/参数）
-- 优先使用 `nullable enable` 和 `ImplicitUsings`
-- 使用 CommunityToolkit.Mvvm 的源生成器进行 MVVM 开发
+- 遵循 Rust API Guidelines 与 `rustfmt` 的默认格式。
+- `crypvol-core` 放置格式、密码学、卷处理与无界面业务逻辑；CLI 不复制核心逻辑。
+- 命令参数定义、校验和处理应按命令组织；通用入口只负责解析、分发与退出状态。
+- 外部输入、文件操作和密码学操作应返回可理解的 `Result`。除内部不变量外，不使用 `unwrap` 或 `expect`。
+- 不在错误、日志、测试输出或提交内容中暴露密码、私钥、CEK 或明文敏感数据。
+- 新增依赖、公共接口或格式变更时，说明用途、许可证、兼容性和测试覆盖。
 
-## 📝 Commit 规范
+## 提交前检查
 
-推荐使用 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)：
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --workspace --release
+git diff --check
+```
+
+涉及 CVK 格式、密码学参数或兼容读取时，请补充格式边界、认证失败和跨实现样本测试。
+
+## 提交信息
+
+推荐使用 Conventional Commits：
 
 - `feat:` 新功能
-- `fix:` Bug 修复
+- `fix:` 缺陷修复
 - `docs:` 文档
 - `refactor:` 重构
 - `test:` 测试
-- `chore:` 构建 / 工具
+- `chore:` 构建或工具
 
-## 🔍 提交前检查
+## 报告问题
 
-```bash
-# 确保代码可构建
-dotnet build -c Release
+请在 Issue 中提供：
 
-# 运行单元测试
-dotnet test
-
-# 运行 CLI 端到端回归测试（需要 Bash 与 openssl）
-bash tests/run-tests.sh
-```
-
-## 📂 项目结构
-
-| 项目 | 说明 |
-|------|------|
-| `CrypVol` | 桌面应用入口（Avalonia Desktop） |
-| `CrypVol.Core` | 核心 GUI 逻辑（ViewModels / Views） |
-| `CrypVol.Core.Abstract` | 抽象层（接口、自定义控件、服务） |
-| `CrypVol.Lib` | 核心库（加密 / 打包 / 解包逻辑） |
-| `CrypVol.Cli` | 命令行工具（System.CommandLine） |
-
-## 🐛 报告 Bug
-
-使用 [Bug 报告模板](https://github.com/LeeQianXi/CrypVol/issues/new?template=bug_report.yml) 提交 Issue，请尽量提供：
-
-- 复现步骤
-- 期望行为 vs 实际行为
-- 操作系统和 .NET 版本
-
-## 💡 功能请求
-
-使用 [功能请求模板](https://github.com/LeeQianXi/CrypVol/issues/new?template=feature_request.yml) 提交，说明使用场景和建议方案。
+- 可复现步骤和实际输出。
+- 期望行为。
+- 操作系统、Rust 工具链版本和命令行参数。
+- 对密钥或 CVK 问题，提供经过脱敏的最小样本；不要上传真实凭据。

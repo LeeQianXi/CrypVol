@@ -69,7 +69,7 @@ pub(super) fn rekey() -> Command {
 
 pub(super) fn migrate() -> Command {
     Command::new("migrate")
-        .about("将旧版 .NET CVK 迁移为 Rust 原生 CVK")
+        .about("将旧版 CVK 迁移为 Rust 原生 CVK")
         .arg(cvk())
         .arg(output("迁移后的原生 CVK 路径", "FILE").required(true))
         .next_help_heading("旧密钥")
