@@ -1,0 +1,13 @@
+[package]
+name = "crypvol-migrate"
+description = "CrypVol 旧版 CVK 迁移兼容层"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+crypvol-core = { path = "../crypvol-core" }
+serde_json.workspace = true
+time.workspace = true

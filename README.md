@@ -11,6 +11,7 @@ CrypVol 是一个以 Rust 实现的加密分卷归档项目。当前版本重点
 - `rekey`：重封装同一 CEK、维护接收者和元数据。
 - `migrate`：将旧版 CVK 转为原生 CVK。
 - `crypvol-core`：CVK1 读写、密码与公钥保护、PEM/OpenSSH 密钥读取、CVP 记录解析。
+- `crypvol-gui`：原生文件对话框、CVK 加载与验证、Header 元数据编辑、公钥接收者维护及原子保存。
 
 `pack`、`extract`、`browse`、`verify`、`repair` 与 `convert` 已有命令帮助，但尚未迁移到 Rust 处理器；调用时会明确失败，不能用于生产数据。
 
@@ -93,7 +94,8 @@ cargo run -p crypvol-cli -- migrate ./keys/legacy.cvk \
 crates/
 ├── crypvol-core/  # CVK 密码学、格式与 CVP 记录解析
 ├── crypvol-cli/   # clap 命令定义、分发与 CVK 工作流
-└── crypvol-gui/   # 桌面入口占位，尚未接入界面框架
+├── crypvol-gui/   # Iced 多窗口 CVK 编辑流水线
+└── crypvol-migrate/ # 旧版 CVK 的独立兼容层
 ```
 
 ## 验证

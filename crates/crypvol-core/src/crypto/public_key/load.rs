@@ -67,6 +67,29 @@ fn load_public_key_inner(data: &[u8], fallback_id: &str) -> InternalResult<Recip
     })
 }
 
+/// 检测 PEM 或 OpenSSH 私钥是否需要解密密码，无效输入返回错误。
+pub fn private_key_requires_password(data: &[u8]) -> CvkResult<bool> {
+    private_key_requires_password_inner(data)
+        .map_err(|source| CvkOperationError::from_source(CvkOperation::PrivateKeyLoad, source))
+}
+
+fn private_key_requires_password_inner(data: &[u8]) -> InternalResult<bool> {
+    let data = data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data);
+    if data.starts_with(b"-----BEGIN OPENSSH PRIVATE KEY-----") {
+        return Ok(ssh_key::PrivateKey::from_openssh(data)?.is_encrypted());
+    }
+    let requested = std::cell::Cell::new(false);
+    let result = PKey::private_key_from_pem_callback(data, |_| {
+        requested.set(true);
+        Err(openssl::error::ErrorStack::get())
+    });
+    if requested.get() {
+        return Ok(true);
+    }
+    result?;
+    Ok(false)
+}
+
 /// 读取 PEM 或 OpenSSH 私钥。私钥密码仅用于解密密钥文件。
 pub fn load_private_key(data: &[u8], password: Option<&str>) -> CvkResult<PKey<Private>> {
     load_private_key_inner(data, password)
@@ -126,4 +149,28 @@ fn load_private_key_inner(data: &[u8], password: Option<&str>) -> InternalResult
         return Err("私钥未加密，不需要密码".into());
     }
     Ok(key)
+}
+
+#[cfg(test)]
+mod password_detection_tests {
+    use super::*;
+    use openssl::symm::Cipher;
+
+    #[test]
+    fn detects_password_requirement_and_rejects_invalid_data() {
+        let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
+        let plain = key.private_key_to_pem_pkcs8().unwrap();
+        let encrypted = key
+            .private_key_to_pem_pkcs8_passphrase(Cipher::aes_256_cbc(), b"test")
+            .unwrap();
+        let traditional = key
+            .rsa()
+            .unwrap()
+            .private_key_to_pem_passphrase(Cipher::aes_256_cbc(), b"test")
+            .unwrap();
+        assert!(!private_key_requires_password(&plain).unwrap());
+        assert!(private_key_requires_password(&encrypted).unwrap());
+        assert!(private_key_requires_password(&traditional).unwrap());
+        assert!(private_key_requires_password(b"invalid private key").is_err());
+    }
 }

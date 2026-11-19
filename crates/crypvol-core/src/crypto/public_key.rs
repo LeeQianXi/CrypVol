@@ -14,7 +14,7 @@ mod ecdh;
 mod load;
 mod rsa;
 
-pub use load::{load_private_key, load_public_key};
+pub use load::{load_private_key, load_public_key, private_key_requires_password};
 
 pub(super) type InternalResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 

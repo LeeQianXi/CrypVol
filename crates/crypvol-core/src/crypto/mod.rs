@@ -9,5 +9,6 @@ pub use document::*;
 
 mod public_key;
 pub use public_key::{
-    load_private_key, load_public_key, unlock_with_private_key, unlock_with_private_key_aad,
+    load_private_key, load_public_key, private_key_requires_password, unlock_with_private_key,
+    unlock_with_private_key_aad,
 };

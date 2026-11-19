@@ -1,12 +1,11 @@
 //! 旧版 CVK 迁移命令。
 
-mod compat;
-
 use std::{fs, path::PathBuf};
 
 use crypvol_core::crypto::{
     CvkEnvelope, CvkPayload, KeyProtection, encode, load_private_key, unlock_with_private_key_aad,
 };
+use crypvol_migrate::{legacy_header_bytes, unlock_password};
 use zeroize::Zeroizing;
 
 use crate::key::{Result, read_cvk, storage};
@@ -53,7 +52,7 @@ fn validate_credentials(envelope: &CvkEnvelope<'_>, args: &clap::ArgMatches) -> 
 fn unlock_legacy(envelope: &CvkEnvelope<'_>, args: &clap::ArgMatches) -> Result<CvkPayload> {
     match envelope.header().key_protection {
         KeyProtection::Plain => Ok(envelope.plain_payload()?),
-        KeyProtection::Password => Ok(compat::unlock_password(
+        KeyProtection::Password => Ok(unlock_password(
             envelope,
             args.get_one::<String>("password").map(String::as_str),
         )?),
@@ -66,7 +65,7 @@ fn unlock_legacy(envelope: &CvkEnvelope<'_>, args: &clap::ArgMatches) -> Result<
                 &private,
                 args.get_one::<String>("key-pass").map(String::as_str),
             )?;
-            let aad = compat::dotnet_header_bytes(envelope.header())?;
+            let aad = legacy_header_bytes(envelope.header())?;
             Ok(unlock_with_private_key_aad(envelope, &key, &aad)?)
         }
     }

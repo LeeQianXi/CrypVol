@@ -8,4 +8,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
+iced.workspace = true
 crypvol-core = { path = "../crypvol-core" }
+crypvol-migrate = { path = "../crypvol-migrate" }
+rfd.workspace = true
+tempfile.workspace = true
+zeroize.workspace = true

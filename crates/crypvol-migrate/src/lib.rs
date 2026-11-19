@@ -1,17 +1,17 @@
-//! 旧版 .NET CVK 的认证数据兼容层。
+//! 旧版 CVK 的认证数据兼容层。
 //!
-//! 该模块只能由 `migrate` 调用；正常 CVK 读写不依赖这里的编码规则。
+//! 此 crate 只服务于迁移或加载旧数据；原生 CVK 的读写不依赖这里的编码规则。
 
 use std::fmt::Write;
 
 use crypvol_core::crypto::{CvkEnvelope, CvkHeader, CvkPayload, unlock_with_password_aad};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-pub(super) fn unlock_password(
+pub fn unlock_password(
     envelope: &CvkEnvelope<'_>,
     password: Option<&str>,
 ) -> Result<CvkPayload, Box<dyn std::error::Error>> {
-    let authentication_data = dotnet_header_bytes(envelope.header())?;
+    let authentication_data = legacy_header_bytes(envelope.header())?;
     Ok(unlock_with_password_aad(
         envelope,
         password,
@@ -20,9 +20,7 @@ pub(super) fn unlock_password(
     )?)
 }
 
-pub(super) fn dotnet_header_bytes(
-    header: &CvkHeader,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn legacy_header_bytes(header: &CvkHeader) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut normalized = header.clone();
     if let Some(created_at) = &header.created_at {
         let timestamp = OffsetDateTime::parse(created_at, &Rfc3339)?;

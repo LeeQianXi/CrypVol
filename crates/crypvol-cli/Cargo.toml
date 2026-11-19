@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 clap.workspace = true
 crypvol-core = { path = "../crypvol-core" }
+crypvol-migrate = { path = "../crypvol-migrate" }
 sha2.workspace = true
 zeroize.workspace = true
 tempfile.workspace = true
