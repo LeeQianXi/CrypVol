@@ -1,1 +1,5 @@
 //! 卷层：卷组发现、条目头与损坏扫描。
+
+mod records;
+
+pub use records::*;

@@ -1,5 +1,16 @@
 # CrypVol
 
+Rust 迁移版已提供 `genkey`、`info`、`rekey` 和 `migrate`，支持明文、密码及 RSA/ECDH 公钥保护。卷操作仍在迁移中。Rust 版参数以各子命令的帮助为准，下文的安装步骤和操作示例对应原 .NET 版。
+
+Rust 核心库可读取 CVP 记录和二进制 CVK1 信封，并校验密钥信封的完整性。密码和公钥模式解封时会认证密钥体。
+
+```bash
+cargo run -p crypvol-cli -- --help
+cargo run -p crypvol-cli -- --version
+cargo run -p crypvol-cli -- pack --help
+cargo run -p crypvol-cli -- --verbose=Debug verify --help
+```
+
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-11.3-8B5CF6)](https://avaloniaui.net/)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-blue)](LICENSE)

@@ -8,3 +8,16 @@ license.workspace = true
 publish = false
 
 [dependencies]
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+aes-gcm.workspace = true
+pbkdf2.workspace = true
+argon2.workspace = true
+getrandom.workspace = true
+zeroize.workspace = true
+tracing.workspace = true
+openssl.workspace = true
+ssh-key.workspace = true

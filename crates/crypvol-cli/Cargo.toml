@@ -8,4 +8,13 @@ license.workspace = true
 publish = false
 
 [dependencies]
+clap.workspace = true
 crypvol-core = { path = "../crypvol-core" }
+sha2.workspace = true
+zeroize.workspace = true
+tempfile.workspace = true
+same-file.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
